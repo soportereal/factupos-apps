@@ -1,0 +1,45 @@
+name: Build Bridge Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'factupos_print_bridge_windows.py'
+      - 'requirements-bridge.txt'
+      - '.github/workflows/bridge.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            suffix: ""
+          - arch: x86
+            suffix: "-x86"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.8 (${{ matrix.arch }})
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: ${{ matrix.arch }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-bridge.txt
+
+      - name: Build .exe with PyInstaller (${{ matrix.arch }})
+        run: pyinstaller --onefile --windowed --name FactuposPrintBridge${{ matrix.suffix }} --hidden-import serial.tools.list_ports --hidden-import pystray._win32 factupos_print_bridge_windows.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FactuposPrintBridge-${{ matrix.arch }}
+          path: dist/FactuposPrintBridge${{ matrix.suffix }}.exe
+          if-no-files-found: error

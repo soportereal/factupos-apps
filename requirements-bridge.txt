@@ -1,0 +1,6 @@
+# Dependencias para compilar FactuPOS Print Bridge (Windows .exe)
+# Python 3.8 (compat Windows 7 SP1)
+pyserial==3.5
+pystray==0.19.5
+Pillow==10.2.0
+pyinstaller==5.13.2
