@@ -39,3 +39,41 @@ jobs:
           name: FactuPOS_Print-${{ matrix.arch }}
           path: dist/FactuPOS_Print${{ matrix.suffix }}.exe
           if-no-files-found: error
+
+  # Empaqueta los dos .exe en un instalador unico (Inno Setup) con autostart
+  # oculto + permisos para auto-update. Corre despues de compilar ambos.
+  installer:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar .exe x64
+        uses: actions/download-artifact@v4
+        with:
+          name: FactuPOS_Print-x64
+          path: installer
+
+      - name: Descargar .exe x86
+        uses: actions/download-artifact@v4
+        with:
+          name: FactuPOS_Print-x86
+          path: installer
+
+      - name: Descargar SumatraPDF (para modo DataReport, x64)
+        shell: pwsh
+        run: Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/SumatraPDF.exe" -OutFile "installer/SumatraPDF.exe"
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compilar instalador (Inno Setup)
+        shell: cmd
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\factupos-print.iss'
+
+      - name: Subir instalador (Setup.exe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: factupos-print-Setup
+          path: installer\Output\factupos-print-Setup-*.exe
+          if-no-files-found: error

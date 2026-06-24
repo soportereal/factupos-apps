@@ -103,7 +103,7 @@ except ImportError:
     HAS_TRAY = False
     log.warning("pystray/Pillow no disponible — sin bandeja del sistema")
 
-VERSION = "4.45"  # 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = "4.46"  # 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 # Fix ReportLab con Python/_hashlib viejo: algunas versiones de ReportLab llaman
 # hashlib.md5(data, usedforsecurity=False) para los IDs de objetos del PDF, pero
 # el openssl_md5 del build congelado no acepta ese keyword y rompe la generación
@@ -2776,8 +2776,9 @@ class MainWindow:
 
         self._update_counters()
 
-        # Auto-ocultar al iniciar
-        if self.config.get('autoHide', False) and HAS_TRAY:
+        # Auto-ocultar al iniciar (autostart del instalador pasa --hidden;
+        # abierto a mano desde el menú Inicio = ventana visible)
+        if (self.config.get('autoHide', False) or '--hidden' in sys.argv) and HAS_TRAY:
             self.root.after(200, self._hide_to_tray)
 
     def _build_ui(self):
@@ -2852,17 +2853,9 @@ class MainWindow:
         ttk.Button(btn_prn, text="− Quitar", command=self._remove_printer).pack(side='left')
         ttk.Button(btn_prn, text="Probar (cajón + corte)", command=self._test_printer).pack(side='left', padx=(8, 0))
 
-        # Auto-ocultar al iniciar
-        self.autohide_var = tk.BooleanVar(value=self.config.get('autoHide', False))
-        chk_hide = ttk.Checkbutton(btn_prn, text="Auto-ocultar",
-                                    variable=self.autohide_var, command=self._toggle_autohide)
-        chk_hide.pack(side='right', padx=(0, 10))
-
-        # Auto-inicio Windows
-        self.autostart_var = tk.BooleanVar(value=self._is_autostart_enabled())
-        chk_auto = ttk.Checkbutton(btn_prn, text="Iniciar con el sistema",
-                                    variable=self.autostart_var, command=self._toggle_autostart)
-        chk_auto.pack(side='right')
+        # NOTA: el auto-inicio (oculto en la bandeja) lo configura el INSTALADOR de
+        # Windows (Inno Setup: HKLM\...\Run con --hidden). Por eso ya no hay
+        # checkboxes "Auto-ocultar" / "Iniciar con el sistema" en la interfaz.
 
         # --- Counters ---
         counter_frame = ttk.Frame(self.root, padding=(10, 5))
@@ -3408,64 +3401,11 @@ class MainWindow:
             return sys.executable
         return os.path.abspath(sys.argv[0])
 
-    def _get_startup_shortcut_path(self):
-        """Ruta del archivo de auto-inicio según el SO."""
-        if IS_LINUX:
-            autostart_dir = os.path.join(os.path.expanduser('~'), '.config', 'autostart')
-            return os.path.join(autostart_dir, 'factupos-print.desktop')
-        startup = os.path.join(os.environ.get('APPDATA', ''),
-                               'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
-        return os.path.join(startup, 'FactuPOS Print.bat')
-
-    def _is_autostart_enabled(self):
-        """Verificar si el auto-inicio está habilitado."""
-        shortcut = self._get_startup_shortcut_path()
-        return os.path.exists(shortcut)
-
-    def _toggle_autohide(self):
-        """Activar/desactivar auto-ocultar al iniciar."""
-        self.config['autoHide'] = self.autohide_var.get()
-        save_config(self.config)
-        state = "activado" if self.autohide_var.get() else "desactivado"
-        self._append_log(f"Auto-ocultar {state}")
-
-    def _toggle_autostart(self):
-        """Activar/desactivar inicio con el sistema."""
-        shortcut = self._get_startup_shortcut_path()
-        if self.autostart_var.get():
-            exe_path = self._get_exe_path()
-            try:
-                startup_dir = os.path.dirname(shortcut)
-                os.makedirs(startup_dir, exist_ok=True)
-                if IS_LINUX:
-                    # Crear .desktop en ~/.config/autostart/
-                    with open(shortcut, 'w') as f:
-                        f.write('[Desktop Entry]\n')
-                        f.write('Type=Application\n')
-                        f.write('Name=FactuPOS Print\n')
-                        f.write('Exec=/usr/local/bin/factupos-print\n')
-                        f.write('Hidden=false\n')
-                        f.write('X-GNOME-Autostart-enabled=true\n')
-                else:
-                    # Windows: crear .bat en Startup
-                    if getattr(sys, 'frozen', False):
-                        cmd = f'start "" "{exe_path}"'
-                    else:
-                        cmd = f'start "" pythonw "{exe_path}"'
-                    with open(shortcut, 'w') as f:
-                        f.write(f'@echo off\n{cmd}\n')
-                self._append_log(f"Auto-inicio activado")
-            except Exception as e:
-                messagebox.showerror("Error", f"No se pudo activar auto-inicio:\n{e}")
-                self.autostart_var.set(False)
-        else:
-            try:
-                if os.path.exists(shortcut):
-                    os.remove(shortcut)
-                self._append_log("Auto-inicio desactivado")
-            except Exception as e:
-                messagebox.showerror("Error", f"No se pudo desactivar:\n{e}")
-                self.autostart_var.set(True)
+    # NOTA: el auto-inicio (oculto, con tray) lo configura el INSTALADOR de Windows
+    # (Inno Setup → HKLM\...\Run con --hidden) y, en Linux, el postinst del .deb
+    # (autostart per-user). Por eso se eliminaron los métodos _toggle_autostart /
+    # _toggle_autohide / _is_autostart_enabled / _get_startup_shortcut_path: la app
+    # ya no gestiona el auto-inicio desde su interfaz.
 
     def _reconnect_with_new_config(self):
         """Reconectar con la config actualizada (nuevas colas)."""
