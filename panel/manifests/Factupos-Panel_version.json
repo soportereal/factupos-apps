@@ -1,6 +1,6 @@
 {
-  "version": "1.5.3",
+  "version": "1.5.6",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-panel.py",
-  "deb": "https://soportereal.com/software/factupos-app/linux/factupos-panel_1.5.3_all.deb",
-  "notes": "Auto-reinicio del panel (keepalive: si se cae, vuelve solo). Submenus, buscador, Terminal, systray, boton Ventanas abiertas, barra de tareas propia, apagar/reiniciar (polkit)."
+  "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-Panel.deb",
+  "notes": "Menu Inicio: Documentos, Imagenes y Ayuda y soporte ahora arriba. Boton Verificar version + chequeo cada 6h."
 }

@@ -54,7 +54,7 @@ except Exception:
     HAVE_XLIB = False
 
 APP_ID = "com.soportereal.factupos.panel"
-VERSION = "1.5.5"                                # fuente única de versión
+VERSION = "1.5.6"                                # fuente única de versión
 ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
 START_ICON = os.path.join(ASSETS, "start-icon.png")
 CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
@@ -1994,6 +1994,17 @@ class Panel(Gtk.Window):
         # --- items normales del menú (se ocultan al buscar) ---
         items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         col.pack_start(items, True, True, 0)
+        # Accesos rápidos arriba: Documentos, Imágenes y Ayuda y soporte.
+        items.pack_start(self._mitem("Documentos", "folder-documents", lambda *_:
+            (self._close_start_menu(),
+             detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_DOCUMENTS) or home)))), False, False, 0)
+        items.pack_start(self._mitem("Imágenes", "folder-pictures", lambda *_:
+            (self._close_start_menu(),
+             detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_PICTURES) or home)))), False, False, 0)
+        items.pack_start(self._mitem("Ayuda y soporte", "help-browser", lambda *_:
+            (self._close_start_menu(),
+             detached_run("xdg-open https://soportereal.com"))), False, False, 0)
+        items.pack_start(self._msep(), False, False, 4)
         items.pack_start(self._mitem("Programas", "applications-other",
             lambda w: self._open_flyout(self._programs_menu, w), arrow=True), False, False, 0)
         items.pack_start(self._mitem("Utilidades", "applications-utilities",
@@ -2006,20 +2017,11 @@ class Panel(Gtk.Window):
         items.pack_start(self._mitem("Sistema", "applications-system",
             lambda w: self._open_flyout(self._system_menu, w), arrow=True), False, False, 0)
         items.pack_start(self._msep(), False, False, 4)
-        items.pack_start(self._mitem("Documentos", "folder-documents", lambda *_:
-            (self._close_start_menu(),
-             detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_DOCUMENTS) or home)))), False, False, 0)
-        items.pack_start(self._mitem("Imágenes", "folder-pictures", lambda *_:
-            (self._close_start_menu(),
-             detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_PICTURES) or home)))), False, False, 0)
         items.pack_start(self._mitem("Equipo", "computer",
             lambda *_: (self._close_start_menu(),
                         detached_run("factupos-dataequipo")
                         if cmd_available("factupos-dataequipo")
                         else self.open_equipo())), False, False, 0)
-        items.pack_start(self._mitem("Ayuda y soporte", "help-browser", lambda *_:
-            (self._close_start_menu(),
-             detached_run("xdg-open https://soportereal.com"))), False, False, 0)
         items.pack_start(self._mitem("Terminal", "utilities-terminal", lambda *_:
             (self._close_start_menu(), detached_run("x-terminal-emulator"))), False, False, 0)
         items.pack_start(self._msep(), False, False, 4)
