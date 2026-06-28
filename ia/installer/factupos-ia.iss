@@ -20,7 +20,12 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppId}
 DisableProgramGroupPage=yes
 OutputDir=Output
+; x64 (única arquitectura) -> nombre limpio Factupos-IA.exe; x86 conserva sufijo.
+#if ARCH == "x64"
+OutputBaseFilename=Factupos-IA
+#else
 OutputBaseFilename=Factupos-IA-{#ARCH}
+#endif
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin

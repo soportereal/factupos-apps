@@ -95,5 +95,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: factupos-ia-installers
-          path: ia\installer\Output\Factupos-IA-*.exe
+          path: ia\installer\Output\Factupos-IA*.exe
           if-no-files-found: error
