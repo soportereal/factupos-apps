@@ -1,6 +1,6 @@
 {
-  "version": "1.5.14",
+  "version": "1.5.15",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-panel.py",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-Panel.deb",
-  "notes": "Bandeja XEmbed: hints min=max para forzar tamano de iconos rebeldes (AnyDesk, indicador de teclado)."
+  "notes": "Bandeja XEmbed: iconos centrados (valign) y sin estirarse a lo alto de la barra (AnyDesk, teclado EN ya no llenan la altura)."
 }

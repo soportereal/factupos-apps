@@ -54,7 +54,7 @@ except Exception:
     HAVE_XLIB = False
 
 APP_ID = "com.soportereal.factupos.panel"
-VERSION = "1.5.14"                                # fuente única de versión
+VERSION = "1.5.15"                                # fuente única de versión
 ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
 START_ICON = os.path.join(ASSETS, "start-icon.png")
 CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
@@ -3077,9 +3077,15 @@ class Panel(Gtk.Window):
         if box is None:
             return False
         try:
-            icon = max(16, min(self.height - 6, 28))
+            icon = max(16, min(self.height - 6, 24))
             sock = Gtk.Socket()
             sock.set_size_request(icon, icon)
+            # NO estirar a la altura de la barra: centrar al tamaño del icono
+            # (si no, el plug -AnyDesk- se estira a lo alto del panel).
+            sock.set_valign(Gtk.Align.CENTER)
+            sock.set_halign(Gtk.Align.CENTER)
+            sock.set_vexpand(False)
+            sock.set_hexpand(False)
             box.pack_start(sock, False, False, 1)
             box.show_all()
 
