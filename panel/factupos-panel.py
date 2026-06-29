@@ -54,7 +54,7 @@ except Exception:
     HAVE_XLIB = False
 
 APP_ID = "com.soportereal.factupos.panel"
-VERSION = "1.5.10"                                # fuente única de versión
+VERSION = "1.5.11"                                # fuente única de versión
 ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
 START_ICON = os.path.join(ASSETS, "start-icon.png")
 CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
@@ -723,18 +723,19 @@ class Panel(Gtk.Window):
         if event.button == 3:
             menu = Gtk.Menu()
             menu.get_style_context().add_class("fp-flyout")
-            cfg = "nm-connection-editor" if cmd_available("nm-connection-editor") \
-                else ("cinnamon-settings network" if cmd_available("cinnamon-settings")
-                      else "nmtui")
             for label, cmd in (("Conectar", "nmcli networking on"),
                                ("Desconectar", "nmcli networking off"),
                                (None, None),
-                               ("Configurar…", cfg)):
+                               ("Configurar…", "__net_config__")):
                 if label is None:
                     menu.append(Gtk.SeparatorMenuItem())
                     continue
                 mi = Gtk.MenuItem(label=label)
-                mi.connect("activate", lambda _w, c=cmd: detached_run(c))
+                if cmd == "__net_config__":
+                    # abre la ventana propia de configuración de IP (la del clic izq.)
+                    mi.connect("activate", lambda _w: self.open_network())
+                else:
+                    mi.connect("activate", lambda _w, c=cmd: detached_run(c))
                 menu.append(mi)
             menu.show_all()
             menu.popup_at_widget(widget, Gdk.Gravity.NORTH, Gdk.Gravity.SOUTH, None)
@@ -2816,32 +2817,39 @@ class Panel(Gtk.Window):
             return False
         busname, path, img = it["busname"], it["path"], it["img"]
         px = None
+        name = theme_path = ""
         try:
-            theme_path = ""
-            try:
-                theme_path = self._sni_prop(busname, path, "IconThemePath") or ""
-            except Exception:
-                pass
-            name = ""
-            try:
-                name = self._sni_prop(busname, path, "IconName") or ""
-            except Exception:
-                pass
-            if name and theme_path:
-                for ext in (".png", ".svg", ""):
+            theme_path = self._sni_prop(busname, path, "IconThemePath") or ""
+        except Exception:
+            pass
+        try:
+            name = self._sni_prop(busname, path, "IconName") or ""
+        except Exception:
+            pass
+        try:
+            # 1) IconName como ruta absoluta a un archivo
+            if name and name.startswith("/") and os.path.exists(name):
+                px = GdkPixbuf.Pixbuf.new_from_file_at_size(name, 22, 22)
+            # 2) IconThemePath + IconName (lo que usa pystray/appindicator)
+            if px is None and name and theme_path:
+                for ext in (".png", ".svg", ".xpm", ""):
                     fp = os.path.join(theme_path, name + ext)
                     if os.path.exists(fp):
                         px = GdkPixbuf.Pixbuf.new_from_file_at_size(fp, 22, 22)
                         break
-            if px is None and name:
+            # 3) IconPixmap (datos crudos ARGB)
+            if px is None:
+                px = self._sni_pixmap(busname, path)
+            # 4) nombre de icono del tema
+            if px is None and name and not name.startswith("/"):
                 try:
                     px = Gtk.IconTheme.get_default().load_icon(name, 22, 0)
                 except Exception:
                     px = None
-            if px is None:
-                px = self._sni_pixmap(busname, path)
         except Exception as e:
-            sys.stderr.write("sni icon: %s\n" % e)
+            sys.stderr.write("sni icon err: %s\n" % e)
+        sys.stderr.write("sni icon: name=%r theme=%r -> %s\n"
+                         % (name, theme_path, "ok" if px is not None else "GENERICO"))
         if px is not None:
             img.set_from_pixbuf(px)
         else:
@@ -2881,21 +2889,30 @@ class Panel(Gtk.Window):
         if not it:
             return
         busname, path = it["busname"], it["path"]
-        if event.button == 1:
-            self._sni_invoke(busname, path, "Activate", int(event.x_root), int(event.y_root))
-        elif event.button == 2:
-            self._sni_invoke(busname, path, "SecondaryActivate", int(event.x_root), int(event.y_root))
-        elif event.button == 3:
-            menupath = ""
-            try:
-                menupath = self._sni_prop(busname, path, "Menu") or ""
-            except Exception:
-                pass
-            if menupath:
-                self._sni_show_dbusmenu(busname, menupath, widget)
-            else:
-                self._sni_invoke(busname, path, "ContextMenu",
-                                 int(event.x_root), int(event.y_root))
+        x, y = int(event.x_root), int(event.y_root)
+        if event.button == 2:
+            self._sni_invoke(busname, path, "SecondaryActivate", x, y)
+            return
+        is_menu = False
+        try:
+            is_menu = bool(self._sni_prop(busname, path, "ItemIsMenu"))
+        except Exception:
+            is_menu = False
+        # Clic izq. en apps que SÍ soportan Activate -> abrir la app directo.
+        if event.button == 1 and not is_menu:
+            self._sni_invoke(busname, path, "Activate", x, y)
+            return
+        # Menu-only (AppIndicator: Print/Bridge) o clic derecho -> mostrar su menu.
+        menupath = ""
+        try:
+            menupath = self._sni_prop(busname, path, "Menu") or ""
+        except Exception:
+            pass
+        if menupath:
+            self._sni_show_dbusmenu(busname, menupath, widget)
+        else:
+            self._sni_invoke(busname, path, "ContextMenu", x, y)
+        return
 
     def _sni_scroll(self, widget, event, service):
         it = self._sni_items.get(service)
@@ -3036,10 +3053,11 @@ class Panel(Gtk.Window):
                 # no completa y el icono queda 1x1 sin mapear.
                 try:
                     sock.add_id(xid)
-                    w = self._traydisp.create_resource_object("window", xid)
-                    w.configure(width=icon, height=icon)
-                    w.map()
-                    self._traydisp.sync()
+                    self._tray_force_size(xid, icon)
+                    # Algunas apps (AnyDesk) se RE-dimensionan grandes despues de
+                    # embeber -> re-forzar el tamaño varias veces.
+                    for delay in (120, 350, 800, 1600, 3000):
+                        GLib.timeout_add(delay, self._tray_force_size, xid, icon)
                 except Exception as e:
                     sys.stderr.write("tray embed (realize): %s\n" % e)
                 return False
@@ -3053,6 +3071,17 @@ class Panel(Gtk.Window):
         except Exception as e:
             sys.stderr.write("tray embed: %s\n" % e)
         return False
+
+    def _tray_force_size(self, xid, icon):
+        """Re-fuerza el tamaño del icono XEmbed (apps que se re-agrandan, AnyDesk)."""
+        try:
+            w = self._traydisp.create_resource_object("window", xid)
+            w.configure(width=icon, height=icon)
+            w.map()
+            self._traydisp.sync()
+        except Exception:
+            pass
+        return False   # no repetir el timeout
 
 
 def _wait_for_wm(timeout=25.0):

@@ -1,6 +1,6 @@
 {
-  "version": "1.5.10",
+  "version": "1.5.11",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-panel.py",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-Panel.deb",
-  "notes": "Bandeja: soporte StatusNotifier/AppIndicator (muestra iconos de Print/Bridge y otras apps). Icono de Red: clic derecho -> Conectar/Desconectar/Configurar."
+  "notes": "Bandeja StatusNotifier/AppIndicator (Print/Bridge con su icono real, clic = menu). AnyDesk XEmbed re-forzado a tamano chico. Red: clic der Conectar/Desconectar/Configurar (abre la ventana de IP propia)."
 }
