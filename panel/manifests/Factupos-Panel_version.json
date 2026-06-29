@@ -1,6 +1,6 @@
 {
-  "version": "1.5.17",
+  "version": "1.5.18",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-panel.py",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-Panel.deb",
-  "notes": "Ventana de Red: boton X (cerrar) en el encabezado."
+  "notes": "Volumen: barras VERTICALES (hacia arriba) + boton X + selector de tarjeta de salida (si hay mas de un dispositivo)."
 }

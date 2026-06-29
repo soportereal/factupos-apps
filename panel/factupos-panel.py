@@ -54,7 +54,7 @@ except Exception:
     HAVE_XLIB = False
 
 APP_ID = "com.soportereal.factupos.panel"
-VERSION = "1.5.17"                                # fuente única de versión
+VERSION = "1.5.18"                                # fuente única de versión
 ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
 START_ICON = os.path.join(ASSETS, "start-icon.png")
 CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
@@ -1605,9 +1605,41 @@ class Panel(Gtk.Window):
         box.set_border_width(12)
         win.add(box)
 
-        box.pack_start(self._vol_row("Salida (altavoces)", "sink"), False, False, 0)
-        box.pack_start(Gtk.Separator(), False, False, 4)
-        box.pack_start(self._vol_row("Micrófono (entrada)", "source"), False, False, 0)
+        hdr = Gtk.Box(spacing=8)
+        ht = Gtk.Label()
+        ht.set_markup("<b>Volumen</b>")
+        ht.set_xalign(0)
+        hdr.pack_start(ht, True, True, 0)
+        closeb = Gtk.Button(label="✕")
+        closeb.set_relief(Gtk.ReliefStyle.NONE)
+        closeb.set_tooltip_text("Cerrar")
+        closeb.connect("clicked", lambda *_: self._close_vol_win())
+        hdr.pack_end(closeb, False, False, 0)
+        box.pack_start(hdr, False, False, 0)
+        box.pack_start(Gtk.Separator(), False, False, 2)
+
+        cols = Gtk.Box(spacing=18)
+        cols.set_halign(Gtk.Align.CENTER)
+        cols.pack_start(self._vol_col("Salida", "sink"), False, False, 0)
+        cols.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 0)
+        cols.pack_start(self._vol_col("Micrófono", "source"), False, False, 0)
+        box.pack_start(cols, True, True, 0)
+
+        # Selector de tarjeta de salida (solo si hay mas de un dispositivo).
+        sinks = self._pa_sinks()
+        if len(sinks) > 1:
+            box.pack_start(Gtk.Separator(), False, False, 2)
+            box.pack_start(self._section_label("Tarjeta de salida"), False, False, 0)
+            combo = Gtk.ComboBoxText()
+            cur = self._pa_default_sink()
+            active = 0
+            for i, (nm, desc) in enumerate(sinks):
+                combo.append(nm, desc)
+                if nm == cur:
+                    active = i
+            combo.set_active(active)
+            combo.connect("changed", self._on_sink_changed)
+            box.pack_start(combo, False, False, 0)
 
         cfg = Gtk.Button(label="Configuración de sonido")
         cfg.connect("clicked", lambda *_: (self._close_vol_win(),
@@ -1631,30 +1663,76 @@ class Panel(Gtk.Window):
         win.connect("destroy", lambda *_: setattr(self, "_volwin", None))
         GLib.idle_add(self._grab_vol_win, win)
 
-    def _vol_row(self, titulo, kind):
+    def _vol_col(self, titulo, kind):
+        """Columna de volumen VERTICAL (barra hacia arriba) + icono mute abajo."""
         pct, muted = self._pa_get(kind)
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        outer.pack_start(self._section_label(titulo), False, False, 0)
-        row = Gtk.Box(spacing=8)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        col.set_halign(Gtk.Align.CENTER)
+        col.pack_start(self._section_label(titulo), False, False, 0)
+        sc = Gtk.Scale.new_with_range(Gtk.Orientation.VERTICAL, 0, 100, 1)
+        sc.set_inverted(True)        # arriba = mas volumen
+        sc.set_value(pct)
+        sc.set_vexpand(True)
+        sc.set_size_request(-1, 170)
+        sc.set_draw_value(True)
+        sc.set_value_pos(Gtk.PositionType.BOTTOM)
+        sc.connect("value-changed", lambda s: self._pa_set(kind, int(s.get_value())))
+        col.pack_start(sc, True, True, 0)
         mb = Gtk.Button()
         mb.set_relief(Gtk.ReliefStyle.NONE)
         mimg = Gtk.Image.new_from_icon_name(self._vol_icon(pct, muted), Gtk.IconSize.LARGE_TOOLBAR)
         mb.add(mimg)
-        sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        sc.set_value(pct)
-        sc.set_hexpand(True)
-        sc.set_size_request(220, -1)
-        sc.set_draw_value(True)
-        sc.set_value_pos(Gtk.PositionType.RIGHT)
-        sc.connect("value-changed", lambda s: self._pa_set(kind, int(s.get_value())))
+        mb.set_tooltip_text("Silenciar / activar")
         mb.connect("clicked", lambda *_: (self._pa_mute(kind),
                    mimg.set_from_icon_name(self._vol_icon(int(sc.get_value()),
                                            self._pa_get(kind)[1]), Gtk.IconSize.LARGE_TOOLBAR),
                    self._update_vol()))
-        row.pack_start(mb, False, False, 0)
-        row.pack_start(sc, True, True, 0)
-        outer.pack_start(row, False, False, 0)
-        return outer
+        col.pack_start(mb, False, False, 0)
+        return col
+
+    def _pa_sinks(self):
+        """Lista [(name, descripcion)] de las salidas de sonido."""
+        sinks = []
+        try:
+            out = subprocess.run(["pactl", "list", "sinks"],
+                                 capture_output=True, text=True, timeout=4).stdout
+            name = None
+            for ln in out.splitlines():
+                s = ln.strip()
+                if s.startswith("Name:"):
+                    name = s.split(":", 1)[1].strip()
+                elif s.startswith("Description:") and name:
+                    sinks.append((name, s.split(":", 1)[1].strip() or name))
+                    name = None
+        except Exception:
+            pass
+        return sinks
+
+    def _pa_default_sink(self):
+        try:
+            return subprocess.run(["pactl", "get-default-sink"],
+                                  capture_output=True, text=True, timeout=3).stdout.strip()
+        except Exception:
+            return ""
+
+    def _on_sink_changed(self, combo):
+        name = combo.get_active_id()
+        if not name:
+            return
+        try:
+            subprocess.run(["pactl", "set-default-sink", name],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            # mover los streams que estan sonando al nuevo dispositivo
+            out = subprocess.run(["pactl", "list", "short", "sink-inputs"],
+                                 capture_output=True, text=True, timeout=3).stdout
+            for ln in out.splitlines():
+                sid = ln.split("\t")[0].strip() if ln.strip() else ""
+                if sid:
+                    subprocess.run(["pactl", "move-sink-input", sid, name],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+        except Exception:
+            pass
+        self._update_vol()
 
     def _grab_vol_win(self, win):
         gw = win.get_window()
