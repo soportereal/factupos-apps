@@ -16,7 +16,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango  # noqa: E402
 
-VERSION = "1.0.2"                                 # fuente única de versión
+VERSION = "1.0.3"                                 # fuente única de versión
 OS_VERSION_FILE = "/etc/factupos-os-version"
 
 # Auto-actualización (mismo esquema que factupos-panel).
@@ -319,7 +319,29 @@ class DataEquipo(Gtk.Window):
             sc, box = self._page()
             self.nb.append_page(sc, Gtk.Label(label="%s  %s" % (icon, name)))
             self._pages[name] = box
-        self._refresh_all()
+        # Abrir la ventana YA y llenar la info despues (juntar discos/red/hardware
+        # tarda; no bloquear el arranque).
+        lbl = Gtk.Label(label="Cargando información…")
+        lbl.get_style_context().add_class("fp-key")
+        self._pages["Resumen"].pack_start(lbl, False, False, 14)
+        GLib.timeout_add(80, self._first_fill)
+
+    def _first_fill(self):
+        self._live = {}
+        self._fill_resumen()        # lo mas rapido primero
+        self.show_all()
+        GLib.timeout_add(30, self._rest_fill)
+        return False
+
+    def _rest_fill(self):
+        self._fill_hardware()
+        self._fill_discos()
+        self._fill_red()
+        self._fill_impresoras()
+        self._fill_factupos()
+        self._fill_soporte()
+        self.show_all()
+        return False
 
     def _clear(self, box):
         for c in box.get_children():

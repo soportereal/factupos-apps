@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-DataEquipo.deb",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-dataequipo.py",
-  "notes": "Tema CLARO con acentos navy (blanco + azul marino), moderno y flat, letra grande, buen contraste."
+  "notes": "Abre la ventana al instante y carga la info despues (Resumen primero, resto en segundo plano)."
 }
