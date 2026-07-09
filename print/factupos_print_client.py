@@ -78,6 +78,9 @@ LINUX_VERSION_URLS = [
 ]
 # Cada cuántos segundos revisa la versión el chequeo periódico (Linux). 600 = 10 min.
 UPDATE_CHECK_INTERVAL = 600
+# El servidor de colas expone una API HTTP en el puerto del WS + 1 (9300 → 9301).
+# Se usa para vaciar la cola del servidor (POST /job-delete).
+HTTP_API_PORT = 9301
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -132,7 +135,7 @@ except ImportError:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.54" if IS_LINUX else "4.51")  # 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.56" if IS_LINUX else "4.52")  # 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -2130,6 +2133,105 @@ def _print_spooler_linux(printer_name, text, font_name="Monospace", font_size=10
         return False, f"Error: {e}"
 
 # ---------------------------------------------------------------------------
+# Limpiar cola de impresión
+# ---------------------------------------------------------------------------
+# Hay DOS colas distintas y hay que vaciar las dos:
+#   1. La del SPOOLER del equipo (CUPS en Linux / spooler de Windows): trabajos ya
+#      entregados a la impresora que quedaron pegados.
+#   2. La del SERVIDOR (SQLite print_jobs en la .17): trabajos 'queued' que todavía
+#      no se entregaron a esta terminal y que se re-enviarían al reconectar.
+# Vaciar solo la (1) no sirve: el server vuelve a mandar los pendientes en el
+# próximo `register` (ver flushPendingJobs). Vaciar solo la (2) tampoco: lo que ya
+# está en el spooler local sigue saliendo por la impresora.
+
+def purge_spooler_queue(printer_name):
+    """Cancelar los trabajos pendientes en el spooler del SO para una impresora.
+
+    Devuelve (ok, cancelados, mensaje). Las impresoras por puerto virtual
+    (/dev/usb*, COM*) NO pasan por el spooler → no hay nada que cancelar.
+    """
+    if not printer_name:
+        return False, 0, "La impresora no tiene nombre de spooler"
+
+    if IS_WINDOWS:
+        try:
+            hPrinter = win32print.OpenPrinter(
+                printer_name, {"DesiredAccess": win32print.PRINTER_ALL_ACCESS})
+        except Exception as e:
+            return False, 0, f"No se pudo abrir '{printer_name}': {e}"
+        try:
+            jobs = win32print.EnumJobs(hPrinter, 0, -1, 1)
+            cancelados = 0
+            for job in jobs:
+                try:
+                    win32print.SetJob(hPrinter, job['JobId'], 0, None,
+                                      win32print.JOB_CONTROL_DELETE)
+                    cancelados += 1
+                except Exception:
+                    pass  # job ya terminó entre el Enum y el SetJob
+            return True, cancelados, f"{cancelados} trabajo(s) cancelado(s)"
+        except Exception as e:
+            return False, 0, f"Error al cancelar: {e}"
+        finally:
+            win32print.ClosePrinter(hPrinter)
+
+    # Linux / CUPS: contar primero (cancel no reporta cuántos borró)
+    try:
+        r = subprocess.run(['lpstat', '-o', printer_name],
+                           capture_output=True, text=True, timeout=10)
+        pendientes = len([l for l in r.stdout.splitlines() if l.strip()])
+    except Exception:
+        pendientes = 0
+    try:
+        r = subprocess.run(['cancel', '-a', printer_name],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return False, 0, f"Error cancel: {(r.stderr or '').strip()}"
+        return True, pendientes, f"{pendientes} trabajo(s) cancelado(s)"
+    except FileNotFoundError:
+        return False, 0, "CUPS no instalado (falta el comando `cancel`)"
+    except Exception as e:
+        return False, 0, f"Error al cancelar: {e}"
+
+
+def _http_base_from_ws(ws_url):
+    """ws://host:9300 → http://host:9301. Toma SOLO el host del WS; el puerto es
+    siempre HTTP_API_PORT (el del WS se descarta)."""
+    try:
+        sin_esquema = ws_url.split('://', 1)[-1]
+        host = sin_esquema.split('/', 1)[0].split(':', 1)[0]
+        return f"http://{host}:{HTTP_API_PORT}"
+    except Exception:
+        return None
+
+
+def purge_server_queue(ws_url, empresa, queue_code):
+    """Borrar del servidor los jobs 'queued' de UNA cola de esta empresa.
+
+    Pega a `POST /job-delete` con {empresa, queue}. Devuelve (ok, borrados, msg).
+    """
+    base = _http_base_from_ws(ws_url)
+    if not base:
+        return False, 0, f"URL de servidor inválida: {ws_url}"
+    if not empresa:
+        return False, 0, "La impresora no tiene empresa asignada"
+
+    payload = json.dumps({'empresa': empresa, 'queue': queue_code}).encode('utf-8')
+    req = urllib.request.Request(
+        f"{base}/job-delete", data=payload, method='POST',
+        headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        return False, 0, f"No se pudo contactar al servidor: {e}"
+
+    if not data.get('ok'):
+        return False, 0, data.get('error', 'error desconocido')
+    borrados = int(data.get('deleted', 0))
+    return True, borrados, f"{borrados} job(s) borrado(s)"
+
+# ---------------------------------------------------------------------------
 # WebSocket Client
 # ---------------------------------------------------------------------------
 class PrintQueueClient:
@@ -3098,6 +3200,7 @@ class MainWindow:
         ttk.Button(btn_prn, text="Editar", command=self._edit_printer).pack(side='left', padx=(0, 5))
         ttk.Button(btn_prn, text="− Quitar", command=self._remove_printer).pack(side='left')
         ttk.Button(btn_prn, text="Probar (cajón + corte)", command=self._test_printer).pack(side='left', padx=(8, 0))
+        ttk.Button(btn_prn, text="Limpiar cola", command=self._purge_printer).pack(side='left', padx=(8, 0))
 
         # NOTA: el auto-inicio (oculto en la bandeja) lo configura el INSTALADOR de
         # Windows (Inno Setup: HKLM\...\Run con --hidden). Por eso ya no hay
@@ -3435,6 +3538,57 @@ class MainWindow:
                                 "Debe abrirse el cajón y cortarse el papel.")
         else:
             messagebox.showerror("Probar impresora", f"No se pudo enviar la prueba:\n{msg}")
+
+    def _purge_printer(self):
+        """Vaciar la cola de la impresora seleccionada: spooler del equipo + servidor."""
+        sel = self.tree.focus()
+        if not sel:
+            messagebox.showwarning("Aviso", "Seleccione una impresora para limpiar la cola.")
+            return
+
+        vals = self.tree.item(sel, 'values')
+        queue_code = vals[0]
+        empresa = vals[1]
+        printer_name = vals[2]
+
+        printer_config = None
+        for p in self.config.get('printers', []):
+            if (p.get('empresa', '') == empresa and p.get('queueCode', '') == queue_code
+                    and p.get('windowsPrinter', p.get('printer', '')) == printer_name):
+                printer_config = p
+                break
+        if printer_config is None:
+            printer_config = {'windowsPrinter': printer_name}
+
+        if not messagebox.askyesno(
+                "Limpiar cola",
+                f"Se van a CANCELAR los trabajos pendientes de:\n\n"
+                f"Impresora: {printer_name}\n"
+                f"Cola: {queue_code}   Empresa: {empresa}\n\n"
+                "Se limpia la cola del equipo (spooler) y la del servidor.\n"
+                "Los documentos NO impresos se pierden.\n\n¿Continuar?"):
+            return
+
+        lineas = []
+
+        # 1. Spooler del equipo (los de puerto virtual no pasan por el spooler)
+        virtual_port = printer_config.get('virtualPort', '').strip()
+        if virtual_port:
+            lineas.append(f"Equipo: sin cola (puerto directo {virtual_port})")
+        else:
+            win_printer = printer_config.get('windowsPrinter', printer_config.get('printer', ''))
+            ok, _n, detalle = purge_spooler_queue(win_printer)
+            lineas.append(f"Equipo: {detalle}" if ok else f"Equipo: FALLÓ — {detalle}")
+            self._append_log(f"{'' if ok else 'ERROR '}Limpiar cola "
+                             f"[{printer_name}] spooler: {detalle}")
+
+        # 2. Cola del servidor (jobs 'queued' que se re-enviarían al reconectar)
+        ok, _n, detalle = purge_server_queue(self.client.current_server, empresa, queue_code)
+        lineas.append(f"Servidor: {detalle}" if ok else f"Servidor: FALLÓ — {detalle}")
+        self._append_log(f"{'' if ok else 'ERROR '}Limpiar cola "
+                         f"[{queue_code}/{empresa}] servidor: {detalle}")
+
+        messagebox.showinfo("Limpiar cola", "\n".join(lineas))
 
     def _remove_printer(self):
         """Quitar la impresora seleccionada."""
