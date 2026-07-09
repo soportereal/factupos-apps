@@ -2607,6 +2607,12 @@ del "%~f0"
             self._update_checked = False
         elif latest and latest != VERSION:
             self._log(f"Archivo Linux reporta v{latest}; el cliente ya está en v{VERSION}; no se actualiza.")
+        elif latest:
+            # Mismo número → al día. SIN este log el botón "Buscar actualización"
+            # imprimía "Buscando actualización…" y después nada: parecía colgado.
+            self._log(f"Ya tiene la última versión (v{VERSION}).")
+        else:
+            self._log("Check update Linux: el archivo de versión no trae campo 'version'")
 
     def _auto_update_linux(self, new_version):
         """Linux: bajar el .py nuevo, reemplazarlo en sitio y re-lanzar el proceso.
