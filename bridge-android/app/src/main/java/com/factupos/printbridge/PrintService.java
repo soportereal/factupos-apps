@@ -41,10 +41,13 @@ import fi.iki.elonen.NanoHTTPD;
  *   GET  /ping             -> {"ok":true,"printer":"...","activePrinter":{...}}
  *   POST /print            -> {"text":"..."} -> {"ok":true,"message":"Impreso"}
  *   GET  /status           -> {"ok":true,"connected":true,"paper":true}
- *   GET  /printers         -> Lista impresoras disponibles (SUNMI + BT pareadas)
- *   POST /printer/select   -> {"type":"bluetooth","address":"AA:BB:CC:DD"} seleccionar activa
+ *   GET  /printers         -> Lista impresoras disponibles (SUNMI + BT + USB + Serial)
+ *   POST /printer/select   -> {"type":"bluetooth|usb|serial","address":"...","baud":9600} seleccionar activa
  *   GET  /printer/active   -> Impresora activa actual
- *   GET  /debug            -> Info debug del dispositivo
+ *   GET/POST /printer/protocol -> protocolo (auto|escpos|cpcl|zpl) por device
+ *   GET/POST /printer/baud -> baudrate serial por device
+ *   POST /usb/permission   -> {"address":"vvvv:pppp"} pide permiso USB (usb/serial-usb)
+ *   GET  /debug            -> Info debug del dispositivo (incluye usbDevices/serialDevices con VID:PID)
  */
 public class PrintService extends Service {
 
@@ -285,6 +288,14 @@ public class PrintService extends Service {
                             ? handleProtocolSet(session)
                             : handleProtocolGet(session);
                         break;
+                    case "/printer/baud":
+                        response = (Method.POST.equals(method))
+                            ? handleBaudSet(session)
+                            : handleBaudGet(session);
+                        break;
+                    case "/usb/permission":
+                        response = handleUsbPermission(session);
+                        break;
                     case "/log":
                         response = newFixedLengthResponse(Response.Status.OK,
                             "text/plain; charset=utf-8", logRender());
@@ -505,6 +516,7 @@ public class PrintService extends Service {
             JSONObject body = new JSONObject(bodyStr);
             String type = body.optString("type", "");
             String address = body.optString("address", "");
+            int baud = body.optInt("baud", 0);
 
             if (type.isEmpty()) {
                 JSONObject err = new JSONObject();
@@ -517,15 +529,21 @@ public class PrintService extends Service {
                 );
             }
 
-            if ("bluetooth".equals(type) && address.isEmpty()) {
+            // sunmi no necesita address; el resto (bluetooth/usb/serial) sí
+            if (!"sunmi".equals(type) && address.isEmpty()) {
                 JSONObject err = new JSONObject();
                 err.put("ok", false);
-                err.put("error", "Campo 'address' requerido para tipo bluetooth");
+                err.put("error", "Campo 'address' requerido para tipo " + type);
                 return newFixedLengthResponse(
                         Response.Status.BAD_REQUEST,
                         "application/json",
                         err.toString()
                 );
+            }
+
+            // Baudrate opcional para serial
+            if ("serial".equals(type) && baud > 0) {
+                printerManager.setBaud(address, baud);
             }
 
             printerManager.setActive(type, address);
@@ -594,6 +612,75 @@ public class PrintService extends Service {
         }
 
         /**
+         * GET /printer/baud?address=... - Baudrate serial configurado.
+         */
+        private Response handleBaudGet(IHTTPSession session) throws Exception {
+            Map<String, java.util.List<String>> qs = session.getParameters();
+            String addr = qs.containsKey("address") && !qs.get("address").isEmpty()
+                ? qs.get("address").get(0) : printerManager.getActiveAddress();
+            JSONObject json = new JSONObject();
+            json.put("ok", true);
+            json.put("address", addr);
+            json.put("baud", printerManager.getBaud(addr));
+            return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString());
+        }
+
+        /**
+         * POST /printer/baud  body: {"address":"...","baud":9600}
+         */
+        private Response handleBaudSet(IHTTPSession session) throws Exception {
+            Map<String, String> bodyMap = new HashMap<>();
+            session.parseBody(bodyMap);
+            String bodyStr = bodyMap.get("postData");
+            if (bodyStr == null || bodyStr.isEmpty()) {
+                JSONObject err = new JSONObject();
+                err.put("ok", false); err.put("error", "Body vacio");
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", err.toString());
+            }
+            JSONObject body = new JSONObject(bodyStr);
+            String addr = body.optString("address", printerManager.getActiveAddress());
+            int baud = body.optInt("baud", 0);
+            if (baud <= 0) {
+                JSONObject err = new JSONObject();
+                err.put("ok", false); err.put("error", "baud inválido: " + baud);
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", err.toString());
+            }
+            printerManager.setBaud(addr, baud);
+            JSONObject json = new JSONObject();
+            json.put("ok", true); json.put("address", addr); json.put("baud", baud);
+            return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString());
+        }
+
+        /**
+         * POST /usb/permission  body: {"address":"vvvv:pppp"}
+         * Dispara el diálogo del sistema para conceder permiso al device USB
+         * (sirve tanto para transporte usb como serial-usb).
+         */
+        private Response handleUsbPermission(IHTTPSession session) throws Exception {
+            Map<String, String> bodyMap = new HashMap<>();
+            session.parseBody(bodyMap);
+            String bodyStr = bodyMap.get("postData");
+            String addr = "";
+            if (bodyStr != null && !bodyStr.isEmpty()) {
+                addr = new JSONObject(bodyStr).optString("address", "");
+            }
+            if (addr.isEmpty()) addr = printerManager.getActiveAddress();
+            if (addr.isEmpty()) {
+                JSONObject err = new JSONObject();
+                err.put("ok", false); err.put("error", "Campo 'address' requerido");
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", err.toString());
+            }
+            printerManager.getUsbPrinter().requestPermission(addr);
+            printerManager.getSerialPrinter().requestPermission(addr);
+            JSONObject json = new JSONObject();
+            json.put("ok", true);
+            json.put("address", addr);
+            json.put("granted", printerManager.getUsbPrinter().hasPermission(addr));
+            json.put("message", "Solicitud de permiso enviada");
+            return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString());
+        }
+
+        /**
          * GET /printer/active - Impresora activa actual
          */
         private Response handlePrinterActive() throws Exception {
@@ -653,6 +740,11 @@ public class PrintService extends Service {
             // BT info
             json.put("bluetoothAvailable", printerManager.getBluetoothPrinter().isAvailable());
             json.put("pairedDevices", printerManager.getBluetoothPrinter().getPairedDevices());
+
+            // USB + Serial (VID:PID reales para configurar el device_filter/auto-grant)
+            json.put("usbAvailable", printerManager.getUsbPrinter().isAvailable());
+            json.put("usbDevices", printerManager.getUsbPrinter().getDevices());
+            json.put("serialDevices", printerManager.getSerialPrinter().getDevices());
 
             return newFixedLengthResponse(
                     Response.Status.OK,

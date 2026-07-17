@@ -1,6 +1,6 @@
 {
-    "version": "3.7.20",
-    "versionCode": 48,
-    "released": "2026-05-13",
-    "notes": "v3.7.20: Fix MZ220 sale en blanco. El PAGE-WIDTH 576 hardcoded era valido solo para MZ320 (72mm). El MZ220 (58mm) tiene 384 dots maximos y al recibir 576 rechaza el documento CPCL entero. Ahora el bridge DETECTA el modelo por nombre y elige el PAGE-WIDTH correcto: MZ220/iMZ220/ZQ2 -> 384, MZ320/iMZ320/ZQ3/MZ4/ZQ5/ZQ6 -> 576, otros -> sin PAGE-WIDTH (firmware default). v3.7.19: sin setvars, CPCL puro funcionando."
+    "version": "3.8.0",
+    "versionCode": 49,
+    "released": "2026-07-17",
+    "notes": "v3.8.0: Bridge multi-transporte configurable, ya NO exclusivo de Sunmi. Sirve para cualquier tablet/POS Android. NUEVO: impresion por USB (host, endpoint BULK OUT) y por Serial (USB-Serial FTDI/CH34x/CP210x/PL2303/CDC via lib mik3y + puerto nativo /dev/ttyS). Baudrate serial configurable (default 9600 8N1). Selector de protocolo (auto/escpos/cpcl/zpl) por impresora en cualquier transporte. UI de configuracion rediseñada con lista unificada BT/USB/Serial/Sunmi, chips de transporte, boton Permitir (permiso USB persistente) y Refrescar. Endpoints nuevos: /printer/baud, /usb/permission; /debug ahora reporta usbDevices/serialDevices con VID:PID. Auto-grant USB via intent-filter USB_DEVICE_ATTACHED + device_filter."
 }

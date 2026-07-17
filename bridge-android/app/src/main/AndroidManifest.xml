@@ -23,6 +23,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- USB host (impresoras USB / adaptadores USB-serial). No obligatorio:
+         equipos sin USB host igual usan Bluetooth/Sunmi. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
     <!-- Declarar paquetes SUNMI para poder hacer bindService en Android 12+ -->
     <queries>
         <package android:name="com.sunmi.sunmilopenservice" />
@@ -51,6 +55,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Al conectar un USB que matchee el filtro, el sistema ofrece abrir
+                 la app y (con "usar siempre") concede permiso persistente. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
         </activity>
 
         <!-- Foreground Service -->

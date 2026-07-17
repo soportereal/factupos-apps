@@ -10,8 +10,8 @@ android {
         applicationId "com.factupos.printbridge"
         minSdk 21
         targetSdk 34
-        versionCode 48
-        versionName "3.7.20"
+        versionCode 49
+        versionName "3.8.0"
 
         // Fecha de compilación inyectada en BuildConfig
         buildConfigField "String", "BUILD_DATE", "\"${new Date().format('yyyy-MM-dd HH:mm')}\""
@@ -47,4 +47,7 @@ dependencies {
 
     // NanoHTTPD - servidor HTTP embebido ligero (~50KB)
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    // usb-serial-for-android (mik3y) - drivers FTDI/CH34x/CP210x/PL2303/CDC-ACM
+    implementation 'com.github.mik3y:usb-serial-for-android:3.10.0'
 }

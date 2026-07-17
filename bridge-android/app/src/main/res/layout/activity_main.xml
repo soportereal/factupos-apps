@@ -2,78 +2,129 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#f8fafc">
+    android:background="#eef2f7"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp"
-        android:gravity="center_horizontal">
+        android:padding="16dp">
 
-        <!-- Logo / Titulo -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="FactuPOS Print"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="#1e293b"
-            android:layout_marginTop="16dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Puente de impresion multi-destino"
-            android:textSize="14sp"
-            android:textColor="#64748b"
-            android:layout_marginTop="4dp" />
-
-        <!-- Card Estado -->
+        <!-- ═══════ Header ═══════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/card_bg"
-            android:padding="20dp"
-            android:layout_marginTop="24dp">
+            android:background="@drawable/header_bg"
+            android:padding="22dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="FactuPOS Print Bridge"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textColor="#ffffff" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Puente de impresión · Bluetooth · USB · Serial"
+                        android:textSize="12sp"
+                        android:textColor="#94a3b8"
+                        android:layout_marginTop="3dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txtVersion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="-"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:textColor="#c7d2fe"
+                    android:background="@drawable/btn_soft"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="5dp"
+                    android:paddingBottom="5dp" />
+            </LinearLayout>
+
+            <!-- Mini-stats: Estado · Impresora · Puerto -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="18dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ESTADO"
+                        android:textSize="10sp"
+                        android:textColor="#64748b"
+                        android:textAllCaps="true" />
+                    <TextView
+                        android:id="@+id/txtEstado"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Detenido"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#ef4444"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SERVIDOR"
+                        android:textSize="10sp"
+                        android:textColor="#64748b"
+                        android:textAllCaps="true" />
+                    <TextView
+                        android:id="@+id/txtPuerto"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-"
+                        android:textSize="14sp"
+                        android:textColor="#e2e8f0"
+                        android:fontFamily="monospace"
+                        android:layout_marginTop="4dp" />
+                </LinearLayout>
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Estado del servicio"
-                android:textSize="12sp"
-                android:textColor="#94a3b8"
-                android:textAllCaps="true" />
-
-            <TextView
-                android:id="@+id/txtEstado"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Detenido"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:textColor="#ef4444"
-                android:layout_marginTop="4dp" />
-        </LinearLayout>
-
-        <!-- Card Impresora Activa -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_bg"
-            android:padding="20dp"
-            android:layout_marginTop="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Impresora activa"
-                android:textSize="12sp"
-                android:textColor="#94a3b8"
-                android:textAllCaps="true" />
-
+                android:text="IMPRESORA ACTIVA"
+                android:textSize="10sp"
+                android:textColor="#64748b"
+                android:textAllCaps="true"
+                android:layout_marginTop="14dp" />
             <TextView
                 android:id="@+id/txtImpresora"
                 android:layout_width="wrap_content"
@@ -81,123 +132,114 @@
                 android:text="-"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="#1e293b"
-                android:layout_marginTop="4dp" />
+                android:textColor="#ffffff"
+                android:layout_marginTop="2dp" />
         </LinearLayout>
 
-        <!-- Card Puerto -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_bg"
-            android:padding="20dp"
-            android:layout_marginTop="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Servidor HTTP"
-                android:textSize="12sp"
-                android:textColor="#94a3b8"
-                android:textAllCaps="true" />
-
-            <TextView
-                android:id="@+id/txtPuerto"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="-"
-                android:textSize="16sp"
-                android:textColor="#1e293b"
-                android:fontFamily="monospace"
-                android:layout_marginTop="4dp" />
-        </LinearLayout>
-
-        <!-- Card Selector de Impresoras -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_bg"
-            android:padding="20dp"
-            android:layout_marginTop="12dp">
-
-            <TextView
-                android:id="@+id/txtPrinterLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Impresoras disponibles"
-                android:textSize="12sp"
-                android:textColor="#94a3b8"
-                android:textAllCaps="true" />
-
-            <RadioGroup
-                android:id="@+id/radioGroupPrinters"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="vertical" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Mantén presionada una impresora BT para cambiar su protocolo (Auto / ESC-POS / CPCL / ZPL)."
-                android:textSize="11sp"
-                android:textColor="#64748b"
-                android:fontFamily="sans-serif"
-                android:textStyle="italic"
-                android:layout_marginTop="10dp"
-                android:lineSpacingMultiplier="1.3" />
-        </LinearLayout>
-
-        <!-- Botones -->
+        <!-- ═══════ Botones de control ═══════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="14dp"
             android:gravity="center">
 
             <Button
                 android:id="@+id/btnIniciar"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="Iniciar"
                 android:textColor="#ffffff"
                 android:backgroundTint="#22c55e"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="5dp" />
 
             <Button
                 android:id="@+id/btnDetener"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="Detener"
                 android:textColor="#ffffff"
                 android:backgroundTint="#ef4444"
-                android:layout_marginStart="3dp"
-                android:layout_marginEnd="3dp" />
+                android:layout_marginStart="5dp"
+                android:layout_marginEnd="5dp" />
 
             <Button
                 android:id="@+id/btnPrueba"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="Prueba"
                 android:textColor="#ffffff"
                 android:backgroundTint="#3b82f6"
-                android:layout_marginStart="6dp" />
+                android:layout_marginStart="5dp" />
         </LinearLayout>
 
-        <!-- Card Log de Prints -->
+        <!-- ═══════ Card Selector de Impresoras ═══════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="18dp"
+            android:layout_marginTop="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtPrinterLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Impresoras disponibles"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#334155" />
+
+                <Button
+                    android:id="@+id/btnRefrescar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:text="Refrescar"
+                    android:textSize="11sp"
+                    android:textColor="#3730a3"
+                    android:background="@drawable/btn_soft"
+                    android:minWidth="0dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp" />
+            </LinearLayout>
+
+            <RadioGroup
+                android:id="@+id/radioGroupPrinters"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Elegí el transporte y protocolo por impresora. USB/Serial requieren tocar «Permitir» la primera vez. En serial podés ajustar el baudrate."
+                android:textSize="11sp"
+                android:textColor="#64748b"
+                android:textStyle="italic"
+                android:layout_marginTop="12dp"
+                android:lineSpacingMultiplier="1.3" />
+        </LinearLayout>
+
+        <!-- ═══════ Card Log de Prints ═══════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@drawable/card_bg"
             android:padding="14dp"
-            android:layout_marginTop="16dp">
+            android:layout_marginTop="14dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -210,9 +252,9 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="Log de impresión"
-                    android:textSize="12sp"
-                    android:textColor="#94a3b8"
-                    android:textAllCaps="true" />
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#334155" />
 
                 <Button
                     android:id="@+id/btnLimpiarLog"
@@ -230,10 +272,10 @@
             <ScrollView
                 android:id="@+id/scrollLog"
                 android:layout_width="match_parent"
-                android:layout_height="280dp"
-                android:layout_marginTop="8dp"
+                android:layout_height="260dp"
+                android:layout_marginTop="10dp"
                 android:background="#0f172a"
-                android:padding="8dp">
+                android:padding="10dp">
 
                 <TextView
                     android:id="@+id/txtPrintLog"
@@ -247,29 +289,17 @@
             </ScrollView>
         </LinearLayout>
 
-        <!-- Instrucciones -->
+        <!-- Nota final -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Esta app corre un servidor HTTP en localhost:8765 que permite a Chrome enviar tiquetes a la impresora seleccionada (SUNMI interna o Bluetooth pareada)."
-            android:textSize="12sp"
+            android:text="Servidor HTTP local en localhost:8765 — Chrome/FactuPOS envía los tiquetes al transporte seleccionado."
+            android:textSize="11sp"
             android:textColor="#94a3b8"
             android:textAlignment="center"
-            android:layout_marginTop="20dp"
-            android:lineSpacingMultiplier="1.4" />
-
-        <!-- Versión y fecha -->
-        <TextView
-            android:id="@+id/txtVersion"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="-"
-            android:textSize="24sp"
-            android:textColor="#3b82f6"
-            android:textStyle="bold"
-            android:textAlignment="center"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="20dp"
+            android:lineSpacingMultiplier="1.3" />
 
     </LinearLayout>
 </ScrollView>

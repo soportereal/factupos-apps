@@ -24,8 +24,10 @@ public class PrinterManager {
     private static final String KEY_ACTIVE_TYPE = "active_type";     // "sunmi" | "bluetooth"
     private static final String KEY_ACTIVE_ADDRESS = "active_address"; // MAC address (solo BT)
 
-    // Protocolos seteados por el usuario por MAC: "auto" | "escpos" | "cpcl" | "zpl"
+    // Protocolos seteados por el usuario por MAC/clave: "auto" | "escpos" | "cpcl" | "zpl"
     private static final String KEY_PROTOCOL_PREFIX = "protocol_";
+    // Baudrate serial por clave de dispositivo
+    private static final String KEY_BAUD_PREFIX = "serial_baud_";
     public static final String PROTOCOL_AUTO   = "auto";
     public static final String PROTOCOL_ESCPOS = "escpos";
     public static final String PROTOCOL_CPCL   = "cpcl";
@@ -37,12 +39,16 @@ public class PrinterManager {
     private final boolean isSunmiDevice;
 
     private final BlePrinter blePrinter;
+    private final UsbPrinter usbPrinter;
+    private final SerialPrinter serialPrinter;
 
     public PrinterManager(Context context, FactuposPrint sunmiPrinter) {
         this.context = context.getApplicationContext();
         this.sunmiPrinter = sunmiPrinter;
         this.bluetoothPrinter = new BluetoothPrinter();
         this.blePrinter = new BlePrinter(context);
+        this.usbPrinter = new UsbPrinter(context);
+        this.serialPrinter = new SerialPrinter(context);
 
         String model = Build.MODEL.toLowerCase();
         String manufacturer = Build.MANUFACTURER.toLowerCase();
@@ -50,6 +56,8 @@ public class PrinterManager {
     }
 
     public BlePrinter getBlePrinter() { return blePrinter; }
+    public UsbPrinter getUsbPrinter() { return usbPrinter; }
+    public SerialPrinter getSerialPrinter() { return serialPrinter; }
 
     /**
      * Obtener tipo de impresora activa
@@ -99,6 +107,12 @@ public class PrinterManager {
                 return bluetoothPrinter.getDeviceName(address);
             }
             return "Bluetooth (sin seleccionar)";
+        } else if ("usb".equals(type)) {
+            String address = getActiveAddress();
+            return address.isEmpty() ? "USB (sin seleccionar)" : usbPrinter.getDeviceName(address);
+        } else if ("serial".equals(type)) {
+            String address = getActiveAddress();
+            return address.isEmpty() ? "Serial (sin seleccionar)" : serialPrinter.getDeviceName(address);
         }
         return "Ninguna";
     }
@@ -141,6 +155,22 @@ public class PrinterManager {
                 Log.w(TAG, "SPP falló y device es BT Classic; no se intenta BLE.");
             }
             return ok;
+        } else if ("usb".equals(type)) {
+            String address = getActiveAddress();
+            if (address.isEmpty()) {
+                Log.e(TAG, "No hay impresora USB seleccionada");
+                return false;
+            }
+            String proto = resolveProtocol(address, usbPrinter.getDeviceName(address));
+            return usbPrinter.printText(address, text, proto);
+        } else if ("serial".equals(type)) {
+            String address = getActiveAddress();
+            if (address.isEmpty()) {
+                Log.e(TAG, "No hay puerto serial seleccionado");
+                return false;
+            }
+            String proto = resolveProtocol(address, serialPrinter.getDeviceName(address));
+            return serialPrinter.printText(address, text, proto, getBaud(address));
         }
 
         // Sin impresora configurada - intentar SUNMI por defecto si es dispositivo SUNMI
@@ -171,6 +201,25 @@ public class PrinterManager {
         editor.putString(KEY_PROTOCOL_PREFIX + address.toUpperCase(), protocol);
         editor.apply();
         Log.i(TAG, "Protocolo " + address + " → " + protocol);
+    }
+
+    /**
+     * Lee el baudrate serial configurado para una clave de dispositivo.
+     * Default: SerialPrinter.DEFAULT_BAUD (9600).
+     */
+    public int getBaud(String address) {
+        if (address == null || address.isEmpty()) return SerialPrinter.DEFAULT_BAUD;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getInt(KEY_BAUD_PREFIX + address.toUpperCase(), SerialPrinter.DEFAULT_BAUD);
+    }
+
+    /** Guarda el baudrate serial para una clave de dispositivo. */
+    public void setBaud(String address, int baud) {
+        if (address == null || address.isEmpty() || baud <= 0) return;
+        SharedPreferences.Editor editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+        editor.putInt(KEY_BAUD_PREFIX + address.toUpperCase(), baud);
+        editor.apply();
+        Log.i(TAG, "Baudrate " + address + " → " + baud);
     }
 
     /**
@@ -213,8 +262,11 @@ public class PrinterManager {
         String type = getActiveType();
         json.put("type", type.isEmpty() ? "none" : type);
         json.put("name", getActiveName());
-        if ("bluetooth".equals(type)) {
+        if ("bluetooth".equals(type) || "usb".equals(type) || "serial".equals(type)) {
             json.put("address", getActiveAddress());
+        }
+        if ("serial".equals(type)) {
+            json.put("baud", getBaud(getActiveAddress()));
         }
         return json;
     }
@@ -246,6 +298,18 @@ public class PrinterManager {
             }
         }
 
+        // Dispositivos USB (host, bulk)
+        JSONArray usbDevices = usbPrinter.getDevices();
+        for (int i = 0; i < usbDevices.length(); i++) {
+            printers.put(usbDevices.getJSONObject(i));
+        }
+
+        // Puertos serial (USB-serial + nativos)
+        JSONArray serialDevices = serialPrinter.getDevices();
+        for (int i = 0; i < serialDevices.length(); i++) {
+            printers.put(serialDevices.getJSONObject(i));
+        }
+
         result.put("printers", printers);
         return result;
     }
@@ -260,6 +324,13 @@ public class PrinterManager {
         } else if ("bluetooth".equals(type)) {
             String address = getActiveAddress();
             return !address.isEmpty() && bluetoothPrinter.isPaired(address);
+        } else if ("usb".equals(type)) {
+            String address = getActiveAddress();
+            return !address.isEmpty() && usbPrinter.findByKey(address) != null
+                && usbPrinter.hasPermission(address);
+        } else if ("serial".equals(type)) {
+            String address = getActiveAddress();
+            return !address.isEmpty() && serialPrinter.hasPermission(address);
         }
         return false;
     }

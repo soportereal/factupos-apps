@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dispositivos USB para los que el sistema ofrece abrir la app al conectar.
+  Si el usuario marca "usar siempre", el permiso persiste entre reconexiones
+  y reinicios (clave para un POS fijo).
+
+  Cobertura:
+   - class 7  = impresoras USB estándar (térmicas ESC/POS clase impresora)
+   - class 2  = CDC (comunicaciones / CDC-ACM serial)
+   - VIDs de chips USB-Serial comunes: FTDI, Prolific, Silabs CP210x, WCH CH34x
+  Los que caen fuera de esta lista igual funcionan pidiendo permiso en runtime
+  desde la app (botón "Permitir USB"). Afinar con el VID:PID real que reporte
+  GET /debug -> usbDevices/serialDevices.
+-->
+<resources>
+    <!-- Impresoras USB estándar -->
+    <usb-device class="7" />
+    <!-- CDC / CDC-ACM serial -->
+    <usb-device class="2" />
+    <usb-device class="10" />
+    <!-- FTDI -->
+    <usb-device vendor-id="1027" />
+    <!-- Prolific (PL2303) -->
+    <usb-device vendor-id="1659" />
+    <!-- Silicon Labs (CP210x) -->
+    <usb-device vendor-id="4292" />
+    <!-- WCH / QinHeng (CH340/CH34x) -->
+    <usb-device vendor-id="6790" />
+    <!-- Common thermal printer bridge chips (Winbond/Nuvoton 0x0416) -->
+    <usb-device vendor-id="1046" />
+</resources>
