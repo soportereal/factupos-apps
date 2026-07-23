@@ -66,6 +66,13 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
+        <!-- Gestión de impresoras configuradas (colas) -->
+        <activity
+            android:name=".PrinterProfilesActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity"
+            android:label="Impresoras configuradas" />
+
         <!-- Foreground Service -->
         <service
             android:name=".PrintService"

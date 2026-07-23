@@ -235,4 +235,69 @@ public class UsbPrinter {
             }
         }
     }
+
+    /**
+     * Envia bytes ya armados al endpoint BULK OUT, sin interpretarlos.
+     * Ruta de la cola: el contenido lo formatea EscPos y no debe pasar por ninguna
+     * conversion de texto (UTF-8 corromperia todo byte > 0x7F).
+     */
+    public boolean printBytes(String key, byte[] payload) {
+        lastError = "";
+        if (usbManager == null) { lastError = "USB no soportado en este equipo"; return false; }
+        if (payload == null || payload.length == 0) { lastError = "Contenido vacio"; return false; }
+
+        UsbDevice device = findByKey(key);
+        if (device == null) { lastError = "USB desconectada: " + key; return false; }
+
+        if (!usbManager.hasPermission(device)) {
+            lastError = "Sin permiso USB - abri la app y toca Permitir";
+            requestPermission(key);
+            return false;
+        }
+
+        UsbInterface intf = null;
+        UsbEndpoint epOut = null;
+        for (int i = 0; i < device.getInterfaceCount() && epOut == null; i++) {
+            UsbInterface cand = device.getInterface(i);
+            for (int e = 0; e < cand.getEndpointCount(); e++) {
+                UsbEndpoint ep = cand.getEndpoint(e);
+                if (ep.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK
+                        && ep.getDirection() == UsbConstants.USB_DIR_OUT) {
+                    intf = cand; epOut = ep; break;
+                }
+            }
+        }
+        if (intf == null || epOut == null) { lastError = "Sin endpoint BULK OUT"; return false; }
+
+        UsbDeviceConnection conn = null;
+        try {
+            conn = usbManager.openDevice(device);
+            if (conn == null) { lastError = "No se pudo abrir el device USB"; return false; }
+            if (!conn.claimInterface(intf, true)) { lastError = "No se pudo reclamar la interface"; return false; }
+
+            final int CHUNK = 4096;
+            int offset = 0;
+            while (offset < payload.length) {
+                int len = Math.min(CHUNK, payload.length - offset);
+                byte[] buf = new byte[len];
+                System.arraycopy(payload, offset, buf, 0, len);
+                int sent = conn.bulkTransfer(epOut, buf, len, 5000);
+                if (sent < 0) { lastError = "bulkTransfer fallo en offset " + offset; return false; }
+                offset += (sent > 0 ? sent : len);
+            }
+            PrintService.logEvent("USB bytes enviados: " + payload.length);
+            Log.i(TAG, "Impreso USB (bytes) " + key + " " + payload.length + " bytes");
+            return true;
+
+        } catch (Exception e) {
+            lastError = "Error USB: " + e.getClass().getSimpleName() + " - " + e.getMessage();
+            Log.e(TAG, lastError, e);
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.releaseInterface(intf); } catch (Exception ignored) {}
+                try { conn.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
 }

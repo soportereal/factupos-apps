@@ -133,6 +133,9 @@ public class PrintService extends Service {
         printerManager = new PrinterManager(this, sunmiPrinter);
         sPrinterManager = printerManager;
 
+        queueClient = new PrintQueueClient(this, printerManager);
+        sQueueClient = queueClient;
+
         // WakeLock parcial: mantiene la CPU activa para el foreground service.
         // Sin esto, Android/MIUI/EMUI suspenden el servicio cuando el telefono
         // entra en doze/idle y el puerto 8765 deja de responder.
@@ -167,6 +170,12 @@ public class PrintService extends Service {
             }
         }
 
+        // Cliente de cola: solo arranca si la estacion ya fue configurada para
+        // WebSocket. Las estaciones sin migrar siguen usando el HTTP local.
+        if (queueClient != null && queueClient.isEnabled()) {
+            queueClient.start();
+        }
+
         // Re-adquirir WakeLock por si se perdio
         if (wakeLock != null && !wakeLock.isHeld()) {
             try { wakeLock.acquire(); } catch (Exception ignored) {}
@@ -180,6 +189,9 @@ public class PrintService extends Service {
     public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Exception ignored) {}
+        }
+        if (queueClient != null) {
+            queueClient.stop();
         }
         if (httpServer != null) {
             httpServer.stop();
@@ -203,6 +215,14 @@ public class PrintService extends Service {
 
     /** Singleton para acceder al PrinterManager desde MainActivity */
     private static PrinterManager sPrinterManager;
+
+    /** Cliente del servidor de colas (WebSocket 9300). */
+    private PrintQueueClient queueClient;
+    private static PrintQueueClient sQueueClient;
+
+    public static PrintQueueClient getStaticQueueClient() {
+        return sQueueClient;
+    }
 
     public static PrinterManager getStaticPrinterManager() {
         return sPrinterManager;

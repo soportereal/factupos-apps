@@ -41,6 +41,10 @@ public class PrinterManager {
     private final BlePrinter blePrinter;
     private final UsbPrinter usbPrinter;
     private final SerialPrinter serialPrinter;
+    private final NetPrinter netPrinter;
+
+    /** Lista de impresoras configuradas (modelo multi-impresora). */
+    private PrinterProfileStore profileStore;
 
     public PrinterManager(Context context, FactuposPrint sunmiPrinter) {
         this.context = context.getApplicationContext();
@@ -49,6 +53,7 @@ public class PrinterManager {
         this.blePrinter = new BlePrinter(context);
         this.usbPrinter = new UsbPrinter(context);
         this.serialPrinter = new SerialPrinter(context);
+        this.netPrinter = new NetPrinter();
 
         String model = Build.MODEL.toLowerCase();
         String manufacturer = Build.MANUFACTURER.toLowerCase();
@@ -58,6 +63,7 @@ public class PrinterManager {
     public BlePrinter getBlePrinter() { return blePrinter; }
     public UsbPrinter getUsbPrinter() { return usbPrinter; }
     public SerialPrinter getSerialPrinter() { return serialPrinter; }
+    public NetPrinter getNetPrinter() { return netPrinter; }
 
     /**
      * Obtener tipo de impresora activa
@@ -180,6 +186,193 @@ public class PrinterManager {
 
         Log.e(TAG, "No hay impresora configurada");
         return false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Impresión por perfil (modelo multi-impresora)
+    // ---------------------------------------------------------------------
+
+    /** Almacén de perfiles; se crea perezosamente. */
+    public synchronized PrinterProfileStore getProfileStore() {
+        if (profileStore == null) {
+            profileStore = new PrinterProfileStore(context);
+        }
+        return profileStore;
+    }
+
+    /**
+     * Imprime usando un perfil concreto, en lugar de la impresora "activa" global.
+     * Esta es la ruta que usa el cliente de cola: cada trabajo llega con su cola y
+     * se resuelve al perfil que la atiende.
+     */
+    public boolean printText(PrinterProfile profile, String text) {
+        if (profile == null) {
+            Log.e(TAG, "printText: perfil nulo");
+            return false;
+        }
+        if (!profile.isComplete()) {
+            Log.e(TAG, "printText: perfil incompleto (" + profile.getDisplayName() + ")");
+            return false;
+        }
+
+        String transport = profile.transport;
+        String address = profile.address != null ? profile.address : "";
+
+        if (PrinterProfile.TRANSPORT_SUNMI.equals(transport)) {
+            return sunmiPrinter.printText(text);
+
+        } else if (PrinterProfile.TRANSPORT_BLUETOOTH.equals(transport)) {
+            String devName = "";
+            try {
+                BluetoothDevice dev = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address);
+                if (dev != null) devName = dev.getName() != null ? dev.getName() : "";
+            } catch (Exception ignored) {}
+            String proto = resolveProtocolFor(profile, devName);
+
+            // btMode decide si se usa SPP clásico, BLE, o se deja que la app elija.
+            if (PrinterProfile.BT_MODE_BLE.equals(profile.btMode)) {
+                boolean ok = blePrinter.printText(address, text);
+                if (!ok) Log.e(TAG, "BLE falló: " + blePrinter.getLastError());
+                return ok;
+            }
+
+            boolean ok = bluetoothPrinter.printText(address, text, proto);
+            if (ok) return true;
+
+            if (PrinterProfile.BT_MODE_CLASSIC.equals(profile.btMode)) {
+                Log.w(TAG, "SPP falló y el perfil fuerza clásico; no se intenta BLE.");
+                return false;
+            }
+            // auto: fallback BLE solo si el device no es exclusivamente BT Classic
+            if (shouldTryBle(address)) {
+                Log.i(TAG, "SPP falló (" + bluetoothPrinter.getLastError() + "), intentando BLE...");
+                ok = blePrinter.printText(address, text);
+                if (!ok) Log.e(TAG, "BLE también falló: " + blePrinter.getLastError());
+                return ok;
+            }
+            Log.w(TAG, "SPP falló y device es BT Classic; no se intenta BLE.");
+            return false;
+
+        } else if (PrinterProfile.TRANSPORT_USB.equals(transport)) {
+            String proto = resolveProtocolFor(profile, usbPrinter.getDeviceName(address));
+            return usbPrinter.printText(address, text, proto);
+
+        } else if (PrinterProfile.TRANSPORT_SERIAL.equals(transport)) {
+            String proto = resolveProtocolFor(profile, serialPrinter.getDeviceName(address));
+            return serialPrinter.printText(address, text, proto, profile.baud);
+
+        } else if (PrinterProfile.TRANSPORT_IP.equals(transport)) {
+            String proto = resolveProtocolFor(profile, profile.nombre != null ? profile.nombre : "");
+            boolean ok = netPrinter.printText(profile.host, profile.port, text, proto,
+                                              profile.nombre != null ? profile.nombre : "");
+            if (!ok) Log.e(TAG, "Red falló: " + netPrinter.getLastError());
+            return ok;
+        }
+
+        Log.e(TAG, "Transporte desconocido: " + transport);
+        return false;
+    }
+
+    /**
+     * Imprime un trabajo de la cola. ESTA es la ruta correcta para el contenido que
+     * llega del servidor: trabaja con byte[] de punta a punta.
+     *
+     * El modo se decide por printMode del perfil:
+     *   raw  -> los bytes se mandan tal cual (ya vienen ESC/POS armados del PHP)
+     *   pos  -> se interpreta el contenido y se generan los comandos
+     *   auto -> se detecta por el contenido, igual que el cliente Python
+     */
+    public boolean printBytes(PrinterProfile profile, byte[] data) {
+        if (profile == null || !profile.isComplete()) {
+            Log.e(TAG, "printBytes: perfil nulo o incompleto");
+            return false;
+        }
+        if (data == null || data.length == 0) {
+            Log.e(TAG, "printBytes: contenido vacio");
+            return false;
+        }
+
+        byte[] payload = formatear(profile, data);
+
+        String transport = profile.transport;
+        String address = profile.address != null ? profile.address : "";
+
+        if (PrinterProfile.TRANSPORT_SUNMI.equals(transport)) {
+            // La AIDL de SUNMI solo expone printText(String): no acepta bytes crudos.
+            // Se manda el texto legible y se pierde el formato, que es mejor que
+            // imprimir basura.
+            return sunmiPrinter.printText(EscPos.toPlainText(payload));
+        }
+        if (PrinterProfile.TRANSPORT_BLUETOOTH.equals(transport)) {
+            if (PrinterProfile.BT_MODE_BLE.equals(profile.btMode)) {
+                // BlePrinter todavia solo acepta String; se le pasa el texto plano.
+                return blePrinter.printText(address, EscPos.toPlainText(payload));
+            }
+            boolean ok = bluetoothPrinter.printBytes(address, payload);
+            if (ok) return true;
+            if (PrinterProfile.BT_MODE_CLASSIC.equals(profile.btMode)) return false;
+            if (shouldTryBle(address)) {
+                Log.i(TAG, "SPP fallo, intentando BLE...");
+                return blePrinter.printText(address, EscPos.toPlainText(payload));
+            }
+            return false;
+        }
+        if (PrinterProfile.TRANSPORT_USB.equals(transport)) {
+            return usbPrinter.printBytes(address, payload);
+        }
+        if (PrinterProfile.TRANSPORT_SERIAL.equals(transport)) {
+            return serialPrinter.printBytes(address, payload, profile.baud);
+        }
+        if (PrinterProfile.TRANSPORT_IP.equals(transport)) {
+            boolean ok = netPrinter.printBytes(profile.host, profile.port, payload);
+            if (!ok) Log.e(TAG, "Red fallo: " + netPrinter.getLastError());
+            return ok;
+        }
+        Log.e(TAG, "Transporte desconocido: " + transport);
+        return false;
+    }
+
+    /**
+     * Convierte el contenido crudo de la cola en el stream final a imprimir,
+     * segun el printMode del perfil.
+     */
+    private byte[] formatear(PrinterProfile profile, byte[] data) {
+        String modo = profile.printMode != null
+            ? profile.printMode : PrinterProfile.PRINT_MODE_AUTO;
+
+        if (PrinterProfile.PRINT_MODE_RAW.equals(modo)) {
+            // Tal cual, solo con la fuente/cajon/corte del perfil.
+            return EscPos.decorar(data, profile.escposFont, profile.openDrawer, profile.cutPaper);
+        }
+
+        if (PrinterProfile.PRINT_MODE_POS.equals(modo)) {
+            byte[] cuerpo = EscPos.isVb6(data)
+                ? EscPos.vb6ToEscPos(data, profile.cutPaper)
+                : EscPos.plainToEscPos(data);
+            return EscPos.decorar(cuerpo, profile.escposFont, profile.openDrawer, profile.cutPaper);
+        }
+
+        // AUTO: misma deteccion por contenido que el cliente Python.
+        if (EscPos.isVb6(data)) {
+            byte[] cuerpo = EscPos.vb6ToEscPos(data, profile.cutPaper);
+            return EscPos.decorar(cuerpo, profile.escposFont, profile.openDrawer, false);
+        }
+        if (EscPos.isPlainText(data)) {
+            byte[] cuerpo = EscPos.plainToEscPos(data);
+            return EscPos.decorar(cuerpo, profile.escposFont, profile.openDrawer, profile.cutPaper);
+        }
+        // Ya es ESC/POS armado por el PHP: no se toca el cuerpo.
+        return EscPos.decorar(data, profile.escposFont, profile.openDrawer, profile.cutPaper);
+    }
+
+    /**
+     * Resuelve el protocolo efectivo de un perfil. El protocolo vive en el perfil,
+     * no en las prefs por dirección; "auto" sigue detectando por nombre.
+     */
+    public String resolveProtocolFor(PrinterProfile profile, String deviceName) {
+        String configured = profile.protocol != null ? profile.protocol : PROTOCOL_AUTO;
+        if (!PROTOCOL_AUTO.equals(configured)) return configured;
+        return BluetoothPrinter.isZebraPrinter(deviceName) ? PROTOCOL_CPCL : PROTOCOL_ESCPOS;
     }
 
     /**

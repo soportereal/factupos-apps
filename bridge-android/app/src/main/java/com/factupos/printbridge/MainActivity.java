@@ -64,6 +64,8 @@ public class MainActivity extends AppCompatActivity {
     private Button btnPrueba;
     private Button btnLimpiarLog;
     private Button btnRefrescar;
+    private Button btnColas;
+    private TextView txtColasResumen;
     private RadioGroup radioGroupPrinters;
     private TextView txtPrinterLabel;
     private TextView txtVersion;
@@ -119,6 +121,8 @@ public class MainActivity extends AppCompatActivity {
         scrollLog = findViewById(R.id.scrollLog);
         btnLimpiarLog = findViewById(R.id.btnLimpiarLog);
         btnRefrescar = findViewById(R.id.btnRefrescar);
+        btnColas = findViewById(R.id.btnColas);
+        txtColasResumen = findViewById(R.id.txtColasResumen);
 
         // Mostrar versión (chip compacto)
         txtVersion.setText("v" + BuildConfig.VERSION_NAME);
@@ -126,6 +130,10 @@ public class MainActivity extends AppCompatActivity {
         btnIniciar.setOnClickListener(v -> iniciarServicio());
         btnDetener.setOnClickListener(v -> detenerServicio());
         btnPrueba.setOnClickListener(v -> imprimirPrueba());
+        if (btnColas != null) {
+            btnColas.setOnClickListener(v ->
+                startActivity(new Intent(this, PrinterProfilesActivity.class)));
+        }
         if (btnRefrescar != null) {
             btnRefrescar.setOnClickListener(v -> {
                 cargarImpresoras();
@@ -185,6 +193,7 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         actualizarUI();
         cargarImpresoras();
+        actualizarResumenColas();
         // Escuchar resultado del diálogo de permiso USB
         IntentFilter filter = new IntentFilter(UsbPrinter.ACTION_USB_PERMISSION);
         ContextCompat.registerReceiver(this, usbPermissionReceiver, filter,
@@ -284,6 +293,40 @@ public class MainActivity extends AppCompatActivity {
         btnIniciar.setEnabled(!activo);
         btnDetener.setEnabled(activo);
         btnPrueba.setEnabled(activo);
+    }
+
+    /**
+     * Resumen de las impresoras configuradas (perfiles = colas).
+     * Un perfil sin cola no puede recibir trabajos, asi que se marca aparte:
+     * en pantalla debe verse que esta a medio configurar.
+     */
+    private void actualizarResumenColas() {
+        if (txtColasResumen == null) return;
+        try {
+            java.util.List<PrinterProfile> perfiles =
+                new PrinterProfileStore(this).getAll();
+            if (perfiles.isEmpty()) {
+                txtColasResumen.setText("Sin impresoras configuradas");
+                txtColasResumen.setTextColor(0xFF94A3B8);
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            int incompletas = 0;
+            for (int i = 0; i < perfiles.size(); i++) {
+                PrinterProfile p = perfiles.get(i);
+                if (sb.length() > 0) sb.append("\n");
+                if (p.queueCode == null || p.queueCode.isEmpty()) {
+                    incompletas++;
+                    sb.append("\u26A0 ").append(p.getDisplayName()).append(" - sin cola");
+                } else {
+                    sb.append("Cola ").append(p.queueCode).append("  ").append(p.getDisplayName());
+                }
+            }
+            txtColasResumen.setText(sb.toString());
+            txtColasResumen.setTextColor(incompletas > 0 ? 0xFFDC2626 : 0xFF475569);
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo leer los perfiles", e);
+        }
     }
 
     /**

@@ -193,14 +193,33 @@ public class SerialPrinter {
      */
     public boolean printText(String address, String text, String proto, int baud) {
         lastError = "";
+        byte[] payload;
+        try {
+            String devName = isUsbKey(address) ? getDeviceName(address) : "Serial " + address;
+            payload = buildPayload(text, proto, devName);
+        } catch (Exception e) {
+            lastError = "No se pudo armar el payload: " + e.getMessage();
+            return false;
+        }
+        return printBytes(address, payload, baud);
+    }
+
+    /**
+     * Envia bytes ya armados, sin interpretarlos.
+     * Ruta de la cola: el contenido lo formatea EscPos y no debe pasar por ninguna
+     * conversion de texto.
+     */
+    public boolean printBytes(String address, byte[] payload, int baud) {
+        lastError = "";
+        if (payload == null || payload.length == 0) { lastError = "Contenido vacio"; return false; }
         if (baud <= 0) baud = DEFAULT_BAUD;
         return isUsbKey(address)
-            ? printUsbSerial(address, text, proto, baud)
-            : printNative(address, text, proto, baud);
+            ? printUsbSerialBytes(address, payload, baud)
+            : printNativeBytes(address, payload, baud);
     }
 
     // ── USB-Serial via librería mik3y ────────────────────────────────
-    private boolean printUsbSerial(String key, String text, String proto, int baud) {
+    private boolean printUsbSerialBytes(String key, byte[] payload, int baud) {
         if (usbManager == null) { lastError = "USB no soportado"; return false; }
 
         UsbSerialDriver driver = null;
@@ -228,7 +247,6 @@ public class SerialPrinter {
 
         UsbSerialPort port = driver.getPorts().get(0);
         try {
-            byte[] payload = buildPayload(text, proto, getDeviceName(key));
             port.open(conn);
             port.setParameters(baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
             PrintService.logEvent("Serial USB " + key + " @" + baud + " 8N1, " + payload.length + " bytes");
@@ -247,7 +265,7 @@ public class SerialPrinter {
     }
 
     // ── Serial nativo /dev/tty* (best-effort) ────────────────────────
-    private boolean printNative(String path, String text, String proto, int baud) {
+    private boolean printNativeBytes(String path, byte[] payload, int baud) {
         File f = new File(path);
         if (!f.exists()) { lastError = "Puerto no existe: " + path; return false; }
         if (!f.canWrite()) {
@@ -269,7 +287,6 @@ public class SerialPrinter {
 
         FileOutputStream fos = null;
         try {
-            byte[] payload = buildPayload(text, proto, "Serial " + f.getName());
             fos = new FileOutputStream(f);
             fos.write(payload);
             fos.flush();
