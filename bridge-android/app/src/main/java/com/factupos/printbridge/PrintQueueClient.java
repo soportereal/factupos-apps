@@ -40,14 +40,14 @@ public class PrintQueueClient {
     private static final String KEY_ENABLED   = "enabled";
 
     /**
-     * Servidores por defecto. print.factupos.com es el que usa esta instalación (el
-     * mismo que el cliente de escritorio); invefacon queda de respaldo. En la LAN los
-     * tres resuelven al mismo servidor de colas.
+     * Servidores por defecto. La IP interna va PRIMERO: la red de las tablets es interna
+     * y estable, y las tablets suelen resolver `print.factupos.com` por DNS público (IP
+     * pública con el 9300 cerrado) → no conectaban. Con la IP directa conectan sin depender
+     * del DNS. El nombre queda de respaldo por si una tablet sale de la red interna.
      */
     public static final String[] DEFAULT_SERVERS = {
-        "ws://print.factupos.com:9300",
-        "ws://print.invefacon.com:9300",
-        "ws://print.invefacon.net:9300"
+        "ws://192.168.7.17:9300",
+        "ws://print.factupos.com:9300"
     };
 
     private static final long RECONNECT_BASE_MS = 5000L;
