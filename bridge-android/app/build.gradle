@@ -10,8 +10,8 @@ android {
         applicationId "com.factupos.printbridge"
         minSdk 21
         targetSdk 34
-        versionCode 50
-        versionName "3.9.0"
+        versionCode 51
+        versionName "3.9.1"
 
         // Fecha de compilación inyectada en BuildConfig
         buildConfigField "String", "BUILD_DATE", "\"${new Date().format('yyyy-MM-dd HH:mm')}\""

@@ -534,6 +534,16 @@ public class PrinterProfilesActivity extends AppCompatActivity {
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
 
+        // El Spinner fija su selección (arriba) ANTES de tener listener, y el callback
+        // inicial de onItemSelected NO dispara de forma confiable al EDITAR: los campos
+        // del transporte no se armaban, refHost/refPort quedaban en null y al guardar
+        // saltaba "Falta la dirección IP" sin dejar ver ni cambiar la IP. Forzamos acá la
+        // construcción de los campos del transporte actual, de forma síncrona.
+        AdapterView.OnItemSelectedListener lTrans = spnTrans.getOnItemSelectedListener();
+        if (lTrans != null) {
+            lTrans.onItemSelected(spnTrans, null, spnTrans.getSelectedItemPosition(), 0);
+        }
+
         scroll.addView(form);
 
         AlertDialog dlg = new AlertDialog.Builder(this)
@@ -556,9 +566,13 @@ public class PrinterProfilesActivity extends AppCompatActivity {
             p.isThermal  = chkTermica.isChecked();
 
             if (PrinterProfile.TRANSPORT_IP.equals(p.transport)) {
-                p.host = refHost[0] != null ? refHost[0].getText().toString().trim() : "";
-                p.port = parseIntSeguro(refPort[0] != null ? refPort[0].getText().toString() : "",
-                                        PrinterProfile.DEFAULT_IP_PORT);
+                // Solo sobrescribir host/puerto si el campo existe. Si por timing no se
+                // construyó, se conserva la IP ya guardada en vez de borrarla.
+                if (refHost[0] != null) {
+                    p.host = refHost[0].getText().toString().trim();
+                    p.port = parseIntSeguro(refPort[0] != null ? refPort[0].getText().toString() : "",
+                                            PrinterProfile.DEFAULT_IP_PORT);
+                }
                 p.address = "";
             } else if (PrinterProfile.TRANSPORT_SUNMI.equals(p.transport)) {
                 p.address = "";

@@ -62,6 +62,38 @@ public class PrintQueueClient {
     private volatile String estado = "Detenido";
     private volatile String ultimoError = "";
 
+    // Contadores y log en vivo para la pantalla de inicio (espejo del cliente
+    // de escritorio). El log del 8765 (PrintService.sLogBuffer) es del camino
+    // viejo; este es el del canal WebSocket.
+    private volatile int impresos = 0;
+    private volatile int errores = 0;
+    private static final int LOG_MAX = 200;
+    private final java.util.ArrayDeque<String> logLines = new java.util.ArrayDeque<>();
+    private final java.text.SimpleDateFormat logFmt =
+        new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US);
+
+    private synchronized void log(String linea) {
+        logLines.addLast(logFmt.format(new java.util.Date()) + " " + linea);
+        while (logLines.size() > LOG_MAX) logLines.removeFirst();
+    }
+
+    public int getImpresos() { return impresos; }
+    public int getErrores()  { return errores; }
+
+    /** URL del servidor actualmente en uso (o el primero configurado). */
+    public String getServerUrl() {
+        List<String> s = getServers();
+        if (s.isEmpty()) return "";
+        return s.get(Math.min(serverIndex, s.size() - 1));
+    }
+
+    public synchronized String getLogText() {
+        if (logLines.isEmpty()) return "(esperando trabajos...)";
+        StringBuilder sb = new StringBuilder();
+        for (String l : logLines) sb.append(l).append('\n');
+        return sb.toString();
+    }
+
     private Thread workerThread;
     private Thread supervisorThread;
 
