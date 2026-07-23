@@ -1,9 +1,16 @@
 name: Build Android APKs
 
-# Compila los APK de las apps Android (Gradle). Se usa assembleDebug: el APK
-# queda firmado con la clave debug (instalable por sideload), igual que el
-# build local historico (build.sh). NO usa la keystore release (.jks) — esa
-# esta gitignoreada y fuera del repo.
+# Compila los APK de las apps Android (Gradle).
+#
+# FIRMA: si estan definidos los secrets ANDROID_KEYSTORE_B64 / _PASSWORD /
+# _KEY_ALIAS / _KEY_PASSWORD, compila assembleRelease firmado con la keystore
+# real. Si no, cae a assembleDebug como hasta ahora.
+#
+# POR QUE CONVIENE la keystore real: Android exige que una actualizacion venga
+# firmada con el MISMO certificado que la instalacion previa. La clave debug se
+# genera nueva en cada runner, asi que cada build sale con un certificado
+# distinto y no permite actualizar in-place (hay que desinstalar/reinstalar).
+# Con la keystore real eso se arregla de forma permanente.
 
 on:
   push:
@@ -37,17 +44,53 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build debug APK
+      - name: Restaurar keystore (si hay secret)
+        id: ks
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "Keystore release restaurada."
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "Sin secret de keystore: se compila debug."
+          fi
+
+      - name: Build APK
         working-directory: ${{ matrix.dir }}
+        env:
+          ANDROID_KEYSTORE_PATH:     ${{ steps.ks.outputs.have == 'true' && format('{0}/release.jks', runner.temp) || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          if [ "${{ steps.ks.outputs.have }}" = "true" ]; then
+            ./gradlew --no-daemon assembleRelease
+          else
+            ./gradlew --no-daemon assembleDebug
+          fi
 
       - name: Renombrar APK
         working-directory: ${{ matrix.dir }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk "${{ matrix.apk }}"
+          if [ "${{ steps.ks.outputs.have }}" = "true" ]; then
+            cp app/build/outputs/apk/release/app-release.apk "${{ matrix.apk }}"
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk "${{ matrix.apk }}"
+          fi
           ls -la "${{ matrix.apk }}"
+
+      - name: Mostrar firma del APK
+        working-directory: ${{ matrix.dir }}
+        run: |
+          unzip -o -q "${{ matrix.apk }}" "META-INF/*.RSA" -d _sig || true
+          for f in _sig/META-INF/*.RSA; do
+            [ -f "$f" ] && keytool -printcert -file "$f" | grep -E "Owner|Propietario|SHA256" | head -3
+          done
+          rm -rf _sig
 
       - uses: actions/upload-artifact@v4
         with:
