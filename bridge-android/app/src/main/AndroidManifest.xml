@@ -47,18 +47,25 @@
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
 
-        <!-- Activity principal -->
+        <!-- Pantalla de inicio: lista de impresoras registradas (estilo cliente de
+             escritorio). Es el LAUNCHER: la app abre directo acá. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".PrinterProfilesActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:label="FactuPOS Print">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
-            <!-- Al conectar un USB que matchee el filtro, el sistema ofrece abrir
-                 la app y (con "usar siempre") concede permiso persistente. -->
+        <!-- Pantalla legacy (modo local 8765). Ya NO es el launcher; queda accesible
+             y sigue atendiendo el USB_DEVICE_ATTACHED para conceder permiso persistente. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
@@ -66,13 +73,6 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
-
-        <!-- Gestión de impresoras configuradas (colas) -->
-        <activity
-            android:name=".PrinterProfilesActivity"
-            android:exported="false"
-            android:parentActivityName=".MainActivity"
-            android:label="Impresoras configuradas" />
 
         <!-- Foreground Service -->
         <service

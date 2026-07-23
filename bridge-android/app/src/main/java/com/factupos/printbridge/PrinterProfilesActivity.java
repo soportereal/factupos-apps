@@ -1,10 +1,23 @@
 package com.factupos.printbridge;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -13,6 +26,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -21,6 +35,8 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -42,9 +58,23 @@ import java.util.Set;
 public class PrinterProfilesActivity extends AppCompatActivity {
 
     private PrinterProfileStore store;
-    private LinearLayout listContainer;
+    private LinearLayout listContainer;   // cuerpo de la tabla
     private TextView txtVacio;
-    private TextView txtEstadoCola;
+    private TextView txtEstadoCola;       // línea de estado con punto
+    private TextView txtContadores;       // Impresos/Errores + url
+    private TextView txtLog;              // terminal del log
+    private ScrollView scrollLog;
+    private TextView txtIdVersion;        // "ID · vX.X" del header
+
+    private PrinterProfile seleccionado;  // fila seleccionada (Editar/Quitar/Probar actúan sobre esta)
+    private View filaSelView;
+
+    private final Handler poll = new Handler(Looper.getMainLooper());
+
+    private static final int NAVY   = 0xFF1E3A5F;
+    private static final int NAVY2  = 0xFF2B4B7E;
+    private static final int VERDE  = 0xFF059669;
+    private static final int ROJO   = 0xFFDC2626;
 
     private int dp(float v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
@@ -53,94 +83,316 @@ public class PrinterProfilesActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTitle("Impresoras configuradas");
         store = new PrinterProfileStore(this);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(0xFFF1F5F9);
+        // Esta pantalla ahora es el inicio de la app: arranca el servicio y pide permisos
+        // (antes lo hacía MainActivity, que dejó de ser el launcher).
+        iniciarServicio();
+        solicitarPermisos();
+        solicitarWhitelistBateria();
 
+        setContentView(construirPantalla());
+    }
+
+    /** Layout completo, a todo el ancho, espejo del cliente de escritorio. */
+    private View construirPantalla() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(16), dp(16), dp(24));
+        root.setBackgroundColor(0xFFEEF2F7);
+        LinearLayout.LayoutParams full = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
+        root.setLayoutParams(full);
 
-        Button btnAgregar = new Button(this);
-        btnAgregar.setText("+  Agregar impresora");
-        btnAgregar.setTextColor(Color.WHITE);
-        btnAgregar.setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(0xFF2563EB));
-        btnAgregar.setOnClickListener(v -> mostrarDialogo(null));
-        root.addView(btnAgregar);
+        // ───── Header navy (todo el ancho) ─────
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setBackgroundColor(NAVY);
+        header.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        Button btnServidor = new Button(this);
-        btnServidor.setText("Servidor de cola");
-        btnServidor.setTextColor(Color.WHITE);
-        btnServidor.setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(0xFF475569));
-        btnServidor.setOnClickListener(v -> mostrarDialogoServidor());
-        root.addView(btnServidor);
+        TextView titulo = new TextView(this);
+        titulo.setText("FactuPOS Print");
+        titulo.setTextColor(Color.WHITE);
+        titulo.setTextSize(20);
+        titulo.setTypeface(Typeface.DEFAULT_BOLD);
+        titulo.setLayoutParams(new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(titulo);
 
+        txtIdVersion = new TextView(this);
+        txtIdVersion.setTextColor(0xFFB8C7DE);
+        txtIdVersion.setTextSize(12);
+        txtIdVersion.setGravity(Gravity.END);
+        header.addView(txtIdVersion);
+
+        Button btnGear = new Button(this);
+        btnGear.setText("⚙");
+        btnGear.setTextSize(16);
+        btnGear.setTextColor(Color.WHITE);
+        btnGear.setBackgroundTintList(android.content.res.ColorStateList.valueOf(NAVY2));
+        btnGear.setMinWidth(0); btnGear.setMinimumWidth(0);
+        LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(dp(48), dp(42));
+        glp.setMarginStart(dp(10));
+        btnGear.setLayoutParams(glp);
+        btnGear.setOnClickListener(v -> mostrarDialogoServidor());
+        header.addView(btnGear);
+
+        root.addView(header);
+
+        // ───── Línea de estado (● Conectado — ws://…) ─────
         txtEstadoCola = new TextView(this);
-        txtEstadoCola.setTextSize(12);
-        txtEstadoCola.setPadding(dp(4), dp(10), dp(4), 0);
+        txtEstadoCola.setTextSize(13);
+        txtEstadoCola.setPadding(dp(16), dp(10), dp(16), dp(6));
         root.addView(txtEstadoCola);
 
+        // ───── Título "Impresoras Registradas" ─────
+        TextView tReg = new TextView(this);
+        tReg.setText("Impresoras Registradas");
+        tReg.setTextColor(NAVY);
+        tReg.setTextSize(15);
+        tReg.setTypeface(Typeface.DEFAULT_BOLD);
+        tReg.setPadding(dp(16), dp(6), dp(16), dp(6));
+        root.addView(tReg);
+
+        // ───── Tabla (encabezado + cuerpo) dentro de un scroll vertical con weight ─────
+        LinearLayout tabla = new LinearLayout(this);
+        tabla.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        tlp.setMargins(dp(12), 0, dp(12), 0);
+        tabla.setLayoutParams(tlp);
+        tabla.setBackgroundColor(Color.WHITE);
+
+        tabla.addView(filaEncabezado());
+
         txtVacio = new TextView(this);
-        txtVacio.setText("Todavía no hay impresoras configuradas.\n\n"
-                       + "Agregá una por cada impresora que esta tablet deba atender. "
-                       + "El código de cola y la empresa los define el servidor.");
+        txtVacio.setText("Sin impresoras. Tocá «+ Agregar» para configurar una.");
         txtVacio.setTextSize(13);
         txtVacio.setTextColor(0xFF64748B);
-        txtVacio.setPadding(dp(4), dp(24), dp(4), dp(8));
-        root.addView(txtVacio);
+        txtVacio.setPadding(dp(14), dp(20), dp(14), dp(20));
+        tabla.addView(txtVacio);
 
+        ScrollView bodyScroll = new ScrollView(this);
+        bodyScroll.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         listContainer = new LinearLayout(this);
         listContainer.setOrientation(LinearLayout.VERTICAL);
-        root.addView(listContainer);
+        bodyScroll.addView(listContainer);
+        tabla.addView(bodyScroll);
 
-        scroll.addView(root);
-        setContentView(scroll);
+        root.addView(tabla);
+
+        // ───── Botonera (todo el ancho, repartida) ─────
+        LinearLayout botonera = new LinearLayout(this);
+        botonera.setOrientation(LinearLayout.HORIZONTAL);
+        botonera.setPadding(dp(10), dp(8), dp(10), dp(4));
+        botonera.addView(botonBarra("+ Agregar", 0xFF2563EB, v -> mostrarDialogo(null)));
+        botonera.addView(botonBarra("Editar", NAVY2, v -> conSeleccion(this::mostrarDialogo)));
+        botonera.addView(botonBarra("– Quitar", ROJO, v -> conSeleccion(this::confirmarBorrado)));
+        botonera.addView(botonBarra("Probar", VERDE, v -> conSeleccion(this::probar)));
+        botonera.addView(botonBarra("Limpiar cola", 0xFF64748B, v -> limpiarCola()));
+        root.addView(botonera);
+
+        // ───── Contadores ─────
+        txtContadores = new TextView(this);
+        txtContadores.setTextSize(12);
+        txtContadores.setPadding(dp(16), dp(2), dp(16), dp(6));
+        root.addView(txtContadores);
+
+        // ───── Log ─────
+        TextView tLog = new TextView(this);
+        tLog.setText("Log");
+        tLog.setTextColor(NAVY);
+        tLog.setTypeface(Typeface.DEFAULT_BOLD);
+        tLog.setTextSize(13);
+        tLog.setPadding(dp(16), dp(2), dp(16), dp(4));
+        root.addView(tLog);
+
+        scrollLog = new ScrollView(this);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(150));
+        slp.setMargins(dp(12), 0, dp(12), dp(6));
+        scrollLog.setLayoutParams(slp);
+        scrollLog.setBackgroundColor(0xFF0F172A);
+        txtLog = new TextView(this);
+        txtLog.setTextColor(0xFFA3E635);
+        txtLog.setTextSize(10);
+        txtLog.setTypeface(Typeface.MONOSPACE);
+        txtLog.setTextIsSelectable(true);
+        txtLog.setPadding(dp(10), dp(8), dp(10), dp(8));
+        scrollLog.addView(txtLog);
+        root.addView(scrollLog);
+
+        // ───── Botones de abajo ─────
+        LinearLayout abajo = new LinearLayout(this);
+        abajo.setOrientation(LinearLayout.HORIZONTAL);
+        abajo.setPadding(dp(10), dp(2), dp(10), dp(10));
+        abajo.addView(botonBarra("Buscar actualización", NAVY2, v -> buscarActualizacion()));
+        abajo.addView(botonBarra("Copiar Log", 0xFF64748B, v -> copiarLog()));
+        root.addView(abajo);
+
+        // El root ya es scrolleable por su tabla; envolver en ScrollView rompería el weight,
+        // así que se deja fijo y la tabla es la que scrollea internamente.
+        return root;
+    }
+
+    /** Fila de encabezado de la tabla (5 columnas, mismos títulos que el escritorio). */
+    private View filaEncabezado() {
+        LinearLayout fila = new LinearLayout(this);
+        fila.setOrientation(LinearLayout.HORIZONTAL);
+        fila.setBackgroundColor(NAVY);
+        fila.addView(celda("Cola", 1f, true, Color.WHITE));
+        fila.addView(celda("Empresa BD", 1.6f, true, Color.WHITE));
+        fila.addView(celda("Impresora", 1.8f, true, Color.WHITE));
+        fila.addView(celda("Descripción", 1.6f, true, Color.WHITE));
+        fila.addView(celda("Modo/Opciones", 2.2f, true, Color.WHITE));
+        return fila;
+    }
+
+    private TextView celda(String texto, float peso, boolean negrita, int color) {
+        TextView t = new TextView(this);
+        t.setText(texto);
+        t.setTextSize(12);
+        t.setTextColor(color);
+        if (negrita) t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setPadding(dp(8), dp(9), dp(8), dp(9));
+        t.setLayoutParams(new LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, peso));
+        return t;
+    }
+
+    private Button botonBarra(String texto, int color, View.OnClickListener onClick) {
+        Button b = new Button(this);
+        b.setText(texto);
+        b.setTextSize(11);
+        b.setAllCaps(false);
+        b.setTextColor(Color.WHITE);
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(color));
+        b.setMinWidth(0); b.setMinimumWidth(0);
+        b.setPadding(dp(4), 0, dp(4), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        b.setLayoutParams(lp);
+        b.setOnClickListener(onClick);
+        return b;
+    }
+
+    /** Acción sobre un perfil (interfaz propia: java.util.function.Consumer es API 24+, minSdk 21). */
+    private interface AccionPerfil { void run(PrinterProfile p); }
+
+    /** Ejecuta la acción sobre la fila seleccionada, o avisa si no hay ninguna. */
+    private void conSeleccion(AccionPerfil accion) {
+        if (seleccionado == null) {
+            Toast.makeText(this, "Seleccioná una impresora de la lista", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        accion.run(seleccionado);
+    }
+
+    private void limpiarCola() {
+        PrintQueueClient qc = PrintService.getStaticQueueClient();
+        if (qc == null) { Toast.makeText(this, "Servicio no iniciado", Toast.LENGTH_SHORT).show(); return; }
+        int n = qc.getQueue().clear();
+        Toast.makeText(this, "Cola local vaciada (" + n + ")", Toast.LENGTH_SHORT).show();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         redibujar();
+        poll.removeCallbacks(pollRunnable);
+        poll.post(pollRunnable);
     }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        poll.removeCallbacks(pollRunnable);
+    }
+
+    /** Refresca estado, contadores y log cada segundo (como el cliente de escritorio). */
+    private final Runnable pollRunnable = new Runnable() {
+        @Override public void run() {
+            actualizarEstadoCola();
+            actualizarContadoresYLog();
+            poll.postDelayed(this, 1000);
+        }
+    };
 
     // ------------------------------------------------------------------
     // Listado
     // ------------------------------------------------------------------
 
     private void redibujar() {
+        if (listContainer == null) return;
         listContainer.removeAllViews();
         List<PrinterProfile> perfiles = store.getAll();
         txtVacio.setVisibility(perfiles.isEmpty() ? View.VISIBLE : View.GONE);
 
+        // Si el perfil seleccionado ya no existe, limpiar la selección.
+        if (seleccionado != null) {
+            boolean existe = false;
+            for (PrinterProfile p : perfiles) if (p.id.equals(seleccionado.id)) { existe = true; break; }
+            if (!existe) { seleccionado = null; filaSelView = null; }
+        }
+
         for (int i = 0; i < perfiles.size(); i++) {
-            listContainer.addView(construirFila(perfiles.get(i)));
+            listContainer.addView(construirFila(perfiles.get(i), i));
         }
         actualizarEstadoCola();
+        actualizarContadoresYLog();
     }
 
-    /** Estado del cliente de cola, para que se vea si está conectado o no. */
+    /** Header: ID de la tablet + versión. */
+    private void actualizarIdVersion() {
+        if (txtIdVersion == null) return;
+        PrintQueueClient qc = PrintService.getStaticQueueClient();
+        String id = qc != null ? qc.getClientId() : "";
+        txtIdVersion.setText("ID: " + id + "   v" + BuildConfig.VERSION_NAME);
+    }
+
+    /** Línea de estado con punto de color (● Conectado — ws://…). */
     private void actualizarEstadoCola() {
         if (txtEstadoCola == null) return;
+        actualizarIdVersion();
         PrintQueueClient qc = PrintService.getStaticQueueClient();
         if (qc == null) {
-            txtEstadoCola.setText("Cola: servicio no iniciado");
+            txtEstadoCola.setText("○  Servicio no iniciado");
             txtEstadoCola.setTextColor(0xFF94A3B8);
             return;
         }
         if (!qc.isEnabled()) {
-            txtEstadoCola.setText("Cola: desactivada (esta estación todavía usa el modo local)");
+            txtEstadoCola.setText("○  Desactivado — tocá ⚙ y activá «Recibir trabajos por WebSocket»");
             txtEstadoCola.setTextColor(0xFF94A3B8);
             return;
         }
+        boolean conectado = qc.isConnected();
         int pendientes = qc.getQueue().size();
-        String txt = "Cola: " + qc.getEstado()
-                   + (pendientes > 0 ? "  ·  " + pendientes + " pendiente(s)" : "");
+        String txt = (conectado ? "●  Conectado — " : "●  " + qc.getEstado() + " — ") + qc.getServerUrl()
+                   + (pendientes > 0 ? "   ·   " + pendientes + " en cola" : "");
         txtEstadoCola.setText(txt);
-        txtEstadoCola.setTextColor(qc.isConnected() ? 0xFF059669 : 0xFFDC2626);
+        txtEstadoCola.setTextColor(conectado ? VERDE : ROJO);
+    }
+
+    /** Contadores Impresos/Errores + URL, y el log en vivo. */
+    private void actualizarContadoresYLog() {
+        PrintQueueClient qc = PrintService.getStaticQueueClient();
+        if (txtContadores != null) {
+            if (qc == null) {
+                txtContadores.setText("Impresos: 0   ·   Errores: 0");
+            } else {
+                txtContadores.setText("Impresos: " + qc.getImpresos()
+                    + "   ·   Errores: " + qc.getErrores()
+                    + "        " + qc.getServerUrl());
+            }
+        }
+        if (txtLog != null && qc != null) {
+            String log = qc.getLogText();
+            if (!log.equals(txtLog.getText().toString())) {
+                txtLog.setText(log);
+                if (scrollLog != null) scrollLog.post(() -> scrollLog.fullScroll(View.FOCUS_DOWN));
+            }
+        }
     }
 
     /**
@@ -229,83 +481,54 @@ public class PrinterProfilesActivity extends AppCompatActivity {
             .show();
     }
 
-    private View construirFila(final PrinterProfile p) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(Color.WHITE);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp.topMargin = dp(10);
-        card.setLayoutParams(clp);
+    /** Fila de la tabla (5 columnas). Tap = seleccionar; Editar/Quitar/Probar actúan sobre ella. */
+    private View construirFila(final PrinterProfile p, int index) {
+        boolean sel = seleccionado != null && seleccionado.id.equals(p.id);
+        int bg = sel ? NAVY : (index % 2 == 0 ? Color.WHITE : 0xFFF3F6FB);
+        int fg = sel ? Color.WHITE : 0xFF1E293B;
+        int fg2 = sel ? 0xFFD8E2F0 : 0xFF64748B;
+        boolean sinCola = p.queueCode == null || p.queueCode.isEmpty();
 
-        // Línea 1: nombre + chip de transporte
-        LinearLayout l1 = new LinearLayout(this);
-        l1.setOrientation(LinearLayout.HORIZONTAL);
-        l1.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout fila = new LinearLayout(this);
+        fila.setOrientation(LinearLayout.HORIZONTAL);
+        fila.setBackgroundColor(bg);
 
-        TextView nombre = new TextView(this);
-        nombre.setText(p.getDisplayName());
-        nombre.setTextSize(15);
-        nombre.setTextColor(0xFF1E293B);
-        nombre.setLayoutParams(new LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        l1.addView(nombre);
-        l1.addView(chip(transporteLabel(p.transport), transporteColor(p.transport)));
-        card.addView(l1);
+        fila.addView(celda(sinCola ? "⚠" : p.queueCode, 1f, false, sinCola && !sel ? ROJO : fg));
+        fila.addView(celda(vacioSi(p.empresa), 1.6f, false, fg));
+        fila.addView(celda(impresoraLabel(p), 1.8f, false, fg));
+        fila.addView(celda(vacioSi(p.nombre), 1.6f, false, fg));
+        fila.addView(celda(modoOpcionesLabel(p), 2.2f, false, fg2));
 
-        // Línea 2: cola / empresa
-        TextView sub = new TextView(this);
-        String colaTxt = (p.queueCode == null || p.queueCode.isEmpty())
-            ? "⚠ sin cola asignada"
-            : "Cola " + p.queueCode;
-        if (p.empresa != null && !p.empresa.isEmpty()) colaTxt += " · " + p.empresa;
-        sub.setText(colaTxt);
-        sub.setTextSize(12);
-        sub.setTextColor((p.queueCode == null || p.queueCode.isEmpty())
-            ? 0xFFDC2626 : 0xFF475569);
-        sub.setPadding(0, dp(3), 0, 0);
-        card.addView(sub);
-
-        // Línea 3: destino concreto
-        TextView dest = new TextView(this);
-        dest.setText(destinoLabel(p));
-        dest.setTextSize(11);
-        dest.setTextColor(0xFF94A3B8);
-        dest.setPadding(0, dp(2), 0, 0);
-        card.addView(dest);
-
-        // Línea 4: acciones
-        LinearLayout acciones = new LinearLayout(this);
-        acciones.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        alp.topMargin = dp(8);
-        acciones.setLayoutParams(alp);
-
-        acciones.addView(accionBtn("Editar", 0xFF3730A3, v -> mostrarDialogo(p)));
-        acciones.addView(accionBtn("Probar", 0xFF059669, v -> probar(p)));
-        acciones.addView(accionBtn("Quitar", 0xFFDC2626, v -> confirmarBorrado(p)));
-        card.addView(acciones);
-
-        return card;
+        fila.setOnClickListener(v -> {
+            seleccionado = p;
+            redibujar();
+        });
+        if (sel) filaSelView = fila;
+        return fila;
     }
 
-    private Button accionBtn(String texto, int color, View.OnClickListener onClick) {
-        Button b = new Button(this);
-        b.setText(texto);
-        b.setTextSize(11);
-        b.setTextColor(Color.WHITE);
-        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(color));
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setPadding(dp(12), 0, dp(12), 0);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(34));
-        lp.setMarginEnd(dp(8));
-        b.setLayoutParams(lp);
-        b.setOnClickListener(onClick);
-        return b;
+    private String vacioSi(String s) { return (s == null || s.isEmpty()) ? "—" : s; }
+
+    /** Columna "Impresora": transporte + destino corto (equivale al nombre de impresora del PC). */
+    private String impresoraLabel(PrinterProfile p) {
+        if (PrinterProfile.TRANSPORT_IP.equals(p.transport))    return "RED " + p.host + ":" + p.port;
+        if (PrinterProfile.TRANSPORT_SUNMI.equals(p.transport)) return "SUNMI interna";
+        if (PrinterProfile.TRANSPORT_SERIAL.equals(p.transport))return "SERIAL " + p.address;
+        if (PrinterProfile.TRANSPORT_USB.equals(p.transport))   return "USB " + p.address;
+        if (PrinterProfile.TRANSPORT_BLUETOOTH.equals(p.transport)) return "BT " + p.address;
+        return p.address;
+    }
+
+    /** Columna "Modo/Opciones": modo + fuente + cajón/corte (como "RAW, Letra B, Cajón"). */
+    private String modoOpcionesLabel(PrinterProfile p) {
+        StringBuilder sb = new StringBuilder();
+        String modo = PrinterProfile.PRINT_MODE_RAW.equals(p.printMode) ? "RAW"
+                    : PrinterProfile.PRINT_MODE_POS.equals(p.printMode) ? "POS" : "Auto";
+        sb.append(modo);
+        sb.append(", Letra ").append("B".equalsIgnoreCase(p.escposFont) ? "B" : "A");
+        if (p.cutPaper)   sb.append(", Corte");
+        if (p.openDrawer) sb.append(", Cajón");
+        return sb.toString();
     }
 
     private TextView chip(String text, int color) {
@@ -848,6 +1071,77 @@ public class PrinterProfilesActivity extends AppCompatActivity {
             return v > 0 ? v : porDefecto;
         } catch (Exception e) {
             return porDefecto;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Arranque de servicio y permisos (antes vivían en MainActivity, que dejó de
+    // ser el launcher). Sin esto el servicio de cola no correría al abrir la app.
+    // ------------------------------------------------------------------
+
+    private void iniciarServicio() {
+        Intent intent = new Intent(this, PrintService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+    }
+
+    private void solicitarPermisos() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            String[] bt = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN};
+            boolean necesita = false;
+            for (String p : bt) {
+                if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                    necesita = true; break;
+                }
+            }
+            if (necesita) ActivityCompat.requestPermissions(this, bt, 100);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 102);
+        }
+    }
+
+    private void solicitarWhitelistBateria() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm == null) return;
+        String pkg = getPackageName();
+        if (pm.isIgnoringBatteryOptimizations(pkg)) return;
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + pkg));
+            startActivity(intent);
+        } catch (Exception ignored) {}
+    }
+
+    private void copiarLog() {
+        PrintQueueClient qc = PrintService.getStaticQueueClient();
+        String log = qc != null ? qc.getLogText() : "";
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cb != null) {
+            cb.setPrimaryClip(ClipData.newPlainText("FactuPOS Print log", log));
+            Toast.makeText(this, "Log copiado", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void buscarActualizacion() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
+                "https://soportereal.com/software/index.php?d=factupos-app%2Fandroid")));
+        } catch (Exception e) {
+            Toast.makeText(this, "No se pudo abrir la página de descargas", Toast.LENGTH_SHORT).show();
         }
     }
 }

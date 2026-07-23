@@ -39,8 +39,13 @@ public class PrintQueueClient {
     private static final String KEY_CLIENT_ID = "client_id";
     private static final String KEY_ENABLED   = "enabled";
 
-    /** Mismos valores que el config.json del cliente Python, para no divergir. */
+    /**
+     * Servidores por defecto. print.factupos.com es el que usa esta instalación (el
+     * mismo que el cliente de escritorio); invefacon queda de respaldo. En la LAN los
+     * tres resuelven al mismo servidor de colas.
+     */
     public static final String[] DEFAULT_SERVERS = {
+        "ws://print.factupos.com:9300",
         "ws://print.invefacon.com:9300",
         "ws://print.invefacon.net:9300"
     };
@@ -270,6 +275,7 @@ public class PrintQueueClient {
                 @Override public void onOpen(ServerHandshake hs) {
                     reconnectAttempts = 0;
                     estado = "Conectado a " + url;
+                    log("Conectado a " + url);
                     Log.i(TAG, estado);
                     enviarRegister();
                 }
@@ -278,6 +284,7 @@ public class PrintQueueClient {
                 }
                 @Override public void onClose(int code, String reason, boolean remote) {
                     estado = "Desconectado (" + code + ")";
+                    log("Desconectado (" + code + ")");
                     Log.w(TAG, estado + " " + reason);
                     // Rotar al siguiente servidor: si este esta caido, probar el otro.
                     serverIndex++;
@@ -385,6 +392,9 @@ public class PrintQueueClient {
             ackear(jobId, true, null);
 
             if (nuevo) {
+                log("Job " + jobId.substring(0, Math.min(8, jobId.length()))
+                    + " recibido → cola " + job.queue
+                    + (job.empresa.isEmpty() ? "" : " [" + job.empresa + "]"));
                 Log.i(TAG, "Trabajo encolado " + jobId + " cola=" + job.queue
                          + " (" + queue.size() + " en cola)");
             }
@@ -456,13 +466,18 @@ public class PrintQueueClient {
 
         boolean ok = printerManager.printBytes(perfil, bytes);
 
+        String jobCorto = job.jobId.substring(0, Math.min(8, job.jobId.length()));
         if (ok) {
             queue.remove(job.jobId);
+            impresos++;
+            log("Job " + jobCorto + " → " + perfil.getDisplayName() + " OK");
             Log.i(TAG, "Impreso " + job.jobId + " en " + perfil.getDisplayName()
                      + " (" + queue.size() + " pendientes)");
         } else {
             String err = detalleError(perfil);
             boolean sigue = queue.markFailed(job.jobId, err, now);
+            errores++;
+            log("Job " + jobCorto + " → ERROR: " + err + (sigue ? " (reintenta)" : " (descartado)"));
             Log.e(TAG, "Fallo " + job.jobId + " en " + perfil.getDisplayName() + ": " + err
                      + (sigue ? " (se reintenta)" : " (descartado)"));
         }
