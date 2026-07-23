@@ -153,9 +153,14 @@ public class PrintQueueClient {
         prefs().edit().putString(KEY_CLIENT_ID, id != null ? id.trim() : "").apply();
     }
 
-    /** El cliente WS arranca solo si la estación fue configurada para la cola. */
+    /**
+     * Recibir trabajos por WebSocket. Por decisión del dueño arranca PRENDIDO por
+     * defecto: una tablet recién configurada recibe sin tener que marcar nada. Igual
+     * no hace nada hasta que haya una impresora con cola (start() sale si no hay perfil
+     * usable), así que una tablet sin configurar no cambia de comportamiento.
+     */
     public boolean isEnabled() {
-        return prefs().getBoolean(KEY_ENABLED, false);
+        return prefs().getBoolean(KEY_ENABLED, true);
     }
 
     public void setEnabled(boolean enabled) {
@@ -210,11 +215,17 @@ public class PrintQueueClient {
         }
     }
 
-    /** Reconstruye el registro tras cambiar los perfiles. */
+    /**
+     * Reacciona a un cambio de perfiles. Si ya está conectado, reenvía el register con
+     * la lista actualizada. Si está PRENDIDO pero aún no corría (típico: recién se agregó
+     * la primera impresora y al abrir la app no había ninguna), lo arranca — así no hay
+     * que reiniciar la app ni tocar el toggle.
+     */
     public void reregistrar() {
-        if (!running) return;
-        if (ws != null && ws.isOpen()) {
-            enviarRegister();
+        if (running) {
+            if (ws != null && ws.isOpen()) enviarRegister();
+        } else if (isEnabled() && profileStore.hasUsableProfile()) {
+            start();
         }
     }
 
