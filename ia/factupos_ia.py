@@ -32,7 +32,7 @@ from gi.repository import Gtk, GLib, Pango, Gdk
 # ---------------------------------------------------------------------------
 # Versión y auto-actualización
 # ---------------------------------------------------------------------------
-VERSION = "1.1.4"                                   # fuente única de versión
+VERSION = "1.1.5"                                   # fuente única de versión
 UPDATE_INTERVAL = 6 * 3600                          # re-chequeo cada 6 horas
 # Ambos manifests en soportereal.com: es el server de la oficina, alcanzable
 # desde PCs remotas (igual que el proxy) y desplegable con deploy.sh. El público
@@ -447,7 +447,16 @@ class SoporteApp(Gtk.Window):
         def _append():
             buf = self.vista.get_buffer()
             buf.insert(buf.get_end_iter(), texto + "\n")
-            self.vista.scroll_mark_onscreen(buf.get_insert())
+            # Autoscroll fiable al FINAL. Antes usaba get_insert() (el cursor), que en
+            # un TextView no editable queda en la posición 0 → el log saltaba al INICIO
+            # y lo último quedaba abajo sin verse. Un mark propio en el final, alineado
+            # abajo (yalign=1.0), mantiene siempre a la vista lo recién escrito.
+            fin = buf.get_mark("fin")
+            if fin is None:
+                fin = buf.create_mark("fin", buf.get_end_iter(), False)
+            else:
+                buf.move_mark(fin, buf.get_end_iter())
+            self.vista.scroll_to_mark(fin, 0.0, True, 0.0, 1.0)
             return False
         GLib.idle_add(_append)
         try:
