@@ -1,5 +1,5 @@
 Package: factupos-fingerprint-kiosko
-Version: 1.8.5
+Version: 1.8.6
 Section: utils
 Priority: optional
 Architecture: all

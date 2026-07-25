@@ -13,8 +13,8 @@ import javax.swing.UIManager;
  */
 public final class Main {
 
-    public static final String APP_VERSION = "1.8.5";
-    public static final String BUILD_DATE  = "2026-07-24 16:45";
+    public static final String APP_VERSION = "1.8.6";
+    public static final String BUILD_DATE  = "2026-07-24 23:30";
 
     // Lock de INSTANCIA ÚNICA: se mantiene abierto mientras viva la app. Si otro
     // proceso ya tiene el puerto, es que el kiosko ya está abierto -> en vez de abrir

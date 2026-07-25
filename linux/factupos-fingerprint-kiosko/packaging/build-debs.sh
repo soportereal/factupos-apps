@@ -14,7 +14,15 @@ command -v dpkg-deb >/dev/null || { echo "ERROR: falta dpkg-deb"; exit 1; }
 
 # --- versiones desde los control ---
 SVER=$(awk -F': ' '/^Version:/{print $2}' "$ROOT/packaging/deb-root/DEBIAN/control")
-KVER=$(awk -F': ' '/^Version:/{print $2}' "$ROOT/packaging/kiosk-deb-root/DEBIAN/control")
+# La version del kiosko sale de Main.java, que es donde vive de verdad
+# (APP_VERSION, lo que muestra la app en pantalla). Antes se leia del control
+# del .deb, escrito a mano: el 24-jul-2026 el jar iba en 1.8.6 y el paquete
+# seguia diciendo 1.8.5 -> la tienda ofrecia una version y se instalaba otra.
+# Ahora el control se GENERA a partir del codigo y no pueden diverger.
+KVER=$(grep -m1 -oP '(?<=APP_VERSION = ")[0-9.]+' "$ROOT/kiosk-java/src/com/factupos/kiosk/Main.java")
+[ -n "$KVER" ] || { echo "ERROR: no se pudo leer APP_VERSION de Main.java"; exit 1; }
+sed -i "s|^Version: .*|Version: $KVER|" "$ROOT/packaging/kiosk-deb-root/DEBIAN/control"
+echo "$KVER" > "$ROOT/packaging/kiosk-deb-root/opt/factupos-fingerprint-kiosko/version"
 
 # --- 1) compilar el jar del kiosko y copiarlo al deb-root ---
 echo "[build] compilando jar del kiosko..."

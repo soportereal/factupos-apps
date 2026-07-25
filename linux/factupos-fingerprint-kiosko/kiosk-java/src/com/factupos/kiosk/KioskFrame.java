@@ -110,7 +110,14 @@ public final class KioskFrame {
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             // La X NO cierra: solo minimiza a la barra de tareas (el kiosko sigue corriendo).
             @Override public void windowClosing(java.awt.event.WindowEvent e) {
-                frame.setExtendedState(Frame.ICONIFIED);
+                ocultarATray();
+            }
+            // Minimizar tambien la saca de la barra. Sin esto, el boton de
+            // minimizar la dejaba ahi abajo igual que antes.
+            // Solo si HAY bandeja: si no, ocultarATray() minimizaria otra vez y
+            // este mismo evento volveria a dispararse en bucle.
+            @Override public void windowIconified(java.awt.event.WindowEvent e) {
+                if (trayIcon != null) frame.setVisible(false);
             }
         });
         isFullscreen = cfg.fullscreen;
@@ -205,7 +212,10 @@ public final class KioskFrame {
         root.add(ftr, BorderLayout.SOUTH);
 
         // Atajos
-        bindKey("ESCAPE", this::toggleFullscreen);
+        // ESCAPE oculta a la bandeja. Antes llamaba a toggleFullscreen(), o sea
+        // que al tocarla la ventana se MAXIMIZABA en vez de quitarse de encima,
+        // que es lo contrario de lo que espera el usuario del marcador.
+        bindKey("ESCAPE", this::ocultarATray);
         bindKey("F10", this::exitApp);
 
         if (isFullscreen) frame.setExtendedState(Frame.MAXIMIZED_BOTH);
@@ -473,6 +483,23 @@ public final class KioskFrame {
             SystemTray.getSystemTray().add(trayIcon);
         } catch (Exception e) {
             Log.e("No se pudo crear el tray icon", e);
+        }
+    }
+
+    /** Quita la ventana de en medio: se va a la bandeja y DESAPARECE de la barra
+     *  de tareas. Antes se usaba ICONIFIED, que la minimiza pero la DEJA ocupando
+     *  un lugar en la lista de ventanas de abajo — el usuario veia "FactuPOS -
+     *  Marcaje de Asistencia" ahi todo el dia. setVisible(false) la saca del todo.
+     *
+     *  Si NO hay bandeja (SystemTray no soportado, o el add() fallo y trayIcon
+     *  quedo en null) se minimiza como antes: esconder la ventana sin dejar un
+     *  icono para recuperarla la volveria inalcanzable. */
+    private void ocultarATray() {
+        if (trayIcon != null) {
+            frame.setVisible(false);
+        } else {
+            Log.i("Sin bandeja del sistema: se minimiza en vez de ocultar");
+            frame.setExtendedState(Frame.ICONIFIED);
         }
     }
 
