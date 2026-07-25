@@ -485,20 +485,28 @@ public final class KioskFrame {
         return "hay bandeja pero rechazo el icono: " + ultimoErrorTray;
     }
 
-    /** Pone el icono en la bandeja, REINTENTANDO si todavia no hay bandeja.
+    /** Pone el icono en la bandeja.
      *
-     *  Java usa el protocolo viejo de bandeja (XEmbed) y exige que la bandeja YA
-     *  EXISTA en el instante en que se llama: SystemTray.isSupported() mira quien
-     *  posee la seleccion _NET_SYSTEM_TRAY_S0 en ese momento. El kiosko arranca
-     *  con la sesion, ANTES que factupos-panel, asi que la respuesta es "no hay"
-     *  y —a diferencia de AppIndicator, que se re-registra solo cuando el panel
-     *  aparece— Java no vuelve a intentarlo nunca. Sintoma en campo: el kiosko
-     *  no sale en la bandeja, y solo aparece si se reinicia el panel a mano.
-     *  Con el reintento, en cuanto el panel levanta el icono entra solo. */
+     *  🔑 LO QUE DE VERDAD DECIDE ESTO NO ESTA ACA, ESTA EN run.sh.
+     *
+     *  Java pregunta UNA sola vez si hay bandeja y se queda con esa respuesta.
+     *  En OpenJDK 21 —el que corre en campo— SystemTray.isSupported() no se
+     *  vuelve a evaluar nunca. Medido en la .18: el kiosko pregunto 318 veces en
+     *  media hora, todas false, mientras un Java arrancado en ese mismo momento,
+     *  en la misma pantalla y con el mismo JDK, SI veia la bandeja. O sea que
+     *  reintentar aca adentro no arregla nada; lo que importa es que el proceso
+     *  no arranque antes que la bandeja, y de eso se encarga run.sh.
+     *
+     *  El reintento queda, pero ACOTADO: sirve en JDK 17 (ahi si se re-evalua) y
+     *  cubre el caso de que la espera de run.sh se haya rendido por tope. Se
+     *  corta a los 5 minutos para no llenar el log con cientos de lineas que no
+     *  van a cambiar. */
+    private static final int MAX_VUELTAS_TRAY = 30;   // 30 x 10 s = 5 min
+
     private void setupTray() {
         if (crearTrayIcon()) { Log.i("Icono de bandeja creado al arrancar"); return; }
         Log.i("BANDEJA: no se pudo poner el icono al arrancar. Motivo -> " + motivoTray()
-              + " | se reintenta cada 10 s");
+              + " | se reintenta cada 10 s por 5 min");
         reintentoTray = new Timer(10000, e -> {
             if (crearTrayIcon()) {
                 Log.i("BANDEJA: icono creado en el reintento numero " + vueltasTray);
@@ -506,10 +514,11 @@ public final class KioskFrame {
                 return;
             }
             vueltasTray++;
-            // Se anota cada 6 vueltas (1 min) para no llenar el log, pero que quede
-            // rastro de POR QUE sigue sin entrar.
-            if (vueltasTray % 6 == 0) {
-                Log.i("BANDEJA: sigue sin entrar tras " + vueltasTray + " intentos -> " + motivoTray());
+            if (vueltasTray >= MAX_VUELTAS_TRAY) {
+                reintentoTray.stop();
+                Log.i("BANDEJA: me rindo tras " + vueltasTray + " intentos -> " + motivoTray()
+                      + ". En JDK 21 esta respuesta ya no cambia dentro de este proceso:"
+                      + " hay que arrancar el kiosko DESPUES del panel (lo hace run.sh).");
             }
         });
         reintentoTray.start();

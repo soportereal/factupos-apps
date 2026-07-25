@@ -13,7 +13,7 @@ import javax.swing.UIManager;
  */
 public final class Main {
 
-    public static final String APP_VERSION = "1.8.7";
+    public static final String APP_VERSION = "1.8.8";
     public static final String BUILD_DATE  = "2026-07-24 23:50";
 
     // Lock de INSTANCIA ÚNICA: se mantiene abierto mientras viva la app. Si otro
