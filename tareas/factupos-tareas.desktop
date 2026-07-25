@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Administrador de Tareas
+Name[es]=FactuPOS · Administrador de Tareas
+Comment=Ver procesos, uso de CPU/memoria y finalizar tareas
+Comment[es]=Ver procesos, uso de CPU/memoria y finalizar tareas
+Exec=factupos-tareas
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;
+Keywords=tareas;procesos;administrador;cpu;memoria;taskmanager;factupos;
+StartupNotify=false

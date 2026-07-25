@@ -1,0 +1,20 @@
+Package: factupos-recortes
+Version: __VERSION__
+Section: graphics
+Priority: optional
+Architecture: all
+Depends: flameshot
+Recommends: dconf-cli
+Maintainer: Soporte Real <soporte@soportereal.com>
+Homepage: https://soportereal.com
+Description: FactuPOS - Herramienta de Recortes
+ Herramienta de recortes de FactuPOS OS, al estilo del Recortes de
+ Windows: congela la pantalla, el usuario arrastra para seleccionar la
+ zona y antes de guardar puede dibujar encima (circulo, rectangulo,
+ flecha, lapiz, marcador, texto) y deshacer. Guarda a archivo o copia
+ al portapapeles.
+ .
+ El motor es flameshot; este paquete aporta el lanzador en espanol
+ ("Recortes"), el comando /usr/bin/factupos-recortes y los atajos de
+ teclado del sistema: la tecla Impr Pant y sus variantes con Shift,
+ Ctrl, Ctrl+Shift y Alt, mas Win+Shift+S.

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Monitores
+Name[es]=FactuPOS · Monitores
+Comment=Administrar resolución, monitor principal y posición de las pantallas
+Comment[es]=Administrar resolución, monitor principal y posición de las pantallas
+Exec=factupos-pantalla
+Icon=video-display
+Terminal=false
+Categories=Settings;System;
+Keywords=monitor;pantalla;resolucion;xrandr;factupos;
+StartupNotify=false

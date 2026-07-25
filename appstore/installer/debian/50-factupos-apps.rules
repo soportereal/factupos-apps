@@ -1,0 +1,10 @@
+// FactuPOS OS: la tienda FactuPOS Apps puede correr apt-get (instalar,
+// actualizar o quitar paquetes) SIN contraseña para el usuario local.
+// SOLO aplica a /usr/bin/apt-get via pkexec — no abre pkexec en general.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/bin/apt-get" &&
+        (subject.local || subject.isInGroup("sudo"))) {
+        return polkit.Result.YES;
+    }
+});

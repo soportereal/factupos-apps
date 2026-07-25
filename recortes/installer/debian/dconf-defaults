@@ -1,0 +1,49 @@
+# Herramienta de Recortes de FactuPOS OS (factupos-recortes).
+# Defaults del SISTEMA (dconf db "local") para que los herede TODO usuario
+# nuevo: el `live` del ISO y el que crea Calamares al instalar.
+# NO usar gsettings del usuario de build: eso no lo hereda nadie.
+
+# 1) Liberar los SEIS atajos de captura nativos de Cinnamon. Si no se
+#    vacian los seis, el capturador viejo de Cinnamon se come la tecla.
+[org/cinnamon/desktop/keybindings/media-keys]
+screenshot=@as []
+window-screenshot=@as []
+area-screenshot=@as []
+screenshot-clip=@as []
+window-screenshot-clip=@as []
+area-screenshot-clip=@as []
+
+# 2) Un keybinding POR COMBINACION: Cinnamon solo registra el PRIMER
+#    atajo de la lista `binding`, los demas quedan muertos.
+[org/cinnamon/desktop/keybindings]
+custom-list=['custom0', 'custom1', 'custom2', 'custom3', 'custom4', 'custom5']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom0]
+name='Recortes'
+command='factupos-recortes'
+binding=['Print']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom1]
+name='Recortes (Shift+ImprPant)'
+command='factupos-recortes'
+binding=['<Shift>Print']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom2]
+name='Recortes (Ctrl+Shift+ImprPant)'
+command='factupos-recortes'
+binding=['<Control><Shift>Print']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom3]
+name='Recortes (Ctrl+ImprPant)'
+command='factupos-recortes'
+binding=['<Control>Print']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom4]
+name='Recortes (Alt+ImprPant)'
+command='factupos-recortes'
+binding=['<Alt>Print']
+
+[org/cinnamon/desktop/keybindings/custom-keybindings/custom5]
+name='Recortes (Win+Shift+S)'
+command='factupos-recortes'
+binding=['<Shift><Super>s']

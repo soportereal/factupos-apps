@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Recortes
+Name[es]=Recortes
+GenericName=Herramienta de recortes
+GenericName[es]=Herramienta de recortes
+Comment=Recortar una parte de la pantalla, dibujar sobre ella y guardarla
+Comment[es]=Recortar una parte de la pantalla, dibujar sobre ella y guardarla
+Exec=factupos-recortes
+Icon=applets-screenshooter
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=recorte;recortes;captura;pantalla;tijera;screenshot;flameshot;factupos;
+StartupNotify=true

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Fondo de Escritorio
+Name[es]=FactuPOS · Fondo de Escritorio
+Comment=Cambiar el fondo de escritorio del equipo
+Comment[es]=Cambiar el fondo de escritorio del equipo
+Exec=factupos-fondo
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Settings;
+Keywords=fondo;escritorio;wallpaper;background;factupos;
+StartupNotify=false

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Energía
+Name[es]=FactuPOS · Energía
+Comment=Configurar apagado de pantalla, suspensión y botón de encendido
+Comment[es]=Configurar apagado de pantalla, suspensión y botón de encendido
+Exec=factupos-energia
+Icon=preferences-system-power
+Terminal=false
+Categories=Settings;System;
+Keywords=energia;pantalla;suspension;power;bateria;factupos;
+StartupNotify=false

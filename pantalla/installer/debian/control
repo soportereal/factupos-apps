@@ -1,0 +1,13 @@
+Package: factupos-pantalla
+Version: __VERSION__
+Section: admin
+Priority: optional
+Architecture: all
+Depends: python3, python3-gi, gir1.2-gtk-3.0, x11-xserver-utils
+Maintainer: Soporte Real <soporte@soportereal.com>
+Homepage: https://soportereal.com
+Description: FactuPOS - Administracion de monitores
+ Herramienta grafica de FactuPOS OS para acomodar monitores: elegir
+ resolucion, marcar el monitor principal y definir su posicion relativa
+ (derecha, izquierda o duplicado) usando xrandr. Incluye boton para
+ identificar cada pantalla conectada.

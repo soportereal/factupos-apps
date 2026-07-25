@@ -1,0 +1,13 @@
+Package: factupos-fondo
+Version: __VERSION__
+Section: admin
+Priority: optional
+Architecture: all
+Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0
+Maintainer: Soporte Real <soporte@soportereal.com>
+Homepage: https://soportereal.com
+Description: FactuPOS - Cambio de fondo de escritorio
+ Herramienta grafica de FactuPOS OS para cambiar el fondo de escritorio
+ eligiendo entre las imagenes de /usr/share/backgrounds o una imagen
+ propia. Detecta el entorno de escritorio en uso (XFCE, Cinnamon) y
+ aplica el fondo con la herramienta nativa correspondiente.

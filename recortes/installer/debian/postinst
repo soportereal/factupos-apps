@@ -1,0 +1,28 @@
+#!/bin/sh
+# Deja los atajos de teclado como DEFAULT DEL SISTEMA (dconf db "local"),
+# no por usuario: asi los hereda el usuario `live` del ISO y el que crea
+# Calamares al instalar (regla de oro del distro).
+set -e
+
+PROFILE=/etc/dconf/profile/user
+
+case "$1" in
+    configure)
+        # El perfil debe leer primero la db del usuario y luego la del sistema.
+        if [ ! -f "$PROFILE" ]; then
+            mkdir -p /etc/dconf/profile
+            printf 'user-db:user\nsystem-db:local\n' > "$PROFILE"
+        elif ! grep -q '^system-db:local$' "$PROFILE"; then
+            echo 'system-db:local' >> "$PROFILE"
+        fi
+
+        # Compila /etc/dconf/db/local.d/* -> /etc/dconf/db/local
+        if command -v dconf >/dev/null 2>&1; then
+            dconf update || true
+        fi
+
+        update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+        ;;
+esac
+
+exit 0

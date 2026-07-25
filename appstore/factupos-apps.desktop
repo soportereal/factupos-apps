@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS Apps
+Name[es]=FactuPOS Apps
+Comment=Instalar y actualizar aplicaciones FactuPOS
+Comment[es]=Instalar y actualizar aplicaciones FactuPOS
+Exec=factupos-apps
+Icon=system-software-install
+Terminal=false
+Categories=System;Settings;
+Keywords=apps;tienda;store;instalar;factupos;
+StartupNotify=false

@@ -1,0 +1,14 @@
+Package: factupos-conexiones
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3, python3-gi, gir1.2-gtk-3.0, iproute2
+Maintainer: Soporte Real <soporte@soportereal.com>
+Homepage: https://soportereal.com
+Description: FactuPOS - Monitor de conexiones de red
+ Herramienta grafica de FactuPOS OS para ver las conexiones de red del
+ equipo en vivo: puertos escuchando (puertas de entrada abiertas) y
+ conexiones activas, marcando cuales son entrantes y cuales salientes.
+ Usa `ss` (iproute2); si no esta disponible cae a leer directo de
+ /proc/net. Tambien funciona por linea de comandos: --listado.

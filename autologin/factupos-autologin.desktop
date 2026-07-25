@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Inicio de sesión automático
+Name[es]=FactuPOS · Inicio de sesión automático
+Comment=Activar o desactivar el auto-login del equipo (LightDM)
+Comment[es]=Activar o desactivar el auto-login del equipo (LightDM)
+Exec=factupos-autologin
+Icon=system-lock-screen
+Terminal=false
+Categories=Settings;System;
+Keywords=autologin;login;sesion;automatico;factupos;
+StartupNotify=false

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FactuPOS · Conexiones de Red
+Name[es]=FactuPOS · Conexiones de Red
+Comment=Monitor de conexiones de red entrantes y salientes
+Comment[es]=Monitor de conexiones de red entrantes y salientes
+Exec=factupos-conexiones
+Icon=network-workgroup
+Terminal=false
+Categories=System;Network;
+Keywords=red;conexiones;puertos;network;sockets;monitor;factupos;
+StartupNotify=false

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Oculta el lanzador propio de flameshot: en el menu queda SOLO "Recortes"
+# (el dueno pidio menu sin duplicados). dpkg-divert es la forma soportada
+# de adueniarse del archivo de otro paquete, y es reversible en postrm.
+set -e
+
+F=/usr/share/applications/org.flameshot.Flameshot.desktop
+
+case "$1" in
+    install|upgrade)
+        dpkg-divert --package factupos-recortes \
+            --divert "$F.factupos-oculto" --rename --add "$F" >/dev/null
+        ;;
+esac
+
+exit 0

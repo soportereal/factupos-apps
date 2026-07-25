@@ -1,0 +1,16 @@
+# Apps FactuPOS OBLIGATORIAS en toda terminal FactuPOS OS.
+# El actualizador las instala si faltan (una por linea; # comenta).
+factupos-actualizador
+factupos-panel
+factupos-apps
+factupos-autologin
+factupos-print
+factupos-printer-inst
+factupos-dataequipo
+rustdesk
+factupos-pantalla
+factupos-tareas
+factupos-fondo
+factupos-energia
+factupos-conexiones
+factupos-recortes
