@@ -1,5 +1,5 @@
 Package: factupos-fingerprint-servicio
-Version: 2.5.2
+Version: 2.5.3
 Section: utils
 Priority: optional
 Architecture: amd64

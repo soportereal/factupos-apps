@@ -66,7 +66,18 @@ try:
 except ImportError:
     HAS_PIL = False
 
-VERSION = '2.5.2'
+VERSION = '2.5.3'
+# v2.5.3: FIX del loop "Lector no detectado" por SOBRECALENTAMIENTO (error 257,
+#         caso #463 en la .110). El "overheating" de libfprint 1.94.x es un contador
+#         SIMULADO de tiempo activo del sensor, no un termómetro: con el identify
+#         continuo se llena y, una vez HOT, dormir 20s en el MISMO proceso no lo
+#         vacía -> recaía al primer identify (97 apagones/hora medidos). Lo único
+#         que lo resetea es un proceso FRESCO: ahora handle_overheating hace reset
+#         USB + salida limpia (systemd relevanta en segundos con el contador frío),
+#         con freno anti-tormenta (si recae en <3 min, descansa 45s antes de salir).
+#         + respiro de 1s entre lecturas (el contador se llenaba con marcas seguidas)
+#         + /get_connection reporta 'cooling' para que el kiosko diga "Sensor
+#         enfriando..." en vez de "Lector no detectado" (y no reinicie por gusto).
 # v2.5.2: auto-chequeo cada 1 HORA (antes 6h).
 # v2.5.1: página web de estado con TEMA OSCURO en GET / (https://127.0.0.1:52181/):
 #         dashboard navy autocontenido que muestra versión, servicio activo, lector y
@@ -376,19 +387,44 @@ def load_all_prints():
     print(f"[FP] {total} prints cargados de {len(loaded_prints)} usuarios")
 
 
+OVERHEAT_STAMP = '/run/factupos-fp-overheat.stamp'
+
 def handle_overheating():
+    """El "overheating" (error 257) es el contador térmico SIMULADO de libfprint:
+    acumula tiempo activo del sensor y, una vez HOT, en este proceso ya no baja a
+    tiempo (el identify continuo lo rellena) -> dormir y reintentar recae al primer
+    identify. Lo único que lo vacía es un proceso FRESCO: reset USB + salida limpia
+    (systemd Restart=always relevanta en segundos con el contador en frío). Si
+    venimos recayendo seguido, descanso largo antes de salir: protege un sensor
+    genuinamente caliente y evita una tormenta de reinicios."""
     global device_ready, cooling_down
     if cooling_down:
         return
     cooling_down = True
     device_ready = False
-    print("[FP] Sensor sobrecalentado, cooldown 20s...")
     def cooldown():
-        global device_ready, cooling_down
-        time.sleep(20)
-        device_ready = True
-        cooling_down = False
-        print("[FP] Sensor recuperado")
+        rest = 5
+        try:
+            prev = float(open(OVERHEAT_STAMP).read().strip() or 0)
+            if time.time() - prev < 180:
+                rest = 45
+        except Exception:
+            pass
+        try:
+            with open(OVERHEAT_STAMP, 'w') as f:
+                f.write(str(time.time()))
+        except Exception:
+            pass
+        print(f"[FP] Sensor sobrecalentado: descanso {rest}s + reinicio fresco (vacía el contador térmico del driver)")
+        time.sleep(rest)
+        try:
+            if fp_dev:
+                fp_dev.close_sync()
+        except Exception:
+            pass
+        _usb_reset_reader()
+        time.sleep(1.5)
+        os._exit(1)
     threading.Thread(target=cooldown, daemon=True).start()
 
 
@@ -434,6 +470,9 @@ def _identify_worker(all_prints, print_to_user):
         _dev_close()
         IDENTIFY['result'] = res
         IDENTIFY['busy'] = False
+        # Respiro del sensor entre lecturas: sin esto, con marcas seguidas el
+        # contador térmico del driver se llena y dispara el error 257.
+        time.sleep(1.0)
         dev_lock.release()
 
 
@@ -865,7 +904,8 @@ class FPHandler(BaseHTTPRequestHandler):
         elif p == '/get_connection':
             self._json(200, {
                 'ok': True,
-                'connected': device_ready, 'device': device_name, 'driver': device_driver,
+                'connected': device_ready, 'cooling': cooling_down,
+                'device': device_name, 'driver': device_driver,
                 'platform': 'linux-libfprint', 'enroll_stages': enroll_stages,
                 'matching': 'libfprint-minutiae', 'web_sdk_id': None, 'port': None
             })

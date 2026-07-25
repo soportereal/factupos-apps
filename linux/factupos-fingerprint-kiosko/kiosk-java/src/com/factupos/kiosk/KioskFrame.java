@@ -45,6 +45,8 @@ public final class KioskFrame {
     private volatile boolean hasEnrollDialog = false;
     private volatile long lastSyncMs = 0;
     private volatile boolean fpConnected = false;
+    private volatile boolean fpCooling = false;   // sensor descansando por protección térmica (v2.5.3+)
+    private volatile long fpCoolingMs = 0;        // última vez que el servicio reportó cooling
     private volatile String fpDevice = "";
     private volatile int usersLoaded = 0;
     /** Ultimo error del servidor al conectarse (token invalido, empresa inexistente, etc).
@@ -308,6 +310,18 @@ public final class KioskFrame {
                 if (enrolling) { sleep(400); continue; }
                 if (System.currentTimeMillis() - lastSyncMs > cfg.refreshMinutos * 60_000L) syncTemplates(false);
                 refreshFpConnection();
+                if (!fpConnected && fpCooling
+                        && System.currentTimeMillis() - fpCoolingMs < 90_000) {
+                    // Enfriando NO es desconectado: el sensor descansa por la protección
+                    // térmica del driver y el servicio se recupera solo (incluye los
+                    // segundos en que el servicio se reinicia fresco). Reiniciar acá solo
+                    // alarga el descanso — no contar este tiempo como "caído". A los 90s
+                    // sin señal de cooling fresca, cae al flujo normal de reconexión.
+                    setLed(AMBER); setStatus("Sensor enfriando..."); setFpColor(AMBER);
+                    setMsg("Sensor enfriando... un momento");
+                    disconnectedSince = 0;
+                    sleep(3000); continue;
+                }
                 if (!fpConnected) {
                     setLed(FG_MUTE); setStatus("Lector no detectado"); setFpColor(FG_MUTE);
                     updateTray(false);                          // tray rojo
@@ -367,6 +381,8 @@ public final class KioskFrame {
         Http.Resp r = fp.getConnection(4);
         if (r.body != null && r.ok()) {
             fpConnected = Json.bool(r.body, "connected");
+            fpCooling = Json.bool(r.body, "cooling");
+            if (fpCooling) fpCoolingMs = System.currentTimeMillis();
             fpDevice = Json.str(r.body, "device", "");
             if (fpConnected) {
                 setLed(GREEN);
