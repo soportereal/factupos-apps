@@ -51,5 +51,21 @@ for _ in range(90):      # hasta 90 s, mirando cada segundo
     time.sleep(1)
 PY
 }
+# --- 🔑 LA CAUSA DE VERDAD: GNOME_DESKTOP_SESSION_ID ---
+#
+# Cinnamon exporta GNOME_DESKTOP_SESSION_ID=this-is-deprecated por compatibilidad
+# con programas viejos. Java lee esa variable y concluye "estoy en GNOME"; como
+# GNOME abandono el protocolo XEmbed, Java DESACTIVA la bandeja a proposito, sin
+# siquiera fijarse si hay una. Por eso el icono no entraba aunque el panel
+# estuviera arriba y funcionando.
+#
+# Medido en la .18, mismo entorno, misma bandeja, misma app:
+#   entorno del escritorio tal cual        -> isSupported=false
+#   el mismo, sin GNOME_DESKTOP_SESSION_ID -> isSupported=true, ADD OK
+#
+# Esto tambien explicaba por que "arrancado a mano por ssh si funciona": una
+# sesion ssh no exporta esa variable. No era el orden de arranque.
+unset GNOME_DESKTOP_SESSION_ID
+
 esperar_bandeja
 exec java -jar "$JAR" "$@"

@@ -13,7 +13,7 @@ import javax.swing.UIManager;
  */
 public final class Main {
 
-    public static final String APP_VERSION = "1.8.8";
+    public static final String APP_VERSION = "1.8.9";
     public static final String BUILD_DATE  = "2026-07-24 23:50";
 
     // Lock de INSTANCIA ÚNICA: se mantiene abierto mientras viva la app. Si otro
@@ -27,7 +27,54 @@ public final class Main {
     private static final int SINGLE_PORT = 18181;
     private static volatile KioskFrame INSTANCE;   // la ventana viva (para traerla al frente)
 
+    /** Variable que le pone Cinnamon a TODA la sesión, por compatibilidad con programas
+     *  viejos. Java la lee y concluye "estoy en GNOME"; como GNOME abandonó el protocolo
+     *  XEmbed, Java DESACTIVA la bandeja a propósito, sin fijarse si hay una. Resultado:
+     *  el icono no entraba nunca, y como sin icono la ventana no se puede esconder, el
+     *  kiosko se quedaba ocupando un lugar en la barra de tareas todo el día.
+     *
+     *  Medido en la .18 (mismo entorno, misma bandeja, misma app):
+     *    con la variable  -> SystemTray.isSupported() = false
+     *    sin la variable  -> true, y el icono entra
+     *
+     *  run.sh ya la borra antes de lanzar el JVM, pero el arreglo tiene que viajar
+     *  TAMBIÉN acá: el auto-update de campo baja solo el .jar, nunca el run.sh (que
+     *  viene en el .deb). Si esto no estuviera, un kiosko auto-actualizado diría que
+     *  es la versión nueva y seguiría sin icono. */
+    private static final String VAR_GNOME = "GNOME_DESKTOP_SESSION_ID";
+    private static final String VAR_MARCA = "FACTUPOS_KIOSKO_REEXEC";
+
+    /** Si la variable está, se relanza el kiosko SIN ella y este proceso se va.
+     *  Una variable de entorno no se puede borrar para uno mismo una vez que la JVM
+     *  arrancó, así que la única salida es volver a arrancar con el entorno limpio. */
+    private static void relanzarSinVariableDeGnome(String[] args) {
+        if (System.getenv(VAR_GNOME) == null) return;      // nada que hacer
+        if (System.getenv(VAR_MARCA) != null) return;      // ya se relanzó: no repetir
+        try {
+            String java = System.getProperty("java.home") + "/bin/java";
+            String jar = new java.io.File(Main.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI()).getAbsolutePath();
+            java.util.List<String> cmd = new java.util.ArrayList<>();
+            cmd.add(java); cmd.add("-jar"); cmd.add(jar);
+            for (String a : args) cmd.add(a);
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.environment().remove(VAR_GNOME);
+            pb.environment().put(VAR_MARCA, "1");
+            pb.inheritIO();
+            pb.start();
+            System.exit(0);
+        } catch (Exception e) {
+            // Si no se pudo relanzar, seguimos igual: el kiosko marca lo mismo,
+            // solo que sin icono en la bandeja. Marcar es lo que no puede faltar.
+        }
+    }
+
     public static void main(String[] args) {
+        // Antes que NADA: si estamos bajo Cinnamon, volver a arrancar sin la variable
+        // que le apaga la bandeja a Java. Va antes del lock de instancia única para no
+        // tomar el puerto dos veces.
+        relanzarSinVariableDeGnome(args);
+
         // Evitar múltiples instancias (abrir 2 veces desde el Escritorio abría varias).
         try {
             SINGLE_LOCK = new ServerSocket(SINGLE_PORT, 1, InetAddress.getByName("127.0.0.1"));
