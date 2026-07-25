@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'linux/printer-inst/**'
+      - 'linux/factupos-printer-inst/**'
       - '.github/workflows/printer-inst.yml'
   workflow_dispatch:
     inputs:
@@ -21,8 +21,8 @@ jobs:
       - name: Construir .deb
         run: |
           VER="${{ github.event.inputs.version || '1.0.0' }}"
-          chmod +x linux/printer-inst/installer/build-deb.sh
-          linux/printer-inst/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
+          chmod +x linux/factupos-printer-inst/installer/build-deb.sh
+          linux/factupos-printer-inst/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Verificar contenido del .deb

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'linux/panel/**'
+      - 'linux/factupos-panel/**'
       - '.github/workflows/panel.yml'
   workflow_dispatch:
     inputs:
@@ -19,13 +19,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verificar sintaxis Python
-        run: python3 -m py_compile linux/panel/factupos-panel.py
+        run: python3 -m py_compile linux/factupos-panel/factupos-panel.py
 
       - name: Construir .deb
         run: |
           VER="${{ github.event.inputs.version || '1.0.0' }}"
-          chmod +x linux/panel/installer/build-deb.sh
-          linux/panel/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
+          chmod +x linux/factupos-panel/installer/build-deb.sh
+          linux/factupos-panel/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Verificar contenido del .deb

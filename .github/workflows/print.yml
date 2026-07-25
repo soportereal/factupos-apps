@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'linux/print/**'
+      - 'linux/factupos-print/**'
       - '.github/workflows/print.yml'
   workflow_dispatch:
 
@@ -31,10 +31,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r linux/print/requirements-build.txt
+          pip install -r linux/factupos-print/requirements-build.txt
 
       - name: Build .exe with PyInstaller (${{ matrix.arch }})
-        run: pyinstaller --onefile --windowed --name FactuPOS_Print${{ matrix.suffix }} linux/print/factupos_print_client.py
+        run: pyinstaller --onefile --windowed --name FactuPOS_Print${{ matrix.suffix }} linux/factupos-print/factupos_print_client.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -55,17 +55,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: FactuPOS_Print-x64
-          path: linux/print/installer
+          path: linux/factupos-print/installer
 
       - name: Descargar .exe x86
         uses: actions/download-artifact@v4
         with:
           name: FactuPOS_Print-x86
-          path: linux/print/installer
+          path: linux/factupos-print/installer
 
       - name: Descargar SumatraPDF (para modo DataReport, x64)
         shell: pwsh
-        run: Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/SumatraPDF.exe" -OutFile "linux/print/installer/SumatraPDF.exe"
+        run: Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/SumatraPDF.exe" -OutFile "linux/factupos-print/installer/SumatraPDF.exe"
 
       - name: Instalar Inno Setup
         run: choco install innosetup -y --no-progress
