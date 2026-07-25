@@ -1,6 +1,0 @@
-{
-    "version": "1.1.0",
-    "download_url": "https://soportereal.com/software/factupos-app/windows/FactuposBackup.exe",
-    "released": "2026-06-20",
-    "notes": "Nueva apariencia NAVY (look FactuPOS). Compilado por GitHub Actions. Defaults sin credenciales por seguridad (configurar usuario/password y unidades de red desde la app)."
-}

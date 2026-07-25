@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=FactuPOS · Barra de Tareas
-Comment=Barra de tareas de FactuPOS OS (con auto-reinicio)
-Exec=/usr/lib/factupos-panel/keepalive.sh
-Icon=start-here
-Terminal=false
-X-GNOME-Autostart-enabled=true
-NoDisplay=true

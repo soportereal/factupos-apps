@@ -54,10 +54,12 @@ except Exception:
     HAVE_XLIB = False
 
 APP_ID = "com.soportereal.factupos.panel"
-VERSION = "1.5.18"                                # fuente única de versión
+VERSION = "1.5.52"                                # fuente única de versión
 ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
 START_ICON = os.path.join(ASSETS, "start-icon.png")
 CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
+STATE_FILE = os.path.expanduser(                 # estado por USUARIO (sin root):
+    "~/.config/factupos-panel/estado.json")      # hoy solo "locked" (barra bloqueada)
 OS_VERSION_FILE = "/etc/factupos-os-version"     # versión de la distro (1 línea, ej: 5.1)
 OS_VERSION_DEFAULT = ""                          # respaldo si no hay archivo ni os-release
 
@@ -70,6 +72,10 @@ UPDATE_PY_LOCAL = os.path.expanduser("~/.local/share/factupos-panel/factupos-pan
 UPDATE_INTERVAL = 6 * 3600                       # re-chequeo cada 6 horas
 
 DEFAULT_HEIGHT = 44
+HOVER_POLL_MS = 120                              # cada cuánto se mira el puntero
+                                                 # para abrir submenús al pasar el mouse
+START_CLOSE_DELAY = 3                            # seg que el menú Inicio sigue visible
+                                                 # tras un clic afuera antes de esconderse
 
 
 def _vtuple(v):
@@ -80,10 +86,35 @@ def _vtuple(v):
         return (0,)
 
 # Administradores de tareas a probar, en orden (el primero que exista).
+# El propio de FactuPOS va primero.
 TASK_MANAGERS = [
+    "factupos-tareas",
     "gnome-system-monitor", "mate-system-monitor", "xfce4-taskmanager",
     "plasma-systemmonitor", "ksysguard", "lxtask",
 ]
+
+
+def icono_tema(*nombres):
+    """Primer ícono que EXISTA en el tema (los nombres varían por tema/distro).
+    Evita items sin ícono cuando el nombre no está (ej. internet-chat en XFCE)."""
+    try:
+        t = Gtk.IconTheme.get_default()
+        for n in nombres:
+            if t.has_icon(n):
+                return n
+    except Exception:
+        pass
+    return nombres[-1]
+
+
+def brand_icon():
+    """Logo FactuPOS (hexágono): el del propio .deb del panel, o el de la
+    distro; si no hay ninguno, cae al ícono de tema."""
+    for p in ("/usr/lib/factupos-panel/factupos.png",
+              "/usr/share/factupos-os/factupos.png"):
+        if os.path.exists(p):
+            return p
+    return "start-here"
 
 # Menú Inicio por defecto (si no hay /etc/factupos-panel/menu.json).
 # Cada item: (etiqueta, comando, icono). Solo se muestran los comandos cuyo
@@ -131,7 +162,7 @@ CSS = b"""
 .fp-task-active label { color: #ffffff; font-weight: bold; }
 
 /* Popups (menu, red, calendario, volumen, equipo): esquema claro de alto contraste */
-.fp-startmenu { background-color: #ffffff; border: 1px solid #2d5aa6; }
+.fp-startmenu { background-color: #eef2f8; border: 1px solid #2d5aa6; }
 .fp-startmenu label { color: #14233f; }
 .fp-startmenu separator { background-color: #c9d6ea; min-width: 1px; min-height: 1px; }
 .fp-startmenu button { background-image: none; background-color: #e8eff9; color: #14233f;
@@ -148,16 +179,27 @@ CSS = b"""
 .fp-startmenu scale slider { background-color: #ffffff; border: 1px solid #2d5aa6; }
 .fp-banner { background: linear-gradient(to top, #0a1730, #1f3f78); border-right: 1px solid #2d5aa6; }
 .fp-banner label { color: #ffffff; }
-.fp-startmenu button.fp-mitem { background-color: transparent; border: none; padding: 11px 18px; margin: 3px 4px; border-radius: 4px; }
+/* items del menu principal: planos, compactos, sin radius ni sombra */
+.fp-startmenu button.fp-mitem { background-color: transparent; border: none;
+    padding: 4px 12px; margin: 0; border-radius: 0; box-shadow: none; }
 .fp-startmenu button.fp-mitem:hover { background-color: #d6e4fb; }
-.fp-mitem label { font-size: 1.05em; color: #14233f; }
-.fp-startmenu button.fp-item { background-color: transparent; border: none; padding: 7px 10px; margin: 2px; border-radius: 4px; }
+.fp-mitem label { font-size: 1em; color: #14233f; }
+.fp-startmenu button.fp-item { background-color: transparent; border: none; padding: 3px 10px; margin: 0; border-radius: 0; }
 .fp-startmenu button.fp-item:hover { background-color: #d6e4fb; }
-.fp-menu-header { color: #1f4f9c; font-weight: bold; padding: 6px 10px 2px 10px; }
+.fp-menu-header { color: #1f4f9c; font-weight: bold; padding: 4px 10px 1px 10px; }
 .fp-menu-right, .fp-menu-foot { background-color: #eef3fb; }
-.fp-flyout { background-color: #ffffff; }
-.fp-flyout menuitem { padding: 8px 16px; color: #14233f; }
+/* submenus (flyouts): mismo criterio plano */
+.fp-flyout { background-color: #ffffff; border: 1px solid #dbe3ef; }
+.fp-flyout menuitem { background-color: transparent; border: none;
+    border-radius: 0; margin: 0; padding: 4px 12px; color: #14233f;
+    box-shadow: none; }
 .fp-flyout menuitem:hover { background-color: #d6e4fb; }
+/* tercer nivel (ramas dentro de FactuPOS) */
+.fp-flyout-plano { background-color: #ffffff; border: 1px solid #dbe3ef; }
+.fp-flyout-plano menuitem { padding: 4px 12px; color: #14233f;
+    border-radius: 0; margin: 0; }
+.fp-flyout-plano menuitem:hover { background-color: #d6e4fb; }
+.fp-flyout-plano label { color: #14233f; }
 .fp-flyout label { color: #14233f; }
 """
 
@@ -230,8 +272,14 @@ def detached_run(cmd):
             return
         cmd = tm
     try:
-        subprocess.Popen(shlex.split(cmd), start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if "||" in cmd or "&&" in cmd:
+            # cadena con respaldos (ej. apagar: comando del escritorio y si
+            # falla, systemctl) -> necesita shell
+            subprocess.Popen(["sh", "-c", cmd], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.Popen(shlex.split(cmd), start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         _error_dialog("No se pudo abrir:\n%s\n\n%s" % (cmd, e))
 
@@ -274,8 +322,34 @@ def load_menu():
     return DEFAULT_MENU
 
 
+def load_state():
+    """Estado del panel guardado por usuario (no requiere root)."""
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_state(**cambios):
+    """Guarda solo las claves indicadas, respetando el resto del archivo."""
+    d = load_state()
+    d.update(cambios)
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2)
+    except Exception as e:
+        sys.stderr.write("estado: %s\n" % e)
+
+
 def os_version():
-    """Versión de FactuPOS OS: archivo /etc/factupos-os-version, o VERSION_ID."""
+    """Versión de FactuPOS OS: SOLO el archivo /etc/factupos-os-version.
+
+    NO se cae a VERSION_ID de /etc/os-release: eso devuelve la versión de la
+    base (en LMDE 7 daba "7") y el banner la mostraba como si fuera la versión
+    de FactuPOS OS. Si la distro no declara la suya, no se muestra nada."""
     try:
         if os.path.exists(OS_VERSION_FILE):
             with open(OS_VERSION_FILE) as f:
@@ -284,14 +358,10 @@ def os_version():
                     return v
     except Exception:
         pass
-    try:
-        with open("/etc/os-release") as f:
-            for ln in f:
-                if ln.startswith("VERSION_ID="):
-                    return ln.split("=", 1)[1].strip().strip('"')
-    except Exception:
-        pass
     return OS_VERSION_DEFAULT
+
+
+PANELES = []      # todas las barras vivas (con --monitor all hay una por pantalla)
 
 
 class Panel(Gtk.Window):
@@ -303,6 +373,10 @@ class Panel(Gtk.Window):
         self.monitor_index = monitor   # None = monitor primario
         self.primary = primary          # solo el panel primario maneja atajos y auto-update
         self._xhotkey = None
+        # Barra bloqueada: no se puede mover de monitor ni cambiar de borde.
+        # Se recuerda por usuario en STATE_FILE.
+        self.locked = bool(load_state().get("locked", False))
+        PANELES.append(self)
 
         self.set_title("FactuPOS Panel")
         self.set_decorated(False)
@@ -367,6 +441,8 @@ class Panel(Gtk.Window):
 
     def move_to_monitor(self, index):
         """Mueve la barra a otro monitor (en caliente) y re-reserva el espacio."""
+        if self.locked:
+            return
         self.monitor_index = index
         self._geometry()
         if HAVE_XLIB and self.get_window() is not None:
@@ -377,6 +453,8 @@ class Panel(Gtk.Window):
 
     def _set_edge(self, edge):
         """Cambia el borde/orientación de la barra en caliente (reconstruye)."""
+        if self.locked:
+            return
         self.edge = edge
         self.vertical = edge in ("left", "right")
         child = self.get_child()
@@ -1173,15 +1251,22 @@ class Panel(Gtk.Window):
             return 24
 
     def _run_priv(self, args):
-        """Corre nmcli; si falla por permisos, reintenta con pkexec (diálogo)."""
+        """Corre nmcli; si falla por permisos, reintenta con pkexec (diálogo).
+        LC_ALL=C para que el error sea SIEMPRE en inglés (en Debian puro el
+        sistema en español decía "no autorizado" y no se detectaba)."""
+        env = dict(os.environ, LC_ALL="C")
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=45)
+            r = subprocess.run(args, capture_output=True, text=True,
+                               timeout=45, env=env)
             if r.returncode == 0:
                 return True, (r.stdout or "").strip()
             err = (r.stderr or "").strip()
-            if any(k in err.lower() for k in ("not authorized", "permission", "insufficient")):
+            if any(k in err.lower() for k in (
+                    "not authorized", "permission", "insufficient",
+                    "privilege", "autoriz", "permis", "insuficiente")):
                 if shutil.which("pkexec"):
-                    r2 = subprocess.run(["pkexec"] + args, capture_output=True, text=True, timeout=90)
+                    r2 = subprocess.run(["pkexec"] + args, capture_output=True,
+                                        text=True, timeout=90, env=env)
                     return r2.returncode == 0, (r2.stderr or r2.stdout or "").strip()
             return False, err
         except Exception as e:
@@ -2067,6 +2152,9 @@ class Panel(Gtk.Window):
         win.set_size_request(340, -1)
         win.get_style_context().add_class("fp-startmenu")
 
+        # items con hover (se llena en _mitem): [(boton, abridor_de_submenu|None)]
+        self._hover_items = []
+
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         win.add(row)
 
@@ -2099,7 +2187,7 @@ class Panel(Gtk.Window):
         col.pack_start(search, False, False, 2)
 
         # --- items normales del menú (se ocultan al buscar) ---
-        items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         col.pack_start(items, True, True, 0)
         # Accesos rápidos arriba: Documentos, Imágenes y Ayuda y soporte.
         items.pack_start(self._mitem("Documentos", "folder-documents", lambda *_:
@@ -2111,19 +2199,30 @@ class Panel(Gtk.Window):
         items.pack_start(self._mitem("Ayuda y soporte", "help-browser", lambda *_:
             (self._close_start_menu(),
              detached_run("xdg-open https://soportereal.com"))), False, False, 0)
-        items.pack_start(self._msep(), False, False, 4)
-        items.pack_start(self._mitem("Programas", "applications-other",
-            lambda w: self._open_flyout(self._programs_menu, w), arrow=True), False, False, 0)
-        items.pack_start(self._mitem("Utilidades", "applications-utilities",
-            lambda w: self._open_flyout(self._utils_menu, w), arrow=True), False, False, 0)
+        # --- Menú CURADO: solo FactuPOS y sus aplicaciones (decisión del dueño).
+        # Lo demás instalado se encuentra con el buscador de arriba.
+        # Herramientas / Aplicaciones / Configuración van en el PRIMER nivel
+        # (antes colgaban de un item "FactuPOS ▶", que se eliminó junto con el
+        # acceso "Facturación FactuPOS" — pedido del dueño).
+        items.pack_start(self._msep(), False, False, 2)
         items.pack_start(self._mitem("Herramientas", "applications-system",
-            lambda w: self._open_flyout(self._tools_menu, w), arrow=True), False, False, 0)
-        items.pack_start(self._msep(), False, False, 4)
+            lambda w: self._open_flyout(self._herramientas_menu, w), arrow=True), False, False, 0)
+        items.pack_start(self._mitem("Aplicaciones", "applications-other",
+            lambda w: self._open_flyout(self._aplicaciones_menu, w), arrow=True), False, False, 0)
         items.pack_start(self._mitem("Configuración", "preferences-system",
             lambda w: self._open_flyout(self._settings_menu, w), arrow=True), False, False, 0)
-        items.pack_start(self._mitem("Sistema", "applications-system",
-            lambda w: self._open_flyout(self._system_menu, w), arrow=True), False, False, 0)
-        items.pack_start(self._msep(), False, False, 4)
+        items.pack_start(self._msep(), False, False, 2)
+        items.pack_start(self._mitem("Ofimática", "applications-office",
+            lambda w: self._open_flyout(self._office_menu, w), arrow=True), False, False, 0)
+        items.pack_start(self._mitem("Navegadores", "web-browser",
+            lambda w: self._open_flyout(self._browsers_menu, w), arrow=True), False, False, 0)
+        items.pack_start(self._mitem("Mensajería",
+            icono_tema("internet-chat", "im-message-new", "chat",
+                       "mail-message-new", "user-available"),
+            lambda w: self._open_flyout(self._messaging_menu, w), arrow=True), False, False, 0)
+        items.pack_start(self._mitem("Programas", "applications-other",
+            lambda w: self._open_flyout(self._essentials_menu, w), arrow=True), False, False, 0)
+        items.pack_start(self._msep(), False, False, 2)
         items.pack_start(self._mitem("Equipo", "computer",
             lambda *_: (self._close_start_menu(),
                         detached_run("factupos-dataequipo")
@@ -2131,7 +2230,7 @@ class Panel(Gtk.Window):
                         else self.open_equipo())), False, False, 0)
         items.pack_start(self._mitem("Terminal", "utilities-terminal", lambda *_:
             (self._close_start_menu(), detached_run("x-terminal-emulator"))), False, False, 0)
-        items.pack_start(self._msep(), False, False, 4)
+        items.pack_start(self._msep(), False, False, 2)
         items.pack_start(self._mitem("Apagar", "system-shutdown",
             lambda w: self._open_flyout(self._power_menu, w), arrow=True), False, False, 0)
 
@@ -2198,6 +2297,7 @@ class Panel(Gtk.Window):
         win.connect("destroy", lambda *_: setattr(self, "_startwin", None))
         self._startwin = win
         GLib.idle_add(self._grab_start_menu, win)
+        self._hover_start()
 
     # ---------- helpers del menú Inicio (Windows 2000) ----------
     def _mitem(self, label, icon, on_click, arrow=False):
@@ -2205,8 +2305,15 @@ class Panel(Gtk.Window):
         b.set_relief(Gtk.ReliefStyle.NONE)
         b.get_style_context().add_class("fp-mitem")
         r = Gtk.Box(spacing=10)
-        r.pack_start(Gtk.Image.new_from_icon_name(icon or "application-x-executable",
-                                                  Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
+        if icon and icon.startswith("/") and os.path.exists(icon):
+            # icono por RUTA de archivo (logo FactuPOS), escalado a 20px
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_size(icon, 20, 20)
+            img = Gtk.Image.new_from_pixbuf(pb)
+        else:
+            img = Gtk.Image.new_from_icon_name(icon or "application-x-executable",
+                                               Gtk.IconSize.LARGE_TOOLBAR)
+            img.set_pixel_size(20)
+        r.pack_start(img, False, False, 0)
         l = Gtk.Label(label=label)
         l.set_xalign(0)
         r.pack_start(l, True, True, 0)
@@ -2215,6 +2322,12 @@ class Panel(Gtk.Window):
                          False, False, 0)
         b.add(r)
         b.connect("clicked", lambda _w: on_click(b))
+        # Los items con flecha (submenú) se abren solos al pasar el mouse; los
+        # demás se registran igual para poder CERRAR el submenú abierto al pasarles.
+        try:
+            self._hover_items.append((b, on_click if arrow else None))
+        except AttributeError:
+            pass
         return b
 
     def _msep(self):
@@ -2226,6 +2339,10 @@ class Panel(Gtk.Window):
         box = Gtk.Box(spacing=8)
         if gicon is not None:
             img = Gtk.Image.new_from_gicon(gicon, Gtk.IconSize.MENU)
+        elif icon and icon.startswith("/") and os.path.exists(icon):
+            # icono por RUTA de archivo (ej. logo FactuPOS), escalado a 16px
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_size(icon, 16, 16)
+            img = Gtk.Image.new_from_pixbuf(pb)
         else:
             img = Gtk.Image.new_from_icon_name(icon or "application-x-executable", Gtk.IconSize.MENU)
         # Forzar 16px: si un .desktop trae un Icon que solo existe como PNG grande
@@ -2274,7 +2391,8 @@ class Panel(Gtk.Window):
             added = True
         buckets, otros = self._categorize()
         for _k, es in list(CATEGORIES) + [("Otros", "Otros")]:
-            if es in ("Herramientas del sistema", "Accesorios", "Configuración"):
+            if es in ("Herramientas del sistema", "Accesorios", "Configuración",
+                      "Oficina"):  # Oficina tiene su propio menú "Ofimática"
                 continue
             apps = otros if es == "Otros" else buckets.get(es, [])
             apps = [(nm, ai) for (nm, ai) in apps if nm.strip().lower() not in seen]
@@ -2314,13 +2432,95 @@ class Panel(Gtk.Window):
             menu.append(mi)
         return menu
 
+    def _fp_add(self, sub, label, icon, cmd=None, desktop=None):
+        """Agrega un item al menú si el programa existe en el equipo."""
+        ai = None
+        if desktop:
+            try:
+                ai = Gio.DesktopAppInfo.new(desktop)
+            except Exception:
+                ai = None
+            if ai is None:
+                return
+        elif not cmd_available((cmd or "").split()[0]):
+            return
+        mi = self._img_menu_item(label, icon)
+        if ai is not None:
+            mi.connect("activate", lambda _w, a=ai:
+                       (self._close_start_menu(), self._launch_appinfo(a)))
+        else:
+            mi.connect("activate", lambda _w, c=cmd:
+                       (self._close_start_menu(), detached_run(c)))
+        sub.append(mi)
+
+    def _herramientas_menu(self):
+        """Herramientas FactuPOS. Subió al PRIMER nivel del menú Inicio
+        (antes colgaba de un item FactuPOS ▶, eliminado a pedido del dueño).
+        Solo muestra lo que exista en el equipo."""
+        herr = Gtk.Menu()
+        herr.get_style_context().add_class("fp-flyout")
+        add = self._fp_add
+
+        hay_actualizador = os.path.exists(
+            "/usr/lib/factupos-actualizador/factupos-actualizador.sh")
+        if cmd_available("factupos-apps"):
+            add(herr, "FactuPOS Apps", "system-software-install", cmd="factupos-apps")
+        elif hay_actualizador:
+            # La tienda no está (pero el Actualizador sí): instalarla directo.
+            # Si TAMPOCO hay Actualizador no se muestra este item — el de
+            # "Instalar herramientas FactuPOS" de abajo ya instala TODO.
+            mi = self._img_menu_item("Instalar FactuPOS Apps",
+                                     "system-software-install")
+            mi.connect("activate", self._instalar_tienda)
+            herr.append(mi)
+        if hay_actualizador:
+            mi = self._img_menu_item("FactuPOS Update", "system-software-update")
+            mi.connect("activate", self._update_apps)
+            herr.append(mi)
+        else:
+            # PC sin el Actualizador (ej: solo tiene el panel): bootstrap —
+            # baja e instala el Actualizador, que configura el repo apt e
+            # instala la tienda y las demás apps base. Un clic = PC completa.
+            mi = self._img_menu_item("Instalar herramientas FactuPOS",
+                                     "system-software-install")
+            mi.connect("activate", self._bootstrap_factupos)
+            herr.append(mi)
+        mi = self._img_menu_item("Actualizar repositorios", "view-refresh")
+        mi.connect("activate", self._actualizar_repos)
+        herr.append(mi)
+        add(herr, "FactuPOS Impresoras", "printer", cmd="factupos-printer-inst")
+        add(herr, "Monitores", "video-display", cmd="factupos-pantalla")
+        add(herr, "Administrador de Tareas", "utilities-system-monitor",
+            cmd="factupos-tareas")
+        add(herr, "Conexiones de Red", "network-workgroup", cmd="factupos-conexiones")
+        add(herr, "Fondo de Escritorio", "preferences-desktop-wallpaper",
+            cmd="factupos-fondo")
+        add(herr, "Opciones de Energía", "preferences-system-power",
+            cmd="factupos-energia")
+        add(herr, "Inicio de sesión automático", "system-lock-screen",
+            cmd="factupos-autologin")
+        return herr
+
+    def _aplicaciones_menu(self):
+        """Aplicaciones FactuPOS. Subió al PRIMER nivel del menú Inicio."""
+        apps = Gtk.Menu()
+        apps.get_style_context().add_class("fp-flyout")
+        add = self._fp_add
+        add(apps, "FactuPOS Print", "printer", desktop="factupos-print.desktop")
+        add(apps, "FactuPOS Bridge", "network-transmit-receive",
+            desktop="factupos-print-bridge.desktop")
+        add(apps, "FactuPOS IA", "user-available", cmd="factupos-ia")
+        add(apps, "Datos del Equipo", "computer", cmd="factupos-dataequipo")
+        add(apps, "Soporte Remoto FactuPOS", "preferences-desktop-remote-desktop",
+            cmd="rustdesk")
+        return apps
+
     def _utils_menu(self):
         """Utilidades: apps curadas de FactuPOS + el resto de Accesorios ('y demás')."""
         menu = Gtk.Menu()
         menu.get_style_context().add_class("fp-flyout")
         seen = set()
         curated = (
-            ("FactuPOS · Instalador de Impresoras", "printer", "factupos-printer-inst"),
             ("Calculadora", "accessories-calculator", "gnome-calculator"),
             ("Editores", "accessories-text-editor", "xed"),
             ("Notas", "accessories-text-editor", "sticky"),
@@ -2342,22 +2542,136 @@ class Panel(Gtk.Window):
                 menu.append(self._app_item(nm, gicon=ai.get_icon(), appinfo=ai))
         return menu
 
+    def _office_menu(self):
+        """Ofimática: LibreOffice y demás apps de oficina instaladas."""
+        return self._category_menu("Oficina")
+
+    def _browsers_menu(self):
+        """Navegadores instalados: Chrome, Brave, Firefox, Edge, Chromium."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        curated = (
+            ("Google Chrome",  icono_tema("google-chrome", "web-browser"), "google-chrome"),
+            ("Brave",          icono_tema("brave-browser", "brave", "web-browser"), "brave-browser"),
+            ("Firefox",        icono_tema("firefox", "firefox-esr", "web-browser"),
+             self._cmd_disponible("firefox", "firefox-esr")),
+            ("Microsoft Edge", icono_tema("microsoft-edge", "web-browser"),
+             self._cmd_disponible("microsoft-edge-stable", "microsoft-edge")),
+            ("Chromium",       icono_tema("chromium", "chromium-browser", "web-browser"), "chromium"),
+        )
+        added = False
+        for label, icon, cmd in curated:
+            if not cmd_available(cmd.split()[0]):
+                continue
+            mi = self._img_menu_item(label, icon)
+            mi.connect("activate", lambda _w, c=cmd:
+                       (self._close_start_menu(), detached_run(c)))
+            menu.append(mi)
+            added = True
+        if not added:
+            mi = Gtk.MenuItem(label="(ninguno instalado)")
+            mi.set_sensitive(False)
+            menu.append(mi)
+        return menu
+
+    @staticmethod
+    def _icono_app(nombre_png, fallback):
+        """Logo empaquetado en el .deb del panel; si no está, ícono de tema."""
+        p = "/usr/lib/factupos-panel/" + nombre_png
+        return p if os.path.exists(p) else fallback
+
+    def _messaging_menu(self):
+        """Mensajería: Telegram y WhatsApp (web-app si no hay cliente nativo)."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        tele = self._cmd_disponible("telegram-desktop", "Telegram", "telegram")
+        if cmd_available(tele.split()[0]):
+            mi = self._img_menu_item("Telegram",
+                                     self._icono_app("telegram.png", "internet-chat"))
+            mi.connect("activate", lambda _w, c=tele:
+                       (self._close_start_menu(), detached_run(c)))
+            menu.append(mi)
+        # WhatsApp: nativo si existe; si no, app web con Chrome; último: navegador
+        wa = self._cmd_disponible("whatsapp-for-linux", "whatsdesk")
+        if not cmd_available(wa.split()[0]):
+            if cmd_available("google-chrome"):
+                wa = ("google-chrome --app=https://web.whatsapp.com "
+                      "--password-store=basic")
+            else:
+                wa = "xdg-open https://web.whatsapp.com"
+        mi = self._img_menu_item("WhatsApp",
+                                 self._icono_app("whatsapp.png", "internet-chat"))
+        mi.connect("activate", lambda _w, c=wa:
+                   (self._close_start_menu(), detached_run(c)))
+        menu.append(mi)
+        return menu
+
+    def _essentials_menu(self):
+        """Programas: esenciales de la distro que (aún) no desarrollamos
+        nosotros — lista CURADA, cada uno con su cadena de alternativas."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        curated = (
+            ("Archivos", "system-file-manager",
+             self._cmd_disponible("thunar", "nemo", "pcmanfm")),
+            ("Editor de texto", "accessories-text-editor",
+             self._cmd_disponible("xed", "mousepad", "gedit", "featherpad")),
+            ("Calculadora", "accessories-calculator",
+             self._cmd_disponible("gnome-calculator", "galculator", "mate-calc")),
+            ("Captura de pantalla", "applets-screenshooter",
+             self._cmd_disponible("xfce4-screenshooter", "gnome-screenshot", "flameshot gui")),
+            ("Visor de PDF", "application-pdf",
+             self._cmd_disponible("xreader", "evince", "atril")),
+            ("Configurar impresoras", "printer",
+             self._cmd_disponible("system-config-printer")),
+            ("Synaptic (paquetes)", "system-software-install",
+             self._cmd_disponible("synaptic-pkexec", "synaptic")),
+        )
+        added = False
+        for label, icon, cmd in curated:
+            if not cmd_available(cmd.split()[0]):
+                continue
+            mi = self._img_menu_item(label, icon)
+            mi.connect("activate", lambda _w, c=cmd:
+                       (self._close_start_menu(), detached_run(c)))
+            menu.append(mi)
+            added = True
+        if not added:
+            mi = Gtk.MenuItem(label="(sin elementos)")
+            mi.set_sensitive(False)
+            menu.append(mi)
+        return menu
+
     def _tools_menu(self):
         return self._category_menu("Herramientas del sistema")
 
     def _settings_menu(self):
-        """Configuración: ajustes curados de FactuPOS OS (lista fija)."""
+        """Configuración: ajustes curados de FactuPOS OS (lista fija).
+        FUSIONADO: antes había DOS 'Configuración' — esta y otra colgando de
+        FactuPOS ▶, que compartían Apariencia/Idioma/Teclado. Al subir las ramas
+        al primer nivel quedaban duplicadas, así que se unieron acá. De la de
+        FactuPOS se conservaron sus comandos CON RESPALDO (xfce4 → cinnamon),
+        que aguantan mejor un escritorio que no sea Cinnamon."""
         menu = Gtk.Menu()
         menu.get_style_context().add_class("fp-flyout")
+        cd = self._cmd_disponible
         # (etiqueta, icono, comando)  -- solo se muestra si el binario existe
         curated = (
-            ("Pantalla", "video-display", "cinnamon-settings display"),
+            ("Pantalla", "video-display",
+             cd("xfce4-display-settings", "cinnamon-settings display")),
             ("Impresoras", "printer", "system-config-printer"),
-            ("Apariencia", "preferences-desktop-theme", "cinnamon-settings themes"),
-            ("Idioma", "preferences-desktop-locale", "mintlocale"),
+            ("Apariencia", "preferences-desktop-theme",
+             cd("xfce4-appearance-settings", "cinnamon-settings themes")),
+            ("Idioma y región", "preferences-desktop-locale",
+             cd("mintlocale", "gnome-language-selector", "cinnamon-settings region")),
+            ("Teclado", "input-keyboard",
+             cd("xfce4-keyboard-settings", "cinnamon-settings keyboard")),
+            ("Ratón y touchpad", "input-mouse",
+             cd("xfce4-mouse-settings", "cinnamon-settings mouse")),
+            ("Fecha y hora", "preferences-system-time",
+             cd("time-admin", "cinnamon-settings calendar", "xfce4-settings-manager")),
             ("Red", "network-wireless", "nm-connection-editor"),
             ("Bluetooth", "bluetooth", "blueman-manager"),
-            ("Teclado", "input-keyboard", "cinnamon-settings keyboard"),
         )
         self._append_curated(menu, curated)
         return menu
@@ -2376,12 +2690,92 @@ class Panel(Gtk.Window):
             ("Seguridad", "preferences-system-privacy", "seahorse"),
         )
         self._append_curated(menu, curated)
-        # Actualizar TODAS las apps FactuPOS (dispara el servicio actualizador).
-        menu.append(Gtk.SeparatorMenuItem())
-        mi = self._img_menu_item("Actualizar aplicaciones FactuPOS", "system-software-update")
-        mi.connect("activate", self._update_apps)
-        menu.append(mi)
+        # "Actualizar aplicaciones FactuPOS" se movió al menú FactuPOS ▶
+        # (FactuPOS Update); acá solo quedan cosas del sistema.
         return menu
+
+    def _bootstrap_factupos(self, *_):
+        """El panel como INSTALADOR del sistema: en una PC que solo tiene el
+        panel, baja e instala el Actualizador (el .deb ya configura el repo
+        apt) y lo dispara — este instala la tienda y todas las apps base.
+        Un clic deja la PC con la suite FactuPOS completa."""
+        self._close_start_menu()
+        self._notify("Instalando herramientas FactuPOS… (toma un momento)")
+        url = ("https://soportereal.com/software/factupos-app/linux/"
+               "Factupos-Actualizador.deb")
+        script = ("sed -i '/cdrom:/s/^[^#]/#&/' /etc/apt/sources.list 2>/dev/null; DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold >/dev/null 2>&1; "
+                  "cd /tmp && rm -f fp-act.deb && "
+                  "(wget -qO fp-act.deb %s || curl -fsSL -o fp-act.deb %s) && "
+                  "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 install -y /tmp/fp-act.deb && "
+                  "systemctl start factupos-actualizador.service; "
+                  "systemctl start factupos-actualizador.service; "
+                  "rm -f /tmp/fp-act.deb") % (url, url)
+
+        def work():
+            try:
+                r = subprocess.run(["pkexec", "sh", "-c", script],
+                                   capture_output=True, text=True, timeout=900)
+                if r.returncode == 0:
+                    self._notify("Herramientas FactuPOS instaladas ✓ "
+                                 "Abrí el menú FactuPOS de nuevo.")
+                else:
+                    err = (r.stderr or r.stdout or "").strip().splitlines()
+                    self._notify("No se pudo instalar: %s" %
+                                 (err[-1] if err else "autorización cancelada"))
+            except Exception as e:
+                self._notify("No se pudo instalar: %s" % e)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _instalar_tienda(self, *_):
+        """Instala la tienda FactuPOS Apps desde el panel. Si el equipo aún no
+        tiene el repo apt configurado, corre el bootstrap completo (que además
+        instala el Actualizador y las apps base)."""
+        if not os.path.exists("/etc/apt/sources.list.d/factupos.list"):
+            return self._bootstrap_factupos()
+        self._close_start_menu()
+        self._notify("Instalando FactuPOS Apps…")
+        script = ("sed -i '/cdrom:/s/^[^#]/#&/' /etc/apt/sources.list 2>/dev/null; DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold >/dev/null 2>&1; "
+                  "apt-get -o DPkg::Lock::Timeout=180 update -o Dir::Etc::sourcelist="
+                  "/etc/apt/sources.list.d/factupos.list "
+                  "-o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 -qq; "
+                  "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 install -y factupos-apps")
+
+        def work():
+            try:
+                r = subprocess.run(["pkexec", "sh", "-c", script],
+                                   capture_output=True, text=True, timeout=600)
+                if r.returncode == 0:
+                    self._notify("FactuPOS Apps instalada ✓ Ya aparece en el menú.")
+                else:
+                    err = (r.stderr or r.stdout or "").strip().splitlines()
+                    self._notify("No se pudo instalar: %s" %
+                                 (err[-1] if err else "autorización cancelada"))
+            except Exception as e:
+                self._notify("No se pudo instalar: %s" % e)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _actualizar_repos(self, *_):
+        """apt-get -o DPkg::Lock::Timeout=180 update de TODOS los repositorios (root vía pkexec).
+        También desactiva la fuente cdrom si quedó del instalador."""
+        self._close_start_menu()
+        self._notify("Actualizando repositorios…")
+
+        def work():
+            try:
+                r = subprocess.run(
+                    ["pkexec", "sh", "-c",
+                     "sed -i '/cdrom:/s/^[^#]/#&/' /etc/apt/sources.list 2>/dev/null; DEBIAN_FRONTEND=noninteractive dpkg --configure -a --force-confdef --force-confold >/dev/null 2>&1; "
+                     "apt-get -o DPkg::Lock::Timeout=180 update"],
+                    capture_output=True, text=True, timeout=600)
+                if r.returncode == 0:
+                    self._notify("Repositorios actualizados ✓")
+                else:
+                    err = (r.stderr or r.stdout or "").strip().splitlines()
+                    self._notify("Error al actualizar: %s" %
+                                 (err[-1] if err else "autorización cancelada"))
+            except Exception as e:
+                self._notify("Error al actualizar: %s" % e)
+        threading.Thread(target=work, daemon=True).start()
 
     def _update_apps(self, *_):
         """Dispara el servicio Factupos-Actualizador (root vía pkexec): actualiza
@@ -2421,14 +2815,44 @@ class Panel(Gtk.Window):
             mi.set_sensitive(False)
             menu.append(mi)
 
+    @staticmethod
+    def _cmd_disponible(*candidatos):
+        """Primer comando cuyo ejecutable existe (agnóstico al escritorio)."""
+        for c in candidatos:
+            if shutil.which(c.split()[0]):
+                return c
+        return candidatos[-1]
+
+    @staticmethod
+    def _cadena_poder(*candidatos, final):
+        """Comando de energía multi-escritorio: intenta el del escritorio
+        (Cinnamon en Mint LMDE, XFCE en Debian puro) y si falla cae a
+        systemctl. Compatible con .deb viejos sin la regla polkit."""
+        partes = [c for c in candidatos if shutil.which(c.split()[0])]
+        partes.append(final)
+        return " || ".join(partes)
+
     def _power_menu(self):
         menu = Gtk.Menu()
         menu.get_style_context().add_class("fp-flyout")
+        apagar = self._cadena_poder(
+            "cinnamon-session-quit --power-off --no-prompt",  # Mint LMDE
+            "xfce4-session-logout --halt --fast",             # Debian XFCE
+            final="systemctl poweroff")
+        reiniciar = self._cadena_poder(
+            "cinnamon-session-quit --reboot --no-prompt",
+            "xfce4-session-logout --reboot --fast",
+            final="systemctl reboot")
+        logout = self._cmd_disponible(
+            "cinnamon-session-quit --logout --no-prompt",   # Cinnamon (LMDE)
+            "xfce4-session-logout --logout --fast",          # XFCE (Debian puro)
+            "loginctl terminate-user %s" % os.environ.get("USER", ""),
+        )
         for label, icon, cmd in (
-            ("Apagar", "system-shutdown", "cinnamon-session-quit --power-off"),
-            ("Reiniciar", "system-reboot", "cinnamon-session-quit --reboot"),
+            ("Apagar", "system-shutdown", apagar),
+            ("Reiniciar", "system-reboot", reiniciar),
             ("Suspender", "system-suspend", "systemctl suspend"),
-            ("Cerrar sesión", "system-log-out", "cinnamon-session-quit --logout"),
+            ("Cerrar sesión", "system-log-out", logout),
         ):
             mi = self._img_menu_item(label, icon)
             mi.connect("activate", lambda _w, c=cmd: (self._close_start_menu(), detached_run(c)))
@@ -2441,7 +2865,17 @@ class Panel(Gtk.Window):
         except Exception:
             pass
         menu = build_menu()
-        menu.connect("deactivate", lambda *_: GLib.idle_add(self._regrab_start))
+        self._flyout = menu
+
+        def _on_deact(m):
+            # Solo soltamos la referencia si sigue siendo el submenú vigente
+            # (al cambiar de submenú por hover, el viejo se desactiva DESPUÉS
+            # de que el nuevo ya se registró).
+            if getattr(self, "_flyout", None) is m:
+                self._flyout = None
+            GLib.idle_add(self._regrab_start)
+
+        menu.connect("deactivate", _on_deact)
         menu.show_all()
         # La cascada se abre a la derecha; hacia ARRIBA si la barra está abajo,
         # hacia abajo si está arriba (para no salirse de pantalla).
@@ -2452,9 +2886,94 @@ class Panel(Gtk.Window):
         menu.popup_at_widget(widget, wa, ma, None)
 
     def _regrab_start(self):
+        # Si hay un submenú abierto (p.ej. cambiamos de uno a otro por hover),
+        # el grab es SUYO: recuperarlo aquí lo cerraría de inmediato.
+        if getattr(self, "_flyout", None) is not None:
+            return False
         if getattr(self, "_startwin", None) is not None:
             self._grab_start_menu(self._startwin)
         return False
+
+    # ---------- apertura automática de submenús al pasar el mouse ----------
+    # Se hace por POLLING del puntero y no con enter-notify a propósito: cuando
+    # un Gtk.Menu está desplegado toma el grab del puntero, así que la ventana
+    # del menú Inicio deja de recibir eventos de hover y no se podría pasar de
+    # un submenú a otro. Consultar la posición del puntero funciona igual.
+    def _hover_start(self):
+        self._hover_item = None
+        self._hover_stop()
+        self._hover_timer = GLib.timeout_add(HOVER_POLL_MS, self._hover_tick)
+
+    def _hover_stop(self):
+        t = getattr(self, "_hover_timer", None)
+        if t:
+            try:
+                GLib.source_remove(t)
+            except Exception:
+                pass
+        self._hover_timer = None
+        self._hover_item = None
+
+    def _hover_tick(self):
+        win = getattr(self, "_startwin", None)
+        if win is None:
+            self._hover_timer = None
+            return False
+        try:
+            gw = win.get_window()
+            if gw is None:
+                return True
+            _, px, py = win.get_display().get_default_seat().get_pointer().get_position()
+
+            # Si el puntero está DENTRO del submenú abierto, no tocar nada:
+            # el usuario está yendo hacia sus opciones.
+            fly = getattr(self, "_flyout", None)
+            if fly is not None:
+                fw = fly.get_window()
+                if fw is not None:
+                    _, fx, fy = fw.get_origin()
+                    if (fx <= px <= fx + fw.get_width()
+                            and fy <= py <= fy + fw.get_height()):
+                        return True
+
+            _, ox, oy = gw.get_origin()
+            rx, ry = px - ox, py - oy
+
+            # Si hay un cierre diferido pendiente (clic afuera) y el mouse
+            # vuelve sobre el menú, se cancela: el usuario lo sigue usando.
+            aw = win.get_allocation()
+            if 0 <= rx <= aw.width and 0 <= ry <= aw.height:
+                self._cancel_close()
+
+            hit = None
+            for btn, opener in getattr(self, "_hover_items", []):
+                if not btn.get_mapped():
+                    continue
+                a = btn.get_allocation()
+                if (a.x <= rx <= a.x + a.width) and (a.y <= ry <= a.y + a.height):
+                    hit = (btn, opener)
+                    break
+
+            if hit is None:
+                # Fuera de los items (buscador, banner, afuera): no cerramos nada,
+                # para no matar el submenú mientras el mouse viaja hacia él.
+                return True
+
+            btn, opener = hit
+            if btn is getattr(self, "_hover_item", None):
+                return True          # mismo item, ya está resuelto
+            self._hover_item = btn
+
+            if opener is not None:
+                if fly is not None:
+                    fly.popdown()
+                opener(btn)
+            elif fly is not None:
+                # Item sin submenú: se cierra el que estuviera abierto (como Windows).
+                fly.popdown()
+        except Exception:
+            pass
+        return True
 
     def _run_dialog(self):
         try:
@@ -2499,6 +3018,15 @@ class Panel(Gtk.Window):
             cset = set(c for c in cats.split(";") if c)
             ex = (ai.get_executable() or "").split("/")[-1].split()[0] \
                 if ai.get_executable() else ""
+            # Las apps FactuPOS viven SOLO en el menú "FactuPOS" propio;
+            # no repetirlas en Programas/Utilidades/Herramientas/Configuración.
+            did = ""
+            try:
+                did = ai.get_id() or ""
+            except Exception:
+                pass
+            if ex.startswith("factupos-") or did.startswith("factupos-"):
+                continue
             # 1) División curada Utilidades/Herramientas por ejecutable
             if ex in FORCE_TOOLS:
                 buckets["Herramientas del sistema"].append((nm, ai))
@@ -2555,9 +3083,47 @@ class Panel(Gtk.Window):
     def _start_menu_click_outside(self, win, event):
         a = win.get_allocation()
         if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
-            self._close_start_menu()
+            self._schedule_close()
             return True
         return False
+
+    # ---------- cierre diferido del menú Inicio (clic afuera) ----------
+    def _schedule_close(self, delay=START_CLOSE_DELAY):
+        """Clic afuera: el menú se esconde a los N segundos, no al instante.
+        🔑 El grab se suelta YA: mientras el menú lo tenga, los clics no llegan
+        a nada más y el escritorio quedaría bloqueado todo ese rato."""
+        win = getattr(self, "_startwin", None)
+        if win is None or getattr(self, "_close_timer", None):
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        fly = getattr(self, "_flyout", None)
+        if fly is not None:
+            self._flyout = None
+            try:
+                fly.popdown()
+            except Exception:
+                pass
+        self._close_timer = GLib.timeout_add_seconds(delay, self._close_timeout)
+
+    def _close_timeout(self):
+        self._close_timer = None
+        self._close_start_menu()
+        return False
+
+    def _cancel_close(self):
+        """El mouse volvió sobre el menú antes de que venciera: se queda."""
+        t = getattr(self, "_close_timer", None)
+        if not t:
+            return
+        try:
+            GLib.source_remove(t)
+        except Exception:
+            pass
+        self._close_timer = None
+        self._regrab_start()      # volver a escuchar clics afuera
 
     def _start_menu_key(self, win, event):
         if event.keyval == Gdk.KEY_Escape:
@@ -2569,6 +3135,22 @@ class Panel(Gtk.Window):
         win = getattr(self, "_startwin", None)
         if win is None:
             return
+        self._hover_stop()
+        self._hover_items = []
+        t = getattr(self, "_close_timer", None)
+        if t:
+            try:
+                GLib.source_remove(t)
+            except Exception:
+                pass
+        self._close_timer = None
+        fly = getattr(self, "_flyout", None)
+        if fly is not None:
+            self._flyout = None
+            try:
+                fly.popdown()
+            except Exception:
+                pass
         try:
             win.get_display().get_default_seat().ungrab()
         except Exception:
@@ -2577,10 +3159,37 @@ class Panel(Gtk.Window):
         win.destroy()
 
     # ---------- clic derecho en la barra (menú contextual tipo Windows) ----------
+    def _toggle_lock(self, item):
+        """Bloquea/desbloquea la barra y lo recuerda para el próximo arranque.
+        Con --monitor all hay un Panel por pantalla: se marcan TODOS, si no
+        quedaría una barra bloqueada y las otras no."""
+        self.locked = bool(item.get_active())
+        for p in PANELES:
+            p.locked = self.locked
+        save_state(locked=self.locked)
+
     def _on_panel_click(self, widget, event):
         if event.button != 3:
             return False
         menu = Gtk.Menu()
+
+        # --- Pantalla y escritorio (arriba, como el clic derecho de Windows).
+        # Se prefieren las herramientas propias de FactuPOS; si no están en el
+        # equipo, se cae a la del escritorio (Cinnamon/XFCE) y por último a una
+        # genérica, para que la opción sirva en cualquier instalación.
+        mi = Gtk.MenuItem(label="Propiedades del monitor")
+        mi.connect("activate", lambda *_: detached_run(self._cmd_disponible(
+            "factupos-pantalla", "cinnamon-settings display",
+            "xfce4-display-settings", "arandr")))
+        menu.append(mi)
+
+        mi = Gtk.MenuItem(label="Fondo de escritorio")
+        mi.connect("activate", lambda *_: detached_run(self._cmd_disponible(
+            "factupos-fondo", "cinnamon-settings backgrounds",
+            "xfce4-desktop-settings", "nitrogen")))
+        menu.append(mi)
+
+        menu.append(Gtk.SeparatorMenuItem())
 
         mi = Gtk.MenuItem(label="Administrador de tareas")
         mi.connect("activate", lambda *_: detached_run("@taskmgr"))
@@ -2614,6 +3223,10 @@ class Panel(Gtk.Window):
                 it.connect("activate", lambda _w, idx=i: self.move_to_monitor(idx))
                 sub.append(it)
             mover.set_submenu(sub)
+            # Bloqueada: se muestra igual pero en gris, para que se vea que la
+            # opción existe y que está deshabilitada a propósito.
+            if self.locked:
+                mover.set_sensitive(False)
             menu.append(mover)
 
         # Submenú: posición / orientación de la barra
@@ -2625,7 +3238,15 @@ class Panel(Gtk.Window):
             it.connect("activate", lambda _w, ed=e: self._set_edge(ed))
             psub.append(it)
         pos.set_submenu(psub)
+        if self.locked:
+            pos.set_sensitive(False)
         menu.append(pos)
+
+        lock = Gtk.CheckMenuItem(label="Bloquear la barra")
+        lock.set_active(self.locked)
+        lock.connect("toggled", self._toggle_lock)
+        menu.append(lock)
+
         menu.append(Gtk.SeparatorMenuItem())
 
         mi = Gtk.MenuItem(label="Buscar actualizaciones del panel")

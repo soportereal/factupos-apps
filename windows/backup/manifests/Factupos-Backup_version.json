@@ -1,0 +1,6 @@
+{
+    "version": "1.2.0",
+    "download_url": "https://soportereal.com/software/factupos-app/windows/FactuposBackup.exe",
+    "released": "2026-07-08",
+    "notes": "Compresión cambiada a 7-Zip (.7z, LZMA2) y se desactivó la compresión nativa de SQL Server para lograr un ratio mucho mayor (~2.8x más pequeño que el ZIP anterior). El restore sigue aceptando .bak, .7z y .zip antiguos."
+}

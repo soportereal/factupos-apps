@@ -250,7 +250,7 @@ class BackupApp:
         ttk.Entry(sub, textvariable=self.var_hour, width=8).pack(side="left")
         ttk.Label(sub, text="    Retención (días):").pack(side="left", padx=(20, 4))
         ttk.Entry(sub, textvariable=self.var_retention, width=6).pack(side="left")
-        ttk.Checkbutton(sub, text="Comprimir a ZIP", variable=self.var_compress).pack(side="left", padx=(20, 4))
+        ttk.Checkbutton(sub, text="Comprimir a 7z", variable=self.var_compress).pack(side="left", padx=(20, 4))
         row += 1
         ttk.Checkbutton(cfgframe, text="Iniciar con Windows", variable=self.var_autostart).grid(row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(8, 0))
         row += 1
@@ -338,7 +338,7 @@ class BackupApp:
         self.tree.heading("db", text="Base de datos")
         self.tree.heading("estado", text="Estado")
         self.tree.heading("bak", text="Tamaño .bak")
-        self.tree.heading("zip", text="Tamaño .zip")
+        self.tree.heading("zip", text="Tamaño .7z")
         self.tree.heading("tiempo", text="Tiempo")
         self.tree.column("db", width=240, anchor="w")
         self.tree.column("estado", width=140, anchor="w")
@@ -806,7 +806,7 @@ class BackupApp:
 
 
 class RestoreDialog:
-    """Modal: pickear carpeta, listar .bak/.zip, marcar cuáles, restaurar."""
+    """Modal: pickear carpeta, listar .bak/.7z/.zip, marcar cuáles, restaurar."""
 
     def __init__(self, parent, cfg, log):
         self.cfg = cfg
@@ -822,7 +822,7 @@ class RestoreDialog:
         self.win.transient(parent)
 
         # ---- Carpeta de origen ----
-        top = ttk.LabelFrame(self.win, text="Carpeta origen (.bak / .zip)", padding=6)
+        top = ttk.LabelFrame(self.win, text="Carpeta origen (.bak / .7z / .zip)", padding=6)
         top.pack(fill="x", padx=8, pady=(8, 4))
         self.var_folder = tk.StringVar()
         rowf = ttk.Frame(top)
@@ -868,7 +868,7 @@ class RestoreDialog:
                   foreground="#64748b").pack(side="left", padx=(8, 0))
 
         # ---- Tabla de archivos ----
-        tableframe = ttk.LabelFrame(self.win, text="Archivos detectados (.bak / .zip)", padding=4)
+        tableframe = ttk.LabelFrame(self.win, text="Archivos detectados (.bak / .7z / .zip)", padding=4)
         tableframe.pack(fill="both", expand=True, padx=8, pady=4)
 
         cols = ("sel", "archivo", "destino", "tamaño", "estado")
@@ -922,7 +922,7 @@ class RestoreDialog:
         self.btn_restore.pack(side="right", padx=(0, 8))
 
     def _pick_folder(self):
-        d = filedialog.askdirectory(title="Carpeta con archivos .bak / .zip")
+        d = filedialog.askdirectory(title="Carpeta con archivos .bak / .7z / .zip")
         if d:
             self.var_folder.set(d.replace("/", "\\"))
             self._scan()

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now factupos-actualizador.timer 2>/dev/null || true
+# Correr una vez ya, pero SIN esperar (--no-block) y NUNCA si el servicio ya
+# esta activo: cuando el actualizador se actualiza A SI MISMO, este postinst
+# corre DENTRO del servicio -> un start sincronico se espera a si mismo y
+# se produce un DEADLOCK (apt espera al postinst, el postinst al servicio,
+# el servicio al apt). Detectado en vivo 2026-07-02.
+systemctl is-active --quiet factupos-actualizador.service || \
+    systemctl start --no-block factupos-actualizador.service 2>/dev/null || true
+exit 0

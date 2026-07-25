@@ -5,7 +5,7 @@
 QUÉ HACE
 --------
 App residente en la bandeja de Windows que respalda TODAS las bases de datos
-del SQL Server, las comprime a ZIP y se dispara automáticamente todos los
+del SQL Server, las comprime a 7z y se dispara automáticamente todos los
 días a la hora configurada (default 23:00).
 
 Muestra en vivo el avance: tabla con cada BD (Pendiente → Respaldando →
@@ -122,7 +122,7 @@ FactuposBackup.log al lado del .exe. Cada corrida agrega un bloque:
   2026-05-13 23:00:34 [INFO]   OK .bak 1.2 GB en 31.8s
   2026-05-13 23:00:55 [INFO]   ZIP 280.1 MB (-77%) en 21.2s
   ...
-  2026-05-13 23:42:11 [INFO] FIN — OK=27 FAIL=0 .bak=24.5 GB .zip=5.8 GB
+  2026-05-13 23:42:11 [INFO] FIN — OK=27 FAIL=0 .bak=24.5 GB .7z=2.3 GB
 
 
 EXCLUIR / INCLUIR BDs ESPECÍFICAS

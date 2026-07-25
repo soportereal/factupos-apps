@@ -19,7 +19,7 @@
 
 #define MyAppName "FactuposBackup"
 #define MyAppId "factupos-backup"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExe "FactuposBackup.exe"

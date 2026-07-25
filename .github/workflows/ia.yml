@@ -8,7 +8,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'ia/**'
+      - 'linux/ia/**'
       - '.github/workflows/ia.yml'
   workflow_dispatch:
     inputs:
@@ -23,12 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verificar sintaxis Python
-        run: python3 -m py_compile ia/factupos_ia.py
+        run: python3 -m py_compile linux/ia/factupos_ia.py
       - name: Construir .deb
         run: |
           VER="${{ github.event.inputs.version || '1.0.0' }}"
-          chmod +x ia/installer/build-deb.sh
-          ia/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
+          chmod +x linux/ia/installer/build-deb.sh
+          linux/ia/installer/build-deb.sh "$VER" "$GITHUB_WORKSPACE/out"
           ls -la "$GITHUB_WORKSPACE/out"
       - name: Verificar contenido del .deb
         run: |
@@ -70,7 +70,7 @@ jobs:
           pip install --upgrade pyinstaller
           pyinstaller --onefile --windowed --name Factupos-IA${{ matrix.suffix }} \
             --collect-all gi --collect-all cairo \
-            ia/factupos_ia.py
+            linux/ia/factupos_ia.py
       - uses: actions/upload-artifact@v4
         with:
           name: factupos-ia-exe-${{ matrix.arch }}
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: factupos-ia-exe-x64
-          path: ia/installer
+          path: linux/ia/installer
       - name: Instalar Inno Setup
         run: choco install innosetup -y --no-progress
       - name: Compilar instalador x64

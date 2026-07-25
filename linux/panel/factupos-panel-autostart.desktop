@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=FactuPOS Panel
+Comment=Barra de tareas de FactuPOS OS
+Icon=start-here
+Exec=/usr/lib/factupos-panel/keepalive.sh
+Terminal=false
+Type=Application
+OnlyShowIn=XFCE;Cinnamon;X-Cinnamon;MATE;LXDE;LXQt;
+StartupNotify=false

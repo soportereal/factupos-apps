@@ -7,7 +7,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'fingerprint/**'
+      - 'windows/fingerprint/**'
       - '.github/workflows/fingerprint.yml'
   workflow_dispatch:
 
@@ -22,8 +22,8 @@ jobs:
         run: |
           $zip = "fp.zip"
           Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/factupos-fingerprint-windows_v1.0.3.zip" -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "fingerprint/installer/fp" -Force
-          Get-ChildItem -Recurse fingerprint/installer/fp | Select-Object FullName, Length
+          Expand-Archive -Path $zip -DestinationPath "windows/fingerprint/installer/fp" -Force
+          Get-ChildItem -Recurse windows/fingerprint/installer/fp | Select-Object FullName, Length
 
       - name: Instalar Inno Setup
         run: choco install innosetup -y --no-progress

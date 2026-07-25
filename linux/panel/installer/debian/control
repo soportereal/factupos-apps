@@ -3,8 +3,8 @@ Version: __VERSION__
 Section: x11
 Priority: optional
 Architecture: all
-Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-wnck-3.0, python3-xlib, network-manager
-Recommends: gnome-system-monitor, pulseaudio-utils, x11-xkb-utils
+Depends: python3, python3-gi, gir1.2-gtk-3.0, gir1.2-wnck-3.0, python3-xlib, network-manager, dbus-x11
+Recommends: factupos-actualizador, factupos-apps, factupos-autologin, factupos-pantalla, factupos-tareas, factupos-fondo, factupos-energia, factupos-conexiones, pulseaudio-utils, x11-xkb-utils
 Maintainer: Soporte Real <soporte@soportereal.com>
 Homepage: https://soportereal.com
 Description: FactuPOS - Barra de Tareas

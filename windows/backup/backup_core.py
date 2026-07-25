@@ -4,13 +4,14 @@ FactuposBackup — Motor del respaldo SQL Server.
 Sin UI ni CLI: lo usan backup_app.py (app gráfica) y backup_cli.py (línea de comandos).
 """
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 import json
 import logging
 import sys
 import time
-import zipfile
+import zipfile  # solo para restaurar backups .zip antiguos
+import py7zr
 from datetime import datetime
 from pathlib import Path
 
@@ -168,7 +169,9 @@ def backup_database(conn, dbname, backup_path, ts):
     sql = (
         f"BACKUP DATABASE [{safe_name}] "
         f"TO DISK = N'{bak_file}' "
-        f"WITH FORMAT, INIT, COMPRESSION, "
+        # Sin COMPRESSION: el .bak sale crudo para que 7z (LZMA2) lo comprima
+        # desde cero y logre un ratio mucho mayor que la compresión nativa de SQL.
+        f"WITH FORMAT, INIT, "
         f"NAME = N'{safe_name} backup {ts}', SKIP, STATS = 25"
     )
     cur.execute(sql)
@@ -177,23 +180,34 @@ def backup_database(conn, dbname, backup_path, ts):
     return bak_file
 
 
-def compress_to_zip(bak_file, level):
-    zip_file = bak_file.with_suffix(".zip")
-    with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED, compresslevel=level) as zf:
-        zf.write(bak_file, bak_file.name)
-    return zip_file
+def compress_to_7z(bak_file, level):
+    """Comprime el .bak a un archivo .7z (LZMA2). level = preset 0-9 (6 ≈ 'Normal')."""
+    archive = bak_file.with_suffix(".7z")
+    preset = max(0, min(9, int(level)))
+    filters = [{"id": py7zr.FILTER_LZMA2, "preset": preset}]
+    with py7zr.SevenZipFile(archive, "w", filters=filters) as z:
+        z.write(bak_file, bak_file.name)
+    return archive
 
 
 # ---------- restore helpers ----------
 
-def extract_zip_to_temp(zip_path: Path) -> Path:
-    """Extrae el primer .bak del zip a una carpeta temporal y devuelve el path."""
+def extract_archive_to_temp(archive_path: Path) -> Path:
+    """Extrae el primer .bak del archivo (.7z o .zip) a una carpeta temporal y devuelve el path."""
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="fpbk_"))
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    if archive_path.suffix.lower() == ".7z":
+        with py7zr.SevenZipFile(archive_path, "r") as z:
+            bak_members = [n for n in z.getnames() if n.lower().endswith(".bak")]
+            if not bak_members:
+                raise RuntimeError(f"{archive_path.name} no contiene un .bak")
+            z.extract(path=tmp, targets=[bak_members[0]])
+        return tmp / bak_members[0]
+    # .zip: backups generados por versiones anteriores (compatibilidad)
+    with zipfile.ZipFile(archive_path, "r") as zf:
         bak_members = [n for n in zf.namelist() if n.lower().endswith(".bak")]
         if not bak_members:
-            raise RuntimeError(f"{zip_path.name} no contiene un .bak")
+            raise RuntimeError(f"{archive_path.name} no contiene un .bak")
         zf.extract(bak_members[0], tmp)
     return tmp / bak_members[0]
 
@@ -293,8 +307,8 @@ def restore_one(conn, bak_path: Path, target_name: str = None,
 
 
 def scan_backup_folder(folder: Path) -> list:
-    """Devuelve lista de archivos .bak y .zip encontrados (sorted by name)."""
-    files = list(folder.glob("*.bak")) + list(folder.glob("*.zip"))
+    """Devuelve lista de archivos .bak, .7z y .zip encontrados (sorted by name)."""
+    files = list(folder.glob("*.bak")) + list(folder.glob("*.7z")) + list(folder.glob("*.zip"))
     return sorted(files, key=lambda p: p.name.lower())
 
 
@@ -327,7 +341,7 @@ def run_restore(cfg, folder: Path, files_to_restore: list, log=None,
                 on_progress=None, data_path: str = None, log_path: str = None,
                 targets: dict = None):
     """
-    Restaura cada archivo (.bak o .zip) de la lista. files_to_restore = [Path, ...].
+    Restaura cada archivo (.bak, .7z o .zip) de la lista. files_to_restore = [Path, ...].
     data_path/log_path: carpetas destino para .mdf/.ldf (None = defaults del server).
     targets: dict {filename: dbname_destino} — si no está, usa derive_db_name().
     on_progress(stage, done, total, filename, dbname) callback opcional.
@@ -354,9 +368,9 @@ def run_restore(cfg, folder: Path, files_to_restore: list, log=None,
             if on_progress:
                 on_progress("prep", i, total, src.name, "")
             log.info(f"[{src.name}]")
-            if src.suffix.lower() == ".zip":
-                log.info(f"  Extrayendo ZIP…")
-                bak_path = extract_zip_to_temp(src)
+            if src.suffix.lower() in (".7z", ".zip"):
+                log.info(f"  Extrayendo {src.suffix.lstrip('.').upper()}…")
+                bak_path = extract_archive_to_temp(src)
                 tmp_to_clean = bak_path.parent
             else:
                 bak_path = src
@@ -396,7 +410,7 @@ def cleanup_old(backup_path, days, log):
         return 0
     cutoff = time.time() - days * 86400
     removed = 0
-    for pattern in ("*.zip", "*.bak"):
+    for pattern in ("*.7z", "*.zip", "*.bak"):
         for f in Path(backup_path).glob(pattern):
             if f.stat().st_mtime < cutoff:
                 try:
@@ -762,10 +776,10 @@ def run_backup(cfg=None, log=None, on_progress=None):
                     if on_progress:
                         on_progress("zip", i, total, db)
                     t0 = time.time()
-                    zf = compress_to_zip(bak, level)
+                    zf = compress_to_7z(bak, level)
                     zip_size = zf.stat().st_size
                     ratio = (1 - zip_size / bak_size) * 100 if bak_size else 0
-                    log.info(f"  ZIP {fmt_size(zip_size)} (-{ratio:.0f}%) en {time.time()-t0:.1f}s")
+                    log.info(f"  7z {fmt_size(zip_size)} (-{ratio:.0f}%) en {time.time()-t0:.1f}s")
                     if delete_bak:
                         bak.unlink()
                 success = True
@@ -800,7 +814,7 @@ def run_backup(cfg=None, log=None, on_progress=None):
     log.info("-" * 70)
     log.info(
         f"FIN — OK={len(ok)} FAIL={len(fail)} "
-        f".bak={fmt_size(total_bak)} .zip={fmt_size(total_zip)}"
+        f".bak={fmt_size(total_bak)} .7z={fmt_size(total_zip)}"
     )
     return {
         "ok": True,

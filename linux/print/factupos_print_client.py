@@ -35,6 +35,7 @@ import socket
 import subprocess
 import urllib.request
 import platform
+import tempfile
 from datetime import datetime
 from collections import deque
 
@@ -49,8 +50,37 @@ if getattr(sys, 'frozen', False):
 else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_FILE = os.path.join(APP_DIR, 'config.json')
-LOG_FILE = os.path.join(APP_DIR, 'print_client.log')
+def _dir_datos():
+    """Carpeta donde viven config.json y print_client.log.
+
+    Lo normal es la carpeta de la app: el postinst del .deb la deja en chmod 777
+    y el instalador de Windows da Modify, asi que config y log quedan junto al
+    programa. PERO si no es escribible — .deb desempacado que quedo SIN
+    CONFIGURAR por dependencias, permisos apretados a mano — la app se moria con
+    PermissionError al crear el FileHandler del log, o sea ANTES de dibujar la
+    ventana: no abria, no dejaba proceso y no mostraba ni un error (el .desktop
+    va con Terminal=false). Sintoma en campo: "solo arranca con sudo".
+    Ahora cae al perfil del usuario, que siempre es escribible.
+    """
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        prueba = os.path.join(APP_DIR, '.prueba_escritura')
+        with open(prueba, 'w'):
+            pass
+        os.remove(prueba)
+        return APP_DIR
+    except Exception:
+        try:
+            alterno = os.path.join(os.path.expanduser('~'), '.config', 'factupos-print')
+            os.makedirs(alterno, exist_ok=True)
+            return alterno
+        except Exception:
+            return tempfile.gettempdir()
+
+
+DATA_DIR = _dir_datos()
+CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
+LOG_FILE = os.path.join(DATA_DIR, 'print_client.log')
 
 # Auto-update en Linux: el .deb instala el .py crudo (no es un binario frozen),
 # así que NO se puede usar el flujo de Windows (.exe + updater.bat). En su lugar
@@ -85,14 +115,20 @@ HTTP_API_PORT = 9301
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+# Ultimo seguro: aunque _dir_datos() ya devuelve una carpeta escribible, si el
+# archivo de log no se puede abrir la app NO debe morir — se queda sin log pero
+# abre. Antes esto era la causa #1 de "instale y no pasa nada".
+_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    _handlers.append(logging.FileHandler(LOG_FILE, encoding='utf-8'))
+except Exception as _e:
+    print(f"AVISO: sin archivo de log ({_e}). La app sigue funcionando.")
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%H:%M:%S',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-    ]
+    handlers=_handlers
 )
 log = logging.getLogger('PrintClient')
 
@@ -125,17 +161,21 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 
 # System tray
+# Se atrapa Exception y no solo ImportError: pystray elige backend al importarse
+# y puede reventar por cosas que NO son "falta el modulo" (sin servidor X, DISPLAY
+# mal, AppIndicator roto). Eso escapaba del except y mataba la app entera antes de
+# abrir la ventana — sin bandeja tiene que quedar visible, no muerta.
 try:
     import pystray
     from PIL import Image, ImageDraw
     HAS_TRAY = True
-except ImportError:
+except Exception as _e:
     HAS_TRAY = False
-    log.warning("pystray/Pillow no disponible — sin bandeja del sistema")
+    log.warning(f"Sin bandeja del sistema ({_e}) — la ventana queda visible")
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.56" if IS_LINUX else "4.52")  # 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.59" if IS_LINUX else "4.52")  # 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -224,6 +264,29 @@ def load_config():
                 if 'printerCode' not in p:
                     p['printerCode'] = p.get('queueCode', '')
                 migrated = True
+
+            # --- Migracion a `transport` (paridad con Android) ---
+            # Los perfiles de campo no tienen el campo: se DEDUCE de lo que ya
+            # hay, sin preguntarle nada al usuario y sin cambiar por donde sale
+            # el papel. Solo se le pone nombre a lo que ya hacia.
+            if 'transport' not in p:
+                vport = str(p.get('virtualPort', '') or '').strip()
+                if vport:
+                    # /dev/ttyUSB0 y /dev/ttyS0 son SERIE aunque hasta hoy se
+                    # abrieran como archivo. Se marcan como 'serial' pero sin
+                    # baudios: sin baudios el envio usa el metodo viejo, o sea
+                    # se comporta EXACTAMENTE igual que antes. Si el usuario
+                    # despues elige velocidad, mejora.
+                    if '/ttyUSB' in vport or '/ttyACM' in vport or '/ttyS' in vport:
+                        p['transport'] = 'serial'
+                    else:
+                        p['transport'] = 'virtual'
+                    p.setdefault('address', vport)
+                else:
+                    p['transport'] = 'cups'
+                    p.setdefault('address', p.get('windowsPrinter', p.get('printer', '')))
+                migrated = True
+
         if migrated:
             save_config(cfg)
         return cfg
@@ -1632,6 +1695,299 @@ def print_raw_virtual_port(port_name, data_bytes):
     except Exception as e:
         return False, f"Error puerto {port_name}: {e}"
 
+
+# ===========================================================================
+# TRANSPORTES (paridad con FactuPOS Print de Android)
+# ---------------------------------------------------------------------------
+# Android define cada impresora como un perfil con un `transport`, y de ahi
+# salen los campos que pide el formulario. Aca se replica el mismo modelo:
+#
+#   cups      nombre de cola CUPS      (lo de siempre; cubre USB via CUPS)
+#   virtual   /dev/usb/lp0, LPT2       (abrir el dispositivo como archivo)
+#   ip        host + puerto 9100       NUEVO
+#   serial    /dev/ttyUSB0 + baudios   NUEVO (antes se abria sin fijar baudios)
+#   bluetooth MAC + canal RFCOMM       NUEVO
+#
+# Todas devuelven (ok: bool, mensaje: str) igual que las funciones viejas, para
+# que el despachador no tenga que distinguir casos.
+# ===========================================================================
+
+PUERTO_IP_DEFECTO = 9100
+BAUDIOS_COMUNES = ['9600', '19200', '38400', '57600', '115200']
+
+
+def print_raw_ip(host, port, data_bytes, timeout_conexion=5, timeout_total=20):
+    """Enviar bytes RAW a una impresora de red (JetDirect/RAW, puerto 9100).
+
+    El tope duro `timeout_total` NO es adorno: una impresora de red puede
+    aceptar la conexion y quedarse colgada sin leer. Sin el tope, ese socket
+    congelaria el worker y con el toda la cola de impresion. Por eso el envio
+    corre en un hilo aparte y, si no termina a tiempo, se abandona.
+    """
+    host = (host or '').strip()
+    if not host:
+        return False, "Impresora IP sin direccion configurada"
+    try:
+        port = int(port or PUERTO_IP_DEFECTO)
+    except (TypeError, ValueError):
+        port = PUERTO_IP_DEFECTO
+
+    resultado = {}
+
+    def _enviar():
+        s = None
+        try:
+            s = socket.create_connection((host, port), timeout=timeout_conexion)
+            s.settimeout(10)
+            s.sendall(data_bytes)
+            # Algunas termicas cortan el trabajo si uno cierra de golpe.
+            try:
+                s.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+            resultado['ok'] = (True, f"Impreso via {host}:{port}")
+        except Exception as e:
+            resultado['ok'] = (False, f"Error {host}:{port}: {e}")
+        finally:
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+    h = threading.Thread(target=_enviar, daemon=True)
+    h.start()
+    h.join(timeout_total)
+    if h.is_alive():
+        return False, f"Sin respuesta de {host}:{port} tras {timeout_total}s"
+    return resultado.get('ok', (False, f"Fallo desconocido con {host}:{port}"))
+
+
+def probar_ip(host, port, timeout=5):
+    """Solo abre y cierra el socket. Para el boton 'Probar conexion' del
+    formulario: dice si la impresora contesta ANTES de guardar el perfil."""
+    host = (host or '').strip()
+    if not host:
+        return False, "Escriba la direccion IP"
+    try:
+        port = int(port or PUERTO_IP_DEFECTO)
+    except (TypeError, ValueError):
+        return False, "Puerto invalido"
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.close()
+        return True, f"{host}:{port} responde"
+    except Exception as e:
+        return False, f"{host}:{port} no responde: {e}"
+
+
+def print_raw_serial(device, data_bytes, baudrate=9600, timeout_total=20):
+    """Enviar bytes RAW por puerto serie FIJANDO los baudios.
+
+    Antes el serial se trataba como 'puerto virtual': se abria /dev/ttyUSB0 y
+    se escribia. Eso hereda la velocidad que tenga el puerto, que casi nunca es
+    la de la impresora — sintoma tipico: salen simbolos raros o no sale nada.
+    Con pyserial se fija velocidad y formato (8N1) antes de escribir.
+    Si pyserial no esta instalado se cae al metodo viejo, que al menos imprime
+    cuando la velocidad ya coincide.
+    """
+    device = (device or '').strip()
+    if not device:
+        return False, "Impresora serial sin dispositivo configurado"
+    try:
+        baudrate = int(baudrate or 9600)
+    except (TypeError, ValueError):
+        baudrate = 9600
+
+    try:
+        import serial as _pyserial
+    except Exception:
+        ok, msg = print_raw_virtual_port(device, data_bytes)
+        return ok, msg + " (sin pyserial: velocidad sin fijar)"
+
+    resultado = {}
+
+    def _enviar():
+        sp = None
+        try:
+            sp = _pyserial.Serial(
+                port=device, baudrate=baudrate,
+                bytesize=_pyserial.EIGHTBITS,
+                parity=_pyserial.PARITY_NONE,
+                stopbits=_pyserial.STOPBITS_ONE,
+                timeout=5, write_timeout=10,
+            )
+            sp.write(data_bytes)
+            sp.flush()
+            resultado['ok'] = (True, f"Impreso via {device} @ {baudrate}")
+        except Exception as e:
+            resultado['ok'] = (False, f"Error {device} @ {baudrate}: {e}")
+        finally:
+            if sp is not None:
+                try:
+                    sp.close()
+                except Exception:
+                    pass
+
+    h = threading.Thread(target=_enviar, daemon=True)
+    h.start()
+    h.join(timeout_total)
+    if h.is_alive():
+        return False, f"{device} no termino en {timeout_total}s"
+    return resultado.get('ok', (False, f"Fallo desconocido en {device}"))
+
+
+def print_raw_bluetooth(mac, data_bytes, canal=1, timeout_total=25):
+    """Enviar bytes RAW a una impresora Bluetooth por RFCOMM (perfil SPP).
+
+    Usa el socket Bluetooth NATIVO de Python en Linux (AF_BLUETOOTH +
+    BTPROTO_RFCOMM): no hace falta pybluez ni ninguna dependencia nueva.
+    La impresora tiene que estar YA emparejada en el sistema — igual que en
+    Android, que solo lista los dispositivos emparejados.
+    El canal 1 es el habitual de SPP en impresoras termicas.
+    """
+    mac = (mac or '').strip().upper()
+    if not mac:
+        return False, "Impresora Bluetooth sin MAC configurada"
+    if not hasattr(socket, 'AF_BLUETOOTH'):
+        return False, "Este sistema no expone sockets Bluetooth"
+    try:
+        canal = int(canal or 1)
+    except (TypeError, ValueError):
+        canal = 1
+
+    resultado = {}
+
+    def _enviar():
+        s = None
+        try:
+            s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM,
+                              socket.BTPROTO_RFCOMM)
+            s.settimeout(10)
+            s.connect((mac, canal))
+            # En chunks: varias termicas Bluetooth pierden bytes si se les
+            # manda el trabajo entero de un golpe (mismo cuidado que el
+            # BluetoothPrinter de Android).
+            paso = 256
+            for i in range(0, len(data_bytes), paso):
+                s.send(data_bytes[i:i + paso])
+                time.sleep(0.02)
+            resultado['ok'] = (True, f"Impreso via BT {mac}")
+        except Exception as e:
+            resultado['ok'] = (False, f"Error BT {mac}: {e}")
+        finally:
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+    h = threading.Thread(target=_enviar, daemon=True)
+    h.start()
+    h.join(timeout_total)
+    if h.is_alive():
+        return False, f"BT {mac} no respondio en {timeout_total}s"
+    return resultado.get('ok', (False, f"Fallo desconocido con BT {mac}"))
+
+
+def listar_seriales():
+    """Dispositivos serie/USB-serie presentes, para el combo del formulario."""
+    encontrados = []
+    try:
+        import serial.tools.list_ports as _lp
+        for p in _lp.comports():
+            etiqueta = p.device
+            if p.description and p.description != 'n/a':
+                etiqueta += f"  ({p.description})"
+            encontrados.append(etiqueta)
+    except Exception:
+        pass
+    if not encontrados and IS_LINUX:
+        # Sin pyserial: barrido de los nombres tipicos.
+        import glob as _glob
+        for patron in ('/dev/ttyUSB*', '/dev/ttyACM*', '/dev/ttyS[0-3]',
+                       '/dev/usb/lp*'):
+            encontrados.extend(sorted(_glob.glob(patron)))
+    return encontrados
+
+
+def listar_bluetooth():
+    """Impresoras Bluetooth YA emparejadas, leidas de bluetoothctl.
+
+    Solo emparejadas a proposito: escanear al vuelo tarda y llena la lista de
+    telefonos y audifonos del local.
+    """
+    dispositivos = []
+    if not IS_LINUX:
+        return dispositivos
+    try:
+        r = subprocess.run(['bluetoothctl', 'paired-devices'],
+                           capture_output=True, text=True, timeout=8)
+        for linea in r.stdout.strip().split('\n'):
+            # formato: "Device AA:BB:CC:DD:EE:FF Nombre del equipo"
+            partes = linea.split(None, 2)
+            if len(partes) >= 2 and partes[0] == 'Device':
+                mac = partes[1]
+                nombre = partes[2] if len(partes) > 2 else ''
+                dispositivos.append(f"{mac}  ({nombre})" if nombre else mac)
+    except Exception as e:
+        log.debug(f"No se pudieron listar dispositivos Bluetooth: {e}")
+    return dispositivos
+
+
+def despachar_raw(perfil, data_bytes, nombre_cups=''):
+    """Elegir por donde sale el trabajo, segun el `transport` del perfil.
+
+    Unico punto donde se decide la salida fisica — el equivalente al
+    PrinterManager.printBytes() de Android. Todo lo de arriba (VB6, ESC/POS,
+    fuente, cajon, corte) ya se aplico y aca solo se entrega el `data_bytes`.
+    """
+    transporte = str(perfil.get('transport', '') or '').strip().lower()
+    direccion = str(perfil.get('address', '') or '').strip()
+    vport = str(perfil.get('virtualPort', '') or '').strip()
+
+    # Perfil viejo que nunca paso por la migracion: comportamiento de siempre.
+    if not transporte:
+        transporte = 'virtual' if vport else 'cups'
+        if not direccion:
+            direccion = vport or nombre_cups
+
+    if transporte == 'ip':
+        return print_raw_ip(perfil.get('host', direccion),
+                            perfil.get('port', PUERTO_IP_DEFECTO), data_bytes)
+
+    if transporte == 'serial':
+        destino = direccion or vport
+        baud = perfil.get('baudRate') or perfil.get('baud')
+        if not baud:
+            # Serial que viene migrado y todavia sin velocidad elegida: se usa
+            # el metodo viejo a proposito, para NO cambiarle el comportamiento
+            # a una estacion que hoy imprime bien.
+            return print_raw_virtual_port(destino, data_bytes)
+        return print_raw_serial(destino, data_bytes, baud)
+
+    if transporte == 'bluetooth':
+        return print_raw_bluetooth(direccion, data_bytes,
+                                   perfil.get('btChannel', 1))
+
+    if transporte == 'virtual':
+        return print_raw_virtual_port(direccion or vport, data_bytes)
+
+    # 'cups' y cualquier valor desconocido → exactamente lo de antes.
+    if vport:
+        return print_raw_virtual_port(vport, data_bytes)
+    if perfil.get('isThermal', False):
+        return print_raw_thermal(nombre_cups or direccion, data_bytes)
+    return print_raw(nombre_cups or direccion, data_bytes)
+
+
+def solo_direccion(valor):
+    """Del texto del combo ('/dev/ttyUSB0  (FTDI)' o 'AA:BB:..  (POS-58)')
+    saca la direccion pelada. Los combos muestran descripcion para que el
+    usuario reconozca el aparato, pero guardar la descripcion romperia el
+    envio."""
+    return (valor or '').split('  (')[0].strip()
+
 def print_spooler(printer_name, text, font_name="Lucida Console", font_size=10):
     """Enviar texto plano a la cola del SO (modo spooler)."""
     if IS_LINUX:
@@ -2468,16 +2824,7 @@ class PrintQueueClient:
             if printer_config.get('openDrawer', False):
                 data_bytes = ESCPOS_OPEN_DRAWER + data_bytes
 
-            # Puerto virtual (net use LPTx) o win32print
-            virtual_port = printer_config.get('virtualPort', '').strip()
-            is_thermal = printer_config.get('isThermal', False)
-
-            if virtual_port:
-                ok, result_msg = print_raw_virtual_port(virtual_port, data_bytes)
-            elif is_thermal:
-                ok, result_msg = print_raw_thermal(win_printer, data_bytes)
-            else:
-                ok, result_msg = print_raw(win_printer, data_bytes)
+            ok, result_msg = despachar_raw(printer_config, data_bytes, win_printer)
 
         elapsed = time.time() - t0
 
@@ -3091,12 +3438,22 @@ class SetupWindow:
 # GUI - Pantalla Principal (Monitor)
 # ═══════════════════════════════════════════════════════════════════════════
 class MainWindow:
-    def __init__(self, config):
+    def __init__(self, config, arrancar_oculto=False):
         self.config = config
+        self.arrancar_oculto = arrancar_oculto
         self.root = tk.Tk()
         self.root.title(f"FactuPOS Print v{VERSION}")
-        self.root.geometry("880x780")
-        self.root.minsize(760, 600)
+        # 1160 de ancho = la suma de las columnas de la tabla (1080) + la barra
+        # de desplazamiento y los márgenes. Con los 880 de antes se cortaban
+        # "Impresora" y "Modo/Opciones", que son justo las que uno mira para
+        # saber por dónde sale cada cola.
+        # Pero NUNCA más grande que la pantalla: muchas cajas son de 1366x768 y
+        # una ventana de 800 de alto quedaría con los botones fuera del monitor,
+        # sin forma de llegarles.
+        ancho = min(1160, self.root.winfo_screenwidth() - 60)
+        alto = min(800, self.root.winfo_screenheight() - 120)
+        self.root.geometry(f"{ancho}x{alto}")
+        self.root.minsize(min(900, ancho), min(620, alto))
         self.root.protocol("WM_DELETE_WINDOW", self._hide_to_tray)
 
         # Interceptar minimizar para ocultar a bandeja
@@ -3128,11 +3485,15 @@ class MainWindow:
 
         self._update_counters()
 
-        # Siempre arrancar OCULTO en la bandeja (es un servicio): da igual si se abrió
-        # del autostart o a mano del menú. Solo si hay icono de bandeja disponible; si
-        # no lo hay, queda visible para no dejar la app inaccesible. Se restaura con el
-        # menú de la bandeja → "Mostrar".
-        if HAS_TRAY and self.tray_icon:
+        # Arrancar oculto SOLO si lo pidieron con --hidden, que es lo que pasan el
+        # autostart de Linux (autostart.sh) y el Run de Windows. Si el usuario la
+        # abre del menú, tiene que VERLA.
+        # Antes se ocultaba SIEMPRE y --hidden ni se leía: la abrías del menú, salía
+        # 300 ms y se iba. Peor en GNOME, que sin la extensión de AppIndicator no
+        # muestra la bandeja → la app quedaba inalcanzable (ni ventana ni icono).
+        # Sigue condicionado a que HAYA bandeja: sin ella, ocultarse la dejaría
+        # imposible de recuperar.
+        if self.arrancar_oculto and HAS_TRAY and self.tray_icon:
             self.root.after(300, self.root.withdraw)
 
     def _build_ui(self):
@@ -3185,11 +3546,17 @@ class MainWindow:
         self.tree.heading('printer', text='Impresora')
         self.tree.heading('description', text='Descripción')
         self.tree.heading('options', text='Modo/Opciones')
-        self.tree.column('code', width=90)
-        self.tree.column('empresa', width=130)
-        self.tree.column('printer', width=230)
-        self.tree.column('description', width=190)
-        self.tree.column('options', width=160)
+        # Anchos pensados para que NO se corte lo que importa. Las dos que se
+        # cortaban eran "Impresora" (ahora lleva el transporte adelante:
+        # "Red · 192.168.1.50:9100") y "Modo/Opciones", que puede juntar
+        # RAW + Térmica + Letra B + Corte + Cajón.
+        # `minwidth` evita que al angostar la ventana queden en un hilo, y
+        # `stretch` reparte el espacio sobrante entre las dos que más lo usan.
+        self.tree.column('code', width=70, minwidth=60, stretch=False)
+        self.tree.column('empresa', width=140, minwidth=100, stretch=False)
+        self.tree.column('printer', width=300, minwidth=200, stretch=True)
+        self.tree.column('description', width=220, minwidth=140, stretch=False)
+        self.tree.column('options', width=350, minwidth=200, stretch=True)
         self.tree.pack(side='left', fill='both', expand=True)
 
         scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree.yview)
@@ -3291,7 +3658,7 @@ class MainWindow:
     def _reload_printer_table(self):
         """Recargar tabla de impresoras desde config."""
         self.tree.delete(*self.tree.get_children())
-        for p in self.config.get('printers', []):
+        for indice, p in enumerate(self.config.get('printers', [])):
             mode = p.get('printMode', 'raw').upper()
             opts = [mode]
             if mode == 'RAW':
@@ -3310,120 +3677,276 @@ class MainWindow:
                 font = p.get('spoolerFont', 'Lucida Console')
                 size = p.get('spoolerFontSize', 10)
                 opts.append(f"{font} {size}pt")
-            self.tree.insert('', 'end', values=(
+            # Igual que en Android: la columna de impresora dice POR DÓNDE sale,
+            # no solo el nombre. Con varias impresoras en la misma cola, saber
+            # si una es de red o del sistema es lo primero que uno necesita.
+            rotulo = {'ip': 'Red', 'serial': 'Serie', 'bluetooth': 'Bluetooth',
+                      'virtual': 'Directo', 'cups': 'Sistema'}.get(
+                          str(p.get('transport', '') or '').lower(), '')
+            nombre = p.get('windowsPrinter', p.get('printer', '(sin nombre)'))
+            # El id de la fila es la POSICION en config['printers']. Antes cada
+            # boton (Editar/Probar/Quitar) volvia a buscar el perfil comparando
+            # los textos de la fila; bastaba con cambiar como se muestra una
+            # columna para que dejaran de encontrarlo. Con el indice en el id,
+            # lo que se ve y lo que se edita ya no pueden desincronizarse.
+            self.tree.insert('', 'end', iid=str(indice), values=(
                 p.get('printerCode', p.get('queueCode', '')),
                 p.get('empresa', ''),
-                p.get('windowsPrinter', p.get('printer', '(sin nombre)')),
+                f"{rotulo} · {nombre}" if rotulo else nombre,
                 p.get('description', ''),
                 ', '.join(opts),
             ))
 
+    def _perfil_seleccionado(self, accion="continuar"):
+        """(indice, perfil) de la fila marcada, o (-1, None) si no hay ninguna."""
+        sel = self.tree.focus()
+        if not sel:
+            messagebox.showwarning("Aviso", f"Seleccione una impresora para {accion}.")
+            return -1, None
+        try:
+            indice = int(sel)
+            return indice, self.config.get('printers', [])[indice]
+        except (ValueError, IndexError):
+            messagebox.showerror("Error", "No se encontró la impresora en la configuración.")
+            return -1, None
+
+    # Etiquetas visibles de cada transporte. El usuario NO ve la palabra
+    # "transport" ni los codigos internos: ve "Red (IP)" y elige.
+    TRANSPORTES = [
+        ('cups',      'Impresora del sistema (CUPS)'),
+        ('ip',        'Red (IP)'),
+        ('serial',    'Serie / USB-Serie'),
+        ('bluetooth', 'Bluetooth'),
+        ('virtual',   'Dispositivo directo (/dev/usb/lp0)'),
+    ]
+
     def _add_printer(self):
-        """Diálogo para agregar una impresora."""
+        """Agregar una impresora."""
+        self._dialogo_impresora(None, -1)
+
+    def _edit_printer(self):
+        """Editar la impresora seleccionada."""
+        indice, perfil = self._perfil_seleccionado("editar")
+        if perfil is None:
+            return
+        self._dialogo_impresora(perfil, indice)
+
+    def _dialogo_impresora(self, perfil, indice):
+        """Formulario de impresora — MISMO diálogo para agregar y editar.
+
+        Antes eran dos métodos calcados de ~170 líneas cada uno; cualquier campo
+        nuevo había que agregarlo dos veces y era cuestión de tiempo que se
+        desincronizaran. Ahora `perfil=None` significa agregar.
+
+        Sigue el modelo de FactuPOS Print de Android: se elige el TRANSPORTE y
+        los campos de abajo cambian solos según lo que ese transporte necesita
+        (IP pide dirección y puerto, Serie pide dispositivo y velocidad,
+        Bluetooth pide el equipo emparejado).
+        """
+        editando = perfil is not None
+        perfil = perfil or {}
+
         dlg = tk.Toplevel(self.root)
-        dlg.title("Agregar Impresora")
-        dlg.geometry("600x640")
+        dlg.title("Editar Impresora" if editando else "Agregar Impresora")
+        # Igual que la ventana principal: cómodo, pero nunca más alto que la
+        # pantalla o los botones Guardar/Cancelar quedan fuera del monitor.
+        dlg.geometry(f"700x{min(760, self.root.winfo_screenheight() - 120)}")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.configure(bg=BODY)
-
-        # Centrar
         dlg.update_idletasks()
-        x = self.root.winfo_x() + 100
-        y = self.root.winfo_y() + 100
-        dlg.geometry(f"+{x}+{y}")
+        dlg.geometry(f"+{self.root.winfo_x() + 80}+{self.root.winfo_y() + 60}")
 
         frame = ttk.Frame(dlg, padding=15)
         frame.pack(fill='both', expand=True)
+        frame.columnconfigure(1, weight=1)
 
-        # Impresora Windows
-        ttk.Label(frame, text="Impresora Windows:").grid(row=0, column=0, sticky='w', pady=5)
+        # ---------------- Transporte ----------------
+        etiquetas = [e for _, e in self.TRANSPORTES]
+        codigos = [c for c, _ in self.TRANSPORTES]
+        actual = str(perfil.get('transport', 'cups') or 'cups').lower()
+        if actual not in codigos:
+            actual = 'cups'
+
+        ttk.Label(frame, text="Conexión:").grid(row=0, column=0, sticky='w', pady=5)
+        combo_transporte = ttk.Combobox(frame, values=etiquetas, width=35, state='readonly')
+        combo_transporte.grid(row=0, column=1, padx=(5, 0), pady=5, sticky='ew')
+        combo_transporte.current(codigos.index(actual))
+
+        # ---------------- Panel que cambia según el transporte ----------------
+        destino = ttk.LabelFrame(frame, text="Destino", padding=8)
+        destino.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(5, 0))
+        destino.columnconfigure(1, weight=1)
+
+        # -- CUPS
+        f_cups = ttk.Frame(destino)
+        ttk.Label(f_cups, text="Impresora:").grid(row=0, column=0, sticky='w')
         try:
-            printers_list, _ = list_printers()
-        except:
-            printers_list = []
-        combo_printer = ttk.Combobox(frame, values=printers_list, width=35)
-        combo_printer.grid(row=0, column=1, padx=(5, 0), pady=5, sticky='ew')
-        if printers_list:
-            combo_printer.current(0)
+            lista_cups, _ = list_printers()
+        except Exception:
+            lista_cups = []
+        combo_cups = ttk.Combobox(f_cups, values=lista_cups, width=32)
+        combo_cups.grid(row=0, column=1, padx=(5, 0), sticky='ew')
+        f_cups.columnconfigure(1, weight=1)
 
-        # Código de cola
-        ttk.Label(frame, text="Código de cola:").grid(row=1, column=0, sticky='w', pady=5)
+        # -- IP
+        f_ip = ttk.Frame(destino)
+        ttk.Label(f_ip, text="Dirección IP:").grid(row=0, column=0, sticky='w')
+        entry_host = ttk.Entry(f_ip, width=22)
+        entry_host.grid(row=0, column=1, padx=(5, 0), sticky='w')
+        ttk.Label(f_ip, text="Puerto:").grid(row=1, column=0, sticky='w', pady=(5, 0))
+        entry_puerto = ttk.Entry(f_ip, width=8)
+        entry_puerto.grid(row=1, column=1, padx=(5, 0), sticky='w', pady=(5, 0))
+        lbl_prueba = ttk.Label(f_ip, text="", font=("Segoe UI", 8))
+        lbl_prueba.grid(row=3, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
+        def _probar_conexion():
+            lbl_prueba.config(text="Probando…", foreground='gray')
+            dlg.update_idletasks()
+            ok, msg = probar_ip(entry_host.get(), entry_puerto.get())
+            lbl_prueba.config(text=msg, foreground=('green' if ok else 'red'))
+
+        ttk.Button(f_ip, text="Probar conexión", command=_probar_conexion)\
+            .grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(6, 0))
+        ttk.Label(f_ip, text="La mayoría de impresoras de red usan el puerto 9100",
+                  font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=4, column=0, columnspan=2, sticky='w')
+
+        # -- Serie
+        f_serial = ttk.Frame(destino)
+        ttk.Label(f_serial, text="Dispositivo:").grid(row=0, column=0, sticky='w')
+        combo_serial = ttk.Combobox(f_serial, values=listar_seriales(), width=32)
+        combo_serial.grid(row=0, column=1, padx=(5, 0), sticky='ew')
+        ttk.Label(f_serial, text="Velocidad:").grid(row=1, column=0, sticky='w', pady=(5, 0))
+        combo_baud = ttk.Combobox(f_serial, values=BAUDIOS_COMUNES, width=10, state='readonly')
+        combo_baud.grid(row=1, column=1, padx=(5, 0), sticky='w', pady=(5, 0))
+        ttk.Label(f_serial, text="Si sale texto ilegible, casi siempre es la velocidad",
+                  font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        f_serial.columnconfigure(1, weight=1)
+
+        # -- Bluetooth
+        f_bt = ttk.Frame(destino)
+        ttk.Label(f_bt, text="Equipo:").grid(row=0, column=0, sticky='w')
+        combo_bt = ttk.Combobox(f_bt, values=listar_bluetooth(), width=32)
+        combo_bt.grid(row=0, column=1, padx=(5, 0), sticky='ew')
+        ttk.Label(f_bt, text="Solo aparecen los equipos ya emparejados en el sistema",
+                  font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=1, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        f_bt.columnconfigure(1, weight=1)
+
+        # -- Dispositivo directo
+        f_virtual = ttk.Frame(destino)
+        ttk.Label(f_virtual, text="Ruta:").grid(row=0, column=0, sticky='w')
+        entry_virtual = ttk.Entry(f_virtual, width=32)
+        entry_virtual.grid(row=0, column=1, padx=(5, 0), sticky='ew')
+        ttk.Label(f_virtual, text="Ej: /dev/usb/lp0",
+                  font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=1, column=0, columnspan=2, sticky='w', pady=(4, 0))
+        f_virtual.columnconfigure(1, weight=1)
+
+        paneles = {'cups': f_cups, 'ip': f_ip, 'serial': f_serial,
+                   'bluetooth': f_bt, 'virtual': f_virtual}
+
+        # ---------------- Campos comunes ----------------
+        ttk.Label(frame, text="Código de cola:").grid(row=2, column=0, sticky='w', pady=5)
         entry_code = ttk.Entry(frame, width=37)
-        entry_code.grid(row=1, column=1, padx=(5, 0), pady=5, sticky='ew')
-        ttk.Label(frame, text="Ej: 301", font=("Segoe UI", 8),
-                  foreground='gray').grid(row=2, column=1, sticky='w', padx=(5, 0))
+        entry_code.grid(row=2, column=1, padx=(5, 0), pady=5, sticky='ew')
+        ttk.Label(frame, text="Ej: 301", font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=3, column=1, sticky='w', padx=(5, 0))
 
-        # Empresa (BD)
-        ttk.Label(frame, text="Empresa (BD):").grid(row=3, column=0, sticky='w', pady=5)
+        ttk.Label(frame, text="Empresa (BD):").grid(row=4, column=0, sticky='w', pady=5)
         entry_empresa = ttk.Entry(frame, width=37)
-        entry_empresa.grid(row=3, column=1, padx=(5, 0), pady=5, sticky='ew')
-        ttk.Label(frame, text="Nombre de la base de datos (ej: invefacon, fiorella)", font=("Segoe UI", 8),
-                  foreground='gray').grid(row=4, column=1, sticky='w', padx=(5, 0))
+        entry_empresa.grid(row=4, column=1, padx=(5, 0), pady=5, sticky='ew')
+        ttk.Label(frame, text="Nombre de la base de datos (ej: invefacon, fiorella)",
+                  font=("Segoe UI", 8), foreground='gray')\
+            .grid(row=5, column=1, sticky='w', padx=(5, 0))
 
-        # Descripción
-        ttk.Label(frame, text="Descripción:").grid(row=5, column=0, sticky='w', pady=5)
+        ttk.Label(frame, text="Descripción:").grid(row=6, column=0, sticky='w', pady=5)
         entry_desc = ttk.Entry(frame, width=37)
-        entry_desc.grid(row=5, column=1, padx=(5, 0), pady=5, sticky='ew')
+        entry_desc.grid(row=6, column=1, padx=(5, 0), pady=5, sticky='ew')
 
-        # === MODO DE IMPRESIÓN ===
-        ttk.Label(frame, text="Modo:").grid(row=6, column=0, sticky='w', pady=5)
-        var_mode = tk.StringVar(value='raw')
+        # ---------------- Modo ----------------
+        ttk.Label(frame, text="Modo:").grid(row=7, column=0, sticky='w', pady=5)
+        var_mode = tk.StringVar(value=perfil.get('printMode', 'raw'))
         mode_frame = ttk.Frame(frame)
-        mode_frame.grid(row=6, column=1, sticky='w', padx=(5, 0), pady=5)
-        rb_raw = ttk.Radiobutton(mode_frame, text="POS (RAW)", variable=var_mode, value='raw',
-                                  command=lambda: _toggle_mode())
+        mode_frame.grid(row=7, column=1, sticky='w', padx=(5, 0), pady=5)
+        rb_raw = ttk.Radiobutton(mode_frame, text="POS (RAW)", variable=var_mode,
+                                 value='raw', command=lambda: _pintar())
         rb_raw.pack(side='left', padx=(0, 15))
-        rb_spooler = ttk.Radiobutton(mode_frame, text="Spooler (Cola SO)", variable=var_mode, value='spooler',
-                                      command=lambda: _toggle_mode())
-        rb_spooler.pack(side='left')
+        rb_spool = ttk.Radiobutton(mode_frame, text="Spooler (Cola SO)", variable=var_mode,
+                                   value='spooler', command=lambda: _pintar())
+        rb_spool.pack(side='left')
 
-        # --- Panel opciones POS (RAW) ---
         pos_frame = ttk.LabelFrame(frame, text="Opciones POS", padding=5)
-        pos_frame.grid(row=7, column=0, columnspan=2, sticky='ew', pady=(5, 0))
-
-        var_cut = tk.BooleanVar(value=True)
-        var_drawer = tk.BooleanVar(value=False)
-        var_thermal = tk.BooleanVar(value=False)
-        ttk.Checkbutton(pos_frame, text="Cortar papel", variable=var_cut).grid(row=0, column=0, sticky='w')
-        ttk.Checkbutton(pos_frame, text="Abrir cajón", variable=var_drawer).grid(row=0, column=1, sticky='w', padx=(10, 0))
-        ttk.Checkbutton(pos_frame, text="Es térmica (envío lento)", variable=var_thermal).grid(row=1, column=0, columnspan=2, sticky='w')
-
-        ttk.Label(pos_frame, text="Tipo de letra (Epson):").grid(row=2, column=0, sticky='w', pady=(5, 0))
+        pos_frame.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(5, 0))
+        var_cut = tk.BooleanVar(value=perfil.get('cutPaper', True))
+        var_drawer = tk.BooleanVar(value=perfil.get('openDrawer', False))
+        var_thermal = tk.BooleanVar(value=perfil.get('isThermal', False))
+        ttk.Checkbutton(pos_frame, text="Cortar papel", variable=var_cut)\
+            .grid(row=0, column=0, sticky='w')
+        ttk.Checkbutton(pos_frame, text="Abrir cajón", variable=var_drawer)\
+            .grid(row=0, column=1, sticky='w', padx=(10, 0))
+        ttk.Checkbutton(pos_frame, text="Es térmica (envío lento)", variable=var_thermal)\
+            .grid(row=1, column=0, columnspan=2, sticky='w')
+        ttk.Label(pos_frame, text="Tipo de letra (Epson):")\
+            .grid(row=2, column=0, sticky='w', pady=(5, 0))
         combo_escfont = ttk.Combobox(pos_frame, values=['A (normal)', 'B (condensada)'],
                                      width=15, state='readonly')
         combo_escfont.grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(5, 0))
-        combo_escfont.set('A (normal)')
+        combo_escfont.set('B (condensada)'
+                          if str(perfil.get('escposFont', 'A')).upper() == 'B'
+                          else 'A (normal)')
 
-        ttk.Label(pos_frame, text="Puerto virtual (LPT):").grid(row=3, column=0, sticky='w', pady=(5, 0))
-        entry_vport = ttk.Entry(pos_frame, width=15)
-        entry_vport.grid(row=3, column=1, sticky='w', padx=(5, 0), pady=(5, 0))
-        ttk.Label(pos_frame, text="Ej: LPT2 (dejar vacío si no usa)", font=("Segoe UI", 8),
-                  foreground='gray').grid(row=4, column=0, columnspan=2, sticky='w')
-
-        # --- Panel opciones Spooler ---
         spool_frame = ttk.LabelFrame(frame, text="Opciones Spooler", padding=5)
-        spool_frame.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(5, 0))
-
+        spool_frame.grid(row=9, column=0, columnspan=2, sticky='ew', pady=(5, 0))
         ttk.Label(spool_frame, text="Fuente:").grid(row=0, column=0, sticky='w')
         combo_font = ttk.Combobox(spool_frame, values=[
             "Lucida Console", "Courier New", "Consolas", "Terminal",
-            "Draft 10cpi", "Draft 12cpi", "Draft 15cpi", "Draft 16cpi", "Draft 17cpi", "Draft 20cpi",
-            "Roman 10cpi", "Roman 12cpi", "Roman 15cpi", "Roman 16cpi", "Roman 17cpi", "Roman 20cpi"
-        ], width=20)
+            "Draft 10cpi", "Draft 12cpi", "Draft 15cpi", "Draft 16cpi",
+            "Draft 17cpi", "Draft 20cpi",
+            "Roman 10cpi", "Roman 12cpi", "Roman 15cpi", "Roman 16cpi",
+            "Roman 17cpi", "Roman 20cpi"], width=20)
         combo_font.grid(row=0, column=1, padx=(5, 0), sticky='w')
-        combo_font.set("Lucida Console")
-
+        combo_font.set(perfil.get('spoolerFont', 'Lucida Console'))
         ttk.Label(spool_frame, text="Tamaño:").grid(row=1, column=0, sticky='w', pady=(5, 0))
-        combo_fsize = ttk.Combobox(spool_frame, values=["7", "7.5", "8", "8.5", "9", "9.5", "10", "11", "12", "14"],
-                                    width=8, state='readonly')
+        combo_fsize = ttk.Combobox(
+            spool_frame, values=["7", "7.5", "8", "8.5", "9", "9.5", "10", "11", "12", "14"],
+            width=8, state='readonly')
         combo_fsize.grid(row=1, column=1, padx=(5, 0), sticky='w', pady=(5, 0))
-        combo_fsize.set("10")
+        combo_fsize.set(str(perfil.get('spoolerFontSize', 10)))
 
-        frame.columnconfigure(1, weight=1)
+        aviso_modo = ttk.Label(frame, text="", font=("Segoe UI", 8), foreground='gray')
+        aviso_modo.grid(row=10, column=0, columnspan=2, sticky='w')
 
-        def _toggle_mode():
+        def _transporte_actual():
+            return codigos[etiquetas.index(combo_transporte.get())]
+
+        def _pintar(*_):
+            """Mostrar solo lo que aplica al transporte y modo elegidos."""
+            t = _transporte_actual()
+            for cod, panel in paneles.items():
+                if cod == t:
+                    panel.grid(row=0, column=0, columnspan=2, sticky='ew')
+                else:
+                    panel.grid_remove()
+
+            # El Spooler es la cola del sistema operativo: solo existe para
+            # impresoras instaladas en CUPS. Una impresora de red, serie o
+            # Bluetooth se maneja mandando bytes directo, no hay cola del SO
+            # donde encolar — por eso ahi se fuerza POS y se explica.
+            if t == 'cups':
+                rb_spool.state(['!disabled'])
+                aviso_modo.config(text="")
+            else:
+                if var_mode.get() != 'raw':
+                    var_mode.set('raw')
+                rb_spool.state(['disabled'])
+                aviso_modo.config(
+                    text="Con esta conexión los datos van directo a la impresora, "
+                         "sin pasar por la cola del sistema.")
+
             if var_mode.get() == 'raw':
                 pos_frame.grid()
                 spool_frame.grid_remove()
@@ -3431,17 +3954,86 @@ class MainWindow:
                 pos_frame.grid_remove()
                 spool_frame.grid()
 
-        # Iniciar con spooler oculto
-        spool_frame.grid_remove()
+        combo_transporte.bind('<<ComboboxSelected>>', _pintar)
 
-        def do_add():
-            printer = combo_printer.get().strip()
+        # ---------------- Precargar valores ----------------
+        direccion = str(perfil.get('address', '') or '')
+        nombre_previo = perfil.get('windowsPrinter', perfil.get('printer', ''))
+        if actual == 'cups':
+            if nombre_previo in lista_cups:
+                combo_cups.set(nombre_previo)
+            elif nombre_previo:
+                combo_cups.set(nombre_previo)
+            elif lista_cups:
+                combo_cups.current(0)
+        elif actual == 'ip':
+            entry_host.insert(0, str(perfil.get('host', direccion)))
+            entry_puerto.insert(0, str(perfil.get('port', PUERTO_IP_DEFECTO)))
+        elif actual == 'serial':
+            combo_serial.set(direccion or perfil.get('virtualPort', ''))
+            combo_baud.set(str(perfil.get('baudRate', '') or '9600'))
+        elif actual == 'bluetooth':
+            combo_bt.set(direccion)
+        else:
+            entry_virtual.insert(0, direccion or perfil.get('virtualPort', ''))
+
+        if not entry_puerto.get():
+            entry_puerto.insert(0, str(PUERTO_IP_DEFECTO))
+        if not combo_baud.get():
+            combo_baud.set('9600')
+        entry_code.insert(0, perfil.get('queueCode', ''))
+        entry_empresa.insert(0, perfil.get('empresa', ''))
+        entry_desc.insert(0, perfil.get('description', ''))
+        _pintar()
+
+        # ---------------- Guardar ----------------
+        def _guardar():
+            t = _transporte_actual()
             code = entry_code.get().strip()
             empresa = entry_empresa.get().strip().lower()
             desc = entry_desc.get().strip()
-            if not printer:
-                messagebox.showwarning("Aviso", "Seleccione una impresora.", parent=dlg)
-                return
+
+            # Cada transporte valida SU dato y arma la etiqueta que se ve en la
+            # lista. `etiqueta` es solo para mostrar/identificar; lo que manda a
+            # la hora de imprimir son transport + address/host/port.
+            host = puerto = baud = ''
+            if t == 'cups':
+                direccion_nueva = combo_cups.get().strip()
+                if not direccion_nueva:
+                    messagebox.showwarning("Aviso", "Seleccione una impresora.", parent=dlg)
+                    return
+                etiqueta = direccion_nueva
+            elif t == 'ip':
+                host = entry_host.get().strip()
+                puerto = entry_puerto.get().strip() or str(PUERTO_IP_DEFECTO)
+                if not host:
+                    messagebox.showwarning("Aviso", "Escriba la dirección IP de la impresora.", parent=dlg)
+                    return
+                if not puerto.isdigit() or not (1 <= int(puerto) <= 65535):
+                    messagebox.showwarning("Aviso", "El puerto debe ser un número entre 1 y 65535.", parent=dlg)
+                    return
+                direccion_nueva = f"{host}:{puerto}"
+                etiqueta = direccion_nueva
+            elif t == 'serial':
+                direccion_nueva = solo_direccion(combo_serial.get())
+                if not direccion_nueva:
+                    messagebox.showwarning("Aviso", "Elija el dispositivo serie.", parent=dlg)
+                    return
+                baud = combo_baud.get().strip() or '9600'
+                etiqueta = f"{direccion_nueva} @{baud}"
+            elif t == 'bluetooth':
+                direccion_nueva = solo_direccion(combo_bt.get()).upper()
+                if not direccion_nueva:
+                    messagebox.showwarning("Aviso", "Elija la impresora Bluetooth.", parent=dlg)
+                    return
+                etiqueta = direccion_nueva
+            else:
+                direccion_nueva = entry_virtual.get().strip()
+                if not direccion_nueva:
+                    messagebox.showwarning("Aviso", "Escriba la ruta del dispositivo.", parent=dlg)
+                    return
+                etiqueta = direccion_nueva
+
             if not code:
                 messagebox.showwarning("Aviso", "Ingrese un código de cola.", parent=dlg)
                 return
@@ -3449,65 +4041,69 @@ class MainWindow:
                 messagebox.showwarning("Aviso", "Ingrese la empresa (base de datos).", parent=dlg)
                 return
 
-            # Verificar duplicado
-            for p in self.config.get('printers', []):
-                if p.get('windowsPrinter', p.get('printer', '')) == printer and p.get('queueCode', '') == code and p.get('empresa', '') == empresa:
-                    messagebox.showwarning("Aviso", f"'{printer}' ya está en cola '{code}' para '{empresa}'.", parent=dlg)
+            # Duplicado = misma cola + misma empresa + mismo destino. Dos
+            # perfiles iguales se pisarían y solo uno recibiría los trabajos.
+            for i, p in enumerate(self.config.get('printers', [])):
+                if i == indice:
+                    continue
+                if (p.get('queueCode', '') == code and p.get('empresa', '') == empresa
+                        and p.get('windowsPrinter', p.get('printer', '')) == etiqueta):
+                    messagebox.showwarning(
+                        "Aviso", f"'{etiqueta}' ya está en la cola '{code}' para '{empresa}'.",
+                        parent=dlg)
                     return
 
-            new_printer = {
+            nuevo = {
                 "queueCode": code,
                 "printerCode": code.split(',')[-1] if ',' in code else code,
-                "windowsPrinter": printer,
+                "windowsPrinter": etiqueta,
                 "empresa": empresa,
                 "description": desc,
                 "printMode": var_mode.get(),
+                "transport": t,
+                "address": direccion_nueva,
             }
+            if t == 'ip':
+                nuevo["host"] = host
+                nuevo["port"] = int(puerto)
+            elif t == 'serial':
+                nuevo["baudRate"] = int(baud)
+                # Se conserva virtualPort para que una version anterior del
+                # cliente que lea esta misma config siga imprimiendo.
+                nuevo["virtualPort"] = direccion_nueva
+            elif t == 'virtual':
+                nuevo["virtualPort"] = direccion_nueva
 
             if var_mode.get() == 'raw':
-                new_printer["cutPaper"] = var_cut.get()
-                new_printer["openDrawer"] = var_drawer.get()
-                new_printer["isThermal"] = var_thermal.get()
-                new_printer["escposFont"] = 'B' if combo_escfont.get().startswith('B') else 'A'
-                vport = entry_vport.get().strip().upper()
-                if vport:
-                    new_printer["virtualPort"] = vport
+                nuevo["cutPaper"] = var_cut.get()
+                nuevo["openDrawer"] = var_drawer.get()
+                nuevo["isThermal"] = var_thermal.get()
+                nuevo["escposFont"] = 'B' if combo_escfont.get().startswith('B') else 'A'
             else:
-                new_printer["spoolerFont"] = combo_font.get()
-                new_printer["spoolerFontSize"] = float(combo_fsize.get())
+                nuevo["spoolerFont"] = combo_font.get()
+                nuevo["spoolerFontSize"] = float(combo_fsize.get())
 
-            self.config.setdefault('printers', []).append(new_printer)
+            impresoras = self.config.setdefault('printers', [])
+            if editando and 0 <= indice < len(impresoras):
+                impresoras[indice] = nuevo
+            else:
+                impresoras.append(nuevo)
             save_config(self.config)
             self._reload_printer_table()
             self._reconnect_with_new_config()
             dlg.destroy()
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=9, column=0, columnspan=2, pady=(10, 0))
-        ttk.Button(btn_frame, text="Agregar", command=do_add).pack(side='left', padx=5)
+        btn_frame.grid(row=11, column=0, columnspan=2, pady=(12, 0))
+        ttk.Button(btn_frame, text="Guardar" if editando else "Agregar",
+                   command=_guardar).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Cancelar", command=dlg.destroy).pack(side='left')
 
     def _test_printer(self):
         """Probar la impresora seleccionada: abre el cajón monedero y corta el papel."""
-        sel = self.tree.focus()
-        if not sel:
-            messagebox.showwarning("Aviso", "Seleccione una impresora para probar.")
-            return
-
-        vals = self.tree.item(sel, 'values')
-        queue_code = vals[0]
-        empresa = vals[1]
-        printer_name = vals[2]
-
-        # Buscar el registro en config (igual que _edit_printer)
-        printer_config = None
-        for p in self.config.get('printers', []):
-            if (p.get('empresa', '') == empresa and p.get('queueCode', '') == queue_code
-                    and p.get('windowsPrinter', p.get('printer', '')) == printer_name):
-                printer_config = p
-                break
+        _, printer_config = self._perfil_seleccionado("probar")
         if printer_config is None:
-            printer_config = {'windowsPrinter': printer_name}
+            return
 
         win_printer = printer_config.get('windowsPrinter', printer_config.get('printer', ''))
         if not win_printer:
@@ -3525,16 +4121,11 @@ class MainWindow:
         # muestra de tamaños de letra + abre cajón y corta papel.
         data = build_test_ticket(win_printer, cols, font)
 
-        # Despachar igual que la impresión real (puerto virtual / térmica / CUPS)
+        # Despachar por el MISMO camino que la impresión real. Si "Probar" usara
+        # otra ruta, probaría algo distinto de lo que hace en producción — que es
+        # justo lo que uno no quiere de un botón de prueba.
         try:
-            virtual_port = printer_config.get('virtualPort', '').strip()
-            is_thermal = printer_config.get('isThermal', False)
-            if virtual_port:
-                ok, msg = print_raw_virtual_port(virtual_port, data)
-            elif is_thermal:
-                ok, msg = print_raw_thermal(win_printer, data)
-            else:
-                ok, msg = print_raw(win_printer, data)
+            ok, msg = despachar_raw(printer_config, data, win_printer)
         except Exception as e:
             ok, msg = False, str(e)
 
@@ -3547,24 +4138,12 @@ class MainWindow:
 
     def _purge_printer(self):
         """Vaciar la cola de la impresora seleccionada: spooler del equipo + servidor."""
-        sel = self.tree.focus()
-        if not sel:
-            messagebox.showwarning("Aviso", "Seleccione una impresora para limpiar la cola.")
-            return
-
-        vals = self.tree.item(sel, 'values')
-        queue_code = vals[0]
-        empresa = vals[1]
-        printer_name = vals[2]
-
-        printer_config = None
-        for p in self.config.get('printers', []):
-            if (p.get('empresa', '') == empresa and p.get('queueCode', '') == queue_code
-                    and p.get('windowsPrinter', p.get('printer', '')) == printer_name):
-                printer_config = p
-                break
+        _, printer_config = self._perfil_seleccionado("limpiar la cola")
         if printer_config is None:
-            printer_config = {'windowsPrinter': printer_name}
+            return
+        queue_code = printer_config.get('queueCode', '')
+        empresa = printer_config.get('empresa', '')
+        printer_name = printer_config.get('windowsPrinter', printer_config.get('printer', ''))
 
         if not messagebox.askyesno(
                 "Limpiar cola",
@@ -3598,214 +4177,22 @@ class MainWindow:
 
     def _remove_printer(self):
         """Quitar la impresora seleccionada."""
-        sel = self.tree.focus()
-        if not sel:
-            messagebox.showwarning("Aviso", "Seleccione una impresora para quitar.")
+        indice, perfil = self._perfil_seleccionado("quitar")
+        if perfil is None:
             return
-
-        vals = self.tree.item(sel, 'values')
-        # Columnas: code(0), empresa(1), printer(2), description(3), options(4)
-        queue_code = vals[0]
-        empresa = vals[1]
-        printer_name = vals[2]
+        empresa = perfil.get('empresa', '')
+        printer_name = perfil.get('windowsPrinter', perfil.get('printer', ''))
 
         if not messagebox.askyesno("Confirmar", f"¿Quitar '{printer_name}' ({empresa}) de la lista?"):
             return
 
-        self.config['printers'] = [
-            p for p in self.config.get('printers', [])
-            if not (p.get('empresa', '') == empresa
-                    and (p.get('queueCode', '') == queue_code or p.get('printerCode', '') == queue_code)
-                    and p.get('windowsPrinter', p.get('printer', '')) == printer_name)
-        ]
+        # Se borra POR POSICION. El filtrado por campos de antes tenia un
+        # problema silencioso: dos perfiles con la misma cola/empresa/impresora
+        # se borraban LOS DOS de un solo clic.
+        del self.config.setdefault('printers', [])[indice]
         save_config(self.config)
         self._reload_printer_table()
         self._reconnect_with_new_config()
-
-    def _edit_printer(self):
-        """Editar la impresora seleccionada."""
-        sel = self.tree.focus()
-        if not sel:
-            messagebox.showwarning("Aviso", "Seleccione una impresora para editar.")
-            return
-
-        vals = self.tree.item(sel, 'values')
-        queue_code = vals[0]
-        empresa = vals[1]
-        printer_name = vals[2]
-
-        # Buscar el registro en config
-        printer_data = None
-        printer_idx = -1
-        for i, p in enumerate(self.config.get('printers', [])):
-            if (p.get('empresa', '') == empresa and p.get('queueCode', '') == queue_code
-                    and p.get('windowsPrinter', p.get('printer', '')) == printer_name):
-                printer_data = p
-                printer_idx = i
-                break
-
-        if printer_data is None:
-            messagebox.showerror("Error", "No se encontró la impresora en la configuración.")
-            return
-
-        dlg = tk.Toplevel(self.root)
-        dlg.title("Editar Impresora")
-        dlg.geometry("600x640")
-        dlg.resizable(False, False)
-        dlg.transient(self.root)
-        dlg.grab_set()
-        dlg.configure(bg=BODY)
-
-        dlg.update_idletasks()
-        x = self.root.winfo_x() + 100
-        y = self.root.winfo_y() + 100
-        dlg.geometry(f"+{x}+{y}")
-
-        frame = ttk.Frame(dlg, padding=15)
-        frame.pack(fill='both', expand=True)
-
-        # Impresora Windows
-        ttk.Label(frame, text="Impresora:").grid(row=0, column=0, sticky='w', pady=5)
-        try:
-            printers_list, _ = list_printers()
-        except:
-            printers_list = []
-        combo_printer = ttk.Combobox(frame, values=printers_list, width=35)
-        combo_printer.grid(row=0, column=1, padx=(5, 0), pady=5, sticky='ew')
-        # Seleccionar la actual
-        if printer_name in printers_list:
-            combo_printer.set(printer_name)
-        elif printers_list:
-            combo_printer.current(0)
-
-        # Código de cola
-        ttk.Label(frame, text="Código de cola:").grid(row=1, column=0, sticky='w', pady=5)
-        entry_code = ttk.Entry(frame, width=37)
-        entry_code.grid(row=1, column=1, padx=(5, 0), pady=5, sticky='ew')
-        entry_code.insert(0, printer_data.get('queueCode', ''))
-
-        # Empresa
-        ttk.Label(frame, text="Empresa (BD):").grid(row=3, column=0, sticky='w', pady=5)
-        entry_empresa = ttk.Entry(frame, width=37)
-        entry_empresa.grid(row=3, column=1, padx=(5, 0), pady=5, sticky='ew')
-        entry_empresa.insert(0, printer_data.get('empresa', ''))
-
-        # Descripción
-        ttk.Label(frame, text="Descripción:").grid(row=5, column=0, sticky='w', pady=5)
-        entry_desc = ttk.Entry(frame, width=37)
-        entry_desc.grid(row=5, column=1, padx=(5, 0), pady=5, sticky='ew')
-        entry_desc.insert(0, printer_data.get('description', ''))
-
-        # === MODO ===
-        ttk.Label(frame, text="Modo:").grid(row=6, column=0, sticky='w', pady=5)
-        current_mode = printer_data.get('printMode', 'raw')
-        var_mode = tk.StringVar(value=current_mode)
-        mode_frame = ttk.Frame(frame)
-        mode_frame.grid(row=6, column=1, sticky='w', padx=(5, 0), pady=5)
-        rb_raw = ttk.Radiobutton(mode_frame, text="POS (RAW)", variable=var_mode, value='raw',
-                                  command=lambda: _toggle_mode())
-        rb_raw.pack(side='left', padx=(0, 15))
-        rb_spooler = ttk.Radiobutton(mode_frame, text="Spooler (Cola SO)", variable=var_mode, value='spooler',
-                                      command=lambda: _toggle_mode())
-        rb_spooler.pack(side='left')
-
-        # --- Panel POS ---
-        pos_frame = ttk.LabelFrame(frame, text="Opciones POS", padding=5)
-        pos_frame.grid(row=7, column=0, columnspan=2, sticky='ew', pady=(5, 0))
-
-        var_cut = tk.BooleanVar(value=printer_data.get('cutPaper', True))
-        var_drawer = tk.BooleanVar(value=printer_data.get('openDrawer', False))
-        var_thermal = tk.BooleanVar(value=printer_data.get('isThermal', False))
-        ttk.Checkbutton(pos_frame, text="Cortar papel", variable=var_cut).grid(row=0, column=0, sticky='w')
-        ttk.Checkbutton(pos_frame, text="Abrir cajón", variable=var_drawer).grid(row=0, column=1, sticky='w', padx=(10, 0))
-        ttk.Checkbutton(pos_frame, text="Es térmica (envío lento)", variable=var_thermal).grid(row=1, column=0, columnspan=2, sticky='w')
-
-        ttk.Label(pos_frame, text="Tipo de letra (Epson):").grid(row=2, column=0, sticky='w', pady=(5, 0))
-        combo_escfont = ttk.Combobox(pos_frame, values=['A (normal)', 'B (condensada)'],
-                                     width=15, state='readonly')
-        combo_escfont.grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(5, 0))
-        combo_escfont.set('B (condensada)' if str(printer_data.get('escposFont', 'A')).upper() == 'B' else 'A (normal)')
-
-        ttk.Label(pos_frame, text="Puerto virtual (LPT):").grid(row=3, column=0, sticky='w', pady=(5, 0))
-        entry_vport = ttk.Entry(pos_frame, width=15)
-        entry_vport.grid(row=3, column=1, sticky='w', padx=(5, 0), pady=(5, 0))
-        entry_vport.insert(0, printer_data.get('virtualPort', ''))
-
-        # --- Panel Spooler ---
-        spool_frame = ttk.LabelFrame(frame, text="Opciones Spooler", padding=5)
-        spool_frame.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(5, 0))
-
-        ttk.Label(spool_frame, text="Fuente:").grid(row=0, column=0, sticky='w')
-        combo_font = ttk.Combobox(spool_frame, values=[
-            "Lucida Console", "Courier New", "Consolas", "Terminal",
-            "Draft 10cpi", "Draft 12cpi", "Draft 15cpi", "Draft 16cpi", "Draft 17cpi", "Draft 20cpi",
-            "Roman 10cpi", "Roman 12cpi", "Roman 15cpi", "Roman 16cpi", "Roman 17cpi", "Roman 20cpi"
-        ], width=20)
-        combo_font.grid(row=0, column=1, padx=(5, 0), sticky='w')
-        combo_font.set(printer_data.get('spoolerFont', 'Lucida Console'))
-
-        ttk.Label(spool_frame, text="Tamaño:").grid(row=1, column=0, sticky='w', pady=(5, 0))
-        combo_fsize = ttk.Combobox(spool_frame, values=["7", "7.5", "8", "8.5", "9", "9.5", "10", "11", "12", "14"],
-                                    width=8, state='readonly')
-        combo_fsize.grid(row=1, column=1, padx=(5, 0), sticky='w', pady=(5, 0))
-        combo_fsize.set(str(printer_data.get('spoolerFontSize', 10)))
-
-        frame.columnconfigure(1, weight=1)
-
-        def _toggle_mode():
-            if var_mode.get() == 'raw':
-                pos_frame.grid()
-                spool_frame.grid_remove()
-            else:
-                pos_frame.grid_remove()
-                spool_frame.grid()
-
-        # Mostrar panel correcto
-        if current_mode == 'spooler':
-            pos_frame.grid_remove()
-        else:
-            spool_frame.grid_remove()
-
-        def do_save():
-            new_printer = combo_printer.get().strip()
-            code = entry_code.get().strip()
-            emp = entry_empresa.get().strip().lower()
-            desc = entry_desc.get().strip()
-            if not new_printer or not code or not emp:
-                messagebox.showwarning("Aviso", "Complete impresora, código y empresa.", parent=dlg)
-                return
-
-            updated = {
-                "queueCode": code,
-                "printerCode": code.split(',')[-1] if ',' in code else code,
-                "windowsPrinter": new_printer,
-                "empresa": emp,
-                "description": desc,
-                "printMode": var_mode.get(),
-            }
-
-            if var_mode.get() == 'raw':
-                updated["cutPaper"] = var_cut.get()
-                updated["openDrawer"] = var_drawer.get()
-                updated["isThermal"] = var_thermal.get()
-                updated["escposFont"] = 'B' if combo_escfont.get().startswith('B') else 'A'
-                vport = entry_vport.get().strip().upper()
-                if vport:
-                    updated["virtualPort"] = vport
-            else:
-                updated["spoolerFont"] = combo_font.get()
-                updated["spoolerFontSize"] = float(combo_fsize.get())
-
-            self.config['printers'][printer_idx] = updated
-            save_config(self.config)
-            self._reload_printer_table()
-            self._reconnect_with_new_config()
-            dlg.destroy()
-
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=9, column=0, columnspan=2, pady=(10, 0))
-        ttk.Button(btn_frame, text="Guardar", command=do_save).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Cancelar", command=dlg.destroy).pack(side='left')
 
     def _get_exe_path(self):
         """Ruta del ejecutable actual."""
@@ -3983,7 +4370,8 @@ def launch_app():
     if not config.get('clientId'):
         config['clientId'] = socket.gethostname()
         save_config(config)
-    main = MainWindow(config)
+    # --hidden lo pasan el autostart de Linux y el Run de Windows; a mano nunca.
+    main = MainWindow(config, arrancar_oculto=('--hidden' in sys.argv[1:]))
     main.run()
 
 

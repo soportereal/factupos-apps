@@ -1,0 +1,10 @@
+// FactuPOS OS: el usuario local puede administrar la red (IP fija, DHCP,
+// WiFi on/off, conectar redes) SIN contraseña — la config de red se hace
+// desde el propio panel en terminales de punto de venta.
+// En Debian puro NetworkManager exige auth de admin por defecto (Mint no).
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+        (subject.local || subject.isInGroup("sudo"))) {
+        return polkit.Result.YES;
+    }
+});

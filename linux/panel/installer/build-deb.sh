@@ -18,6 +18,11 @@ trap 'rm -rf "$STAGE"' EXIT
 # --- arbol de archivos ---
 install -d "$STAGE/usr/lib/$PKG"
 install -m644 "$HERE/factupos-panel.py" "$STAGE/usr/lib/$PKG/factupos-panel.py"
+# Logo FactuPOS (hexagono) para el menu Inicio (acceso Facturacion + rama FactuPOS)
+install -m644 "$HERE/factupos.png" "$STAGE/usr/lib/$PKG/factupos.png"
+# Logos de mensajeria (menu Mensajeria)
+install -m644 "$HERE/telegram.png" "$STAGE/usr/lib/$PKG/telegram.png"
+install -m644 "$HERE/whatsapp.png" "$STAGE/usr/lib/$PKG/whatsapp.png"
 
 install -d "$STAGE/usr/bin"
 cat > "$STAGE/usr/bin/$PKG" <<'LAUNCH'
@@ -51,6 +56,11 @@ install -m644 "$HERE/$PKG-autostart.desktop" "$STAGE/etc/xdg/autostart/$PKG.desk
 install -d "$STAGE/etc/polkit-1/rules.d"
 install -m644 "$HERE/installer/debian/49-factupos-power.rules" \
     "$STAGE/etc/polkit-1/rules.d/49-factupos-power.rules"
+
+# Regla polkit: administrar red SIN contrasena (Debian puro pide auth admin
+# para nmcli modify; en Mint/LMDE no hacia falta).
+install -m644 "$HERE/installer/debian/48-factupos-network.rules" \
+    "$STAGE/etc/polkit-1/rules.d/48-factupos-network.rules"
 
 # --- metadatos DEBIAN ---
 install -d "$STAGE/DEBIAN"
