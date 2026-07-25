@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Cliente del API web de FactuPOS (/api/biometria/*.php, sin sesion) con failover entre api_bases
+ * Cliente del API web de FactuPOS (/apis/biometria/kiosko/*.php, sin sesion) con failover entre api_bases
  * y autenticacion por token o db. Equivalente a KioskApp._api() del kiosk.py.
  * El estado (apiBases/activeApi/token/db) es mutable (se cambia desde Config dialog).
  */
@@ -72,11 +72,11 @@ public final class Api {
     public Http.Resp huellasListar() {
         Map<String,Object> p = new LinkedHashMap<>();
         p.put("plataforma", plataforma);
-        return call("GET", "/api/biometria/huellas_listar.php", p, 20);
+        return call("GET", "/apis/biometria/kiosko/huellas_listar.php", p, 20);
     }
 
     public Http.Resp empleadosListar() {
-        return call("GET", "/api/biometria/empleados_listar.php", new LinkedHashMap<>(), 15);
+        return call("GET", "/apis/biometria/kiosko/empleados_listar.php", new LinkedHashMap<>(), 15);
     }
 
     public Http.Resp marcaRegistrar(String usuarioCodigo) {
@@ -84,7 +84,7 @@ public final class Api {
         p.put("usuario_codigo", usuarioCodigo);
         p.put("origen", "HUELLA");
         p.put("dispositivo_id", dispositivoId);
-        return call("POST", "/api/biometria/marca_registrar.php", p, 20);
+        return call("POST", "/apis/biometria/kiosko/marca_registrar.php", p, 20);
     }
 
     public Http.Resp huellaRegistrar(String usuarioCodigo, String dedo, String templateB64, String serial) {
@@ -95,7 +95,7 @@ public final class Api {
         p.put("template_b64", templateB64);
         p.put("lector_serial", serial);
         p.put("dispositivo_id", dispositivoId);
-        return call("POST", "/api/biometria/huella_registrar.php", p, 20);
+        return call("POST", "/apis/biometria/kiosko/huella_registrar.php", p, 20);
     }
 
     private static Map<String,Object> err(String msg) {

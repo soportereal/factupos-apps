@@ -49,7 +49,12 @@ echo "[build] empaquetando kiosko   -> $KIO_DEB"
 dpkg-deb --build --root-owner-group "$ROOT/packaging/kiosk-deb-root" "$KIO_DEB"
 
 # --- 3b) construir el .deb COMBINADO (servicio + kiosko en UN solo instalador) ---
-CMB_VER="1.0.0"
+# La version NO se escribe a mano: sale de lo que el paquete lleva adentro, con el formato
+#   <version del kiosko>+svc<version del servicio>     ej: 1.8.3+svc2.5.2
+# Asi el numero se mueve solo cuando cambia cualquiera de los dos, y de un vistazo se sabe
+# que trae adentro. (Antes estaba quemado en "1.0.0" y no cambiaba nunca -> imposible
+# distinguir dos combinados distintos.)
+CMB_VER="${KVER}+svc${SVER}"
 CMB_DEB="$OUT/Factupos-FingerPrint.deb"
 CMB="$OUT/combined-root"
 echo "[build] armando combinado -> $CMB_DEB"
@@ -69,7 +74,7 @@ Recommends: curl, zenity, policykit-1 | polkit
 Conflicts: factupos-fingerprint-servicio, factupos-fingerprint-kiosko
 Replaces: factupos-fingerprint-servicio, factupos-fingerprint-kiosko
 Maintainer: FactuPOS Dev <dev@factupos.com>
-Description: FactuPOS FingerPrint (servicio + kiosko)
+Description: FactuPOS FingerPrint (servicio $SVER + kiosko $KVER)
  Instalador unico de huella digital FactuPOS para Linux: servicio del lector
  (Python + libfprint, systemd) y kiosko de marcaje (Java/Swing). Se instalan y
  desinstalan JUNTOS. Cada componente se auto-actualiza por su cuenta.

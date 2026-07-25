@@ -1,5 +1,5 @@
 {
-  "version": "1.8.2",
+  "version": "1.8.5",
   "jar": "https://soportereal.com/software/factupos-app/linux/FactuposKioskoHuella.jar",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-FingerPrint-Kiosko.deb"
 }

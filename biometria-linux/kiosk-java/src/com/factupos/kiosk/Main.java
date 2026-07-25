@@ -9,12 +9,12 @@ import javax.swing.UIManager;
 /**
  * FactuPOS - Kiosko de Marcaje por Huella Digital (Linux, Java/Swing).
  * Port del kiosk.py: identifica con el servicio local fingerprint_service.py y
- * registra la marca consumiendo las APIs /api/biometria/*.php (sin login web).
+ * registra la marca consumiendo las APIs /apis/biometria/kiosko/*.php (sin login web).
  */
 public final class Main {
 
-    public static final String APP_VERSION = "1.8.2";
-    public static final String BUILD_DATE  = "2026-06-27 12:00";
+    public static final String APP_VERSION = "1.8.5";
+    public static final String BUILD_DATE  = "2026-07-24 16:45";
 
     // Lock de INSTANCIA ÚNICA: se mantiene abierto mientras viva la app. Si otro
     // proceso ya tiene el puerto, es que el kiosko ya está abierto -> en vez de abrir

@@ -47,6 +47,10 @@ public final class KioskFrame {
     private volatile boolean fpConnected = false;
     private volatile String fpDevice = "";
     private volatile int usersLoaded = 0;
+    /** Ultimo error del servidor al conectarse (token invalido, empresa inexistente, etc).
+     *  Vacio = todo bien. Se muestra en la barra de estado y NO lo pisa refreshFpConnection(),
+     *  que antes lo borraba a los 3 segundos y dejaba la pantalla muda. */
+    private volatile String apiError = "";
     private long disconnectedSince = 0;   // ms desde que el lector quedó no-detectado
     private long lastAutoRestart = 0;     // ms del último reinicio automático
 
@@ -356,7 +360,11 @@ public final class KioskFrame {
             fpDevice = Json.str(r.body, "device", "");
             if (fpConnected) {
                 setLed(GREEN);
-                setStatus(((fpDevice == null || fpDevice.isEmpty()) ? "Lector listo" : fpDevice) + "  ·  " + usersLoaded + " huella(s)");
+                // Si el servidor rechazo la conexion, ese mensaje MANDA sobre "Lector listo":
+                // el lector puede estar perfecto y aun asi no haber bajado ninguna huella.
+                setStatus(!apiError.isEmpty()
+                        ? "✗ " + apiError
+                        : ((fpDevice == null || fpDevice.isEmpty()) ? "Lector listo" : fpDevice) + "  ·  " + usersLoaded + " huella(s)");
                 setFpColor(GREEN);
             }
         } else {
@@ -368,10 +376,17 @@ public final class KioskFrame {
     private void syncTemplates(boolean initial) {
         Http.Resp r = api.huellasListar();
         if (r.body == null || !r.ok()) {
-            Log.i("Sync plantillas FALLO: " + (r.body != null ? Json.str(r.body, "error") : "sin respuesta"));
-            if (initial) setStatus("Sin conexion a la API — usando cache local del servicio");
+            // El motivo REAL lo manda el servidor ("Token no registrado", "Empresa no
+            // encontrada", ...). Antes solo iba al log y en pantalla salia un texto generico
+            // una sola vez -> el usuario no tenia forma de saber que su token estaba malo.
+            String err = (r.body != null) ? Json.str(r.body, "error", "sin respuesta") : "sin respuesta";
+            Log.i("Sync plantillas FALLO: " + err);
+            apiError = err;
+            setStatus("✗ " + err);
+            setMsg("No se pudo conectar con el servidor.\nRevisá el token en «⚙ Config».");
             return;
         }
+        apiError = "";
         if (Json.bool(r.body, "needs_migration")) {
             Log.i("Falta la tabla HuellaUsuario (migracion 20260511104641) en " + serverdb);
             setStatus("Falta migracion HuellaUsuario en " + serverdb);
@@ -609,28 +624,41 @@ public final class KioskFrame {
     }
 
     private void openTokenConfig() {
-        JDialog d = baseDialog("Token / Configuracion del kiosko", 560, 480);
+        JDialog d = baseDialog("Token / Configuracion del kiosko", 620, 620);
         JPanel body = (JPanel) d.getContentPane();
 
-        body.add(title("Token del kiosko"));
-        body.add(label("Generalo en la web: FactuPOS → Biometría → Configurar Kiosko → «Generar token»",
-                FG_DIM, font(10)));
-        body.add(Box.createVerticalStrut(8));
+        // OJO: este dialogo tiene fondo BLANCO. Las etiquetas iban en gris claro (FG_DIM) y
+        // practicamente no se leian. Todo el texto de aqui va en NEGRO/gris oscuro y mas grande.
+        final Color TXT  = Color.BLACK;             // titulos de cada casilla
+        final Color HINT = hex("#334155");          // explicaciones (gris oscuro, legible en blanco)
 
-        body.add(label("Token:", hex("#cbd5e1"), font(11)));
+        body.add(title("Configuracion del kiosko"));
+        body.add(label("Cada dato va en su casilla. Si te equivocas, al guardar te avisa.",
+                HINT, font(12)));
+        body.add(Box.createVerticalStrut(12));
+
+        body.add(label("1 · TOKEN  —  dice a que empresa pertenece este kiosko", TXT, font(15, true)));
+        body.add(label("Se genera en la web: FactuPOS → Biometria → Configurar Kiosko → «Generar token»",
+                HINT, font(12)));
+        body.add(label("Se ve asi:   empresa~a1b2c3d4e5f6...   (una sola linea, sin espacios)",
+                HINT, font(12)));
         JTextField eTok = darkField(cfg.token); body.add(eTok);
-        body.add(Box.createVerticalStrut(8));
+        body.add(Box.createVerticalStrut(12));
 
-        body.add(label("Identificador del puesto (dispositivo_id):", hex("#cbd5e1"), font(10)));
+        body.add(label("2 · NOMBRE DE ESTE PUESTO", TXT, font(15, true)));
+        body.add(label("Solo para saber cual PC es.   Ejemplos:  k1   CAJA1   RECEPCION",
+                HINT, font(12)));
         JTextField eDisp = darkField(cfg.dispositivoId); body.add(eDisp);
-        body.add(Box.createVerticalStrut(8));
+        body.add(Box.createVerticalStrut(12));
 
-        body.add(label("URLs del servidor (api_base, separadas por coma):", hex("#cbd5e1"), font(10)));
+        body.add(label("3 · DIRECCIONES DEL SERVIDOR", TXT, font(15, true)));
+        body.add(label("Dejalas como estan. Si se borran, se usan las de fabrica.",
+                HINT, font(12)));
         JTextField eApi = darkField(String.join(", ", api.apiBases)); body.add(eApi);
-        body.add(Box.createVerticalStrut(8));
+        body.add(Box.createVerticalStrut(12));
 
         // --- Control del servicio del lector ---
-        body.add(label("Servicio del lector:", hex("#cbd5e1"), font(10)));
+        body.add(label("Servicio del lector:", Color.BLACK, font(13, true)));
         JPanel svcRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0)); svcRow.setOpaque(false);
         JButton btnRestart = flatButton("↻ Reiniciar servicio", hex("#0284c7"), Color.WHITE);
         JButton btnStop    = flatButton("■ Detener servicio", hex("#fee2e2"), RED);
@@ -642,7 +670,7 @@ public final class KioskFrame {
         addCentered(body, svcRow);
         body.add(Box.createVerticalStrut(8));
 
-        JLabel msg = label("", hex("#fca5a5"), font(9)); body.add(msg);
+        JLabel msg = label("", hex("#b91c1c"), font(13, true)); body.add(msg);
         body.add(Box.createVerticalGlue());
 
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0)); btns.setOpaque(false);
@@ -654,8 +682,20 @@ public final class KioskFrame {
             String disp = eDisp.getText().trim();
             List<String> apis = Config.normBasesCsv(eApi.getText());
             if (apis.isEmpty()) apis = new ArrayList<>(java.util.Arrays.asList("https://invefacon.net", "https://invefacon.com"));
-            if (tok.isEmpty()) { msg.setText("Pega el token (no puede quedar vacio)."); return; }
-            if (!tok.contains("~")) msg.setText("El token parece incompleto (deberia ser empresa~aleatorio).");
+            // --- Guardias contra el error mas comun: pegar el dato en la casilla equivocada ---
+            if (tok.isEmpty()) { msg.setText("Casilla 1: pega el token, no puede quedar vacia."); return; }
+            if (tok.startsWith("http") || tok.contains("/")) {
+                msg.setText("Casilla 1: eso es una direccion del servidor. El token va sin http."); return;
+            }
+            if (!tok.contains("~")) {
+                msg.setText("Casilla 1: el token esta incompleto. Debe ser  empresa~aleatorio."); return;
+            }
+            if (disp.contains("~")) {
+                msg.setText("Casilla 2: eso parece el token. El token va en la casilla 1."); return;
+            }
+            if (eApi.getText().contains("~")) {
+                msg.setText("Casilla 3: eso parece el token. El token va en la casilla 1."); return;
+            }
             boolean okFile = true;
             try { cfg.writeTokenConf(tok); }
             catch (Exception ex) { okFile = false; msg.setText("No se pudo escribir token.conf: " + ex.getMessage()); }

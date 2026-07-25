@@ -122,7 +122,7 @@ PRINTS_DIR = '/opt/factupos-fingerprint-servicio/prints'
 # servicio lo lee, y si hay versión mayor baja el .py y se reinicia (systemd lo
 # relevanta con el archivo nuevo). Corre como root => escribe el .py en sitio.
 UPDATE_BASE = 'https://soportereal.com/software/factupos-app/linux'
-UPDATE_MANIFEST = UPDATE_BASE + '/Factupos-FingerPrint-Servicio_version.json'
+UPDATE_MANIFEST = UPDATE_BASE + '/factupos-fingerprint-servicio_version.json'
 UPDATE_PY_FALLBACK = UPDATE_BASE + '/fingerprint_service.py'
 UPDATE_INTERVAL = 1 * 3600   # re-chequeo cada 1 hora
 SELF_PATH = os.path.abspath(__file__)

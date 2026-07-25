@@ -17,7 +17,7 @@ import java.util.Map;
 public final class Updater {
 
     static final String BASE = "https://soportereal.com/software/factupos-app/linux";
-    static final String MANIFEST = BASE + "/Factupos-FingerPrint-Kiosko_version.json";
+    static final String MANIFEST = BASE + "/factupos-fingerprint-kiosko_version.json";
     static final String JAR_FALLBACK = BASE + "/FactuposKioskoHuella.jar";
     static final long INTERVAL_MS = 60L * 60L * 1000L;   // 1 hora
 
