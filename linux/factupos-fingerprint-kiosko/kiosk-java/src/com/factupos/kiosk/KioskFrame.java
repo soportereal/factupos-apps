@@ -470,19 +470,71 @@ public final class KioskFrame {
     }
 
     // ---------------- System Tray / salida ----------------
+    private Timer reintentoTray;
+    private int vueltasTray = 0;
+    private String ultimoErrorTray = "";
+
+    /** Dice en texto claro por que no entra el icono, para poder leerlo del log.
+     *  Son dos causas MUY distintas y se arreglan distinto:
+     *   - "no hay bandeja": nadie posee la seleccion _NET_SYSTEM_TRAY_S0. El panel
+     *     no esta arriba, o su bandeja XEmbed no esta anunciandose.
+     *   - "la bandeja rechazo el icono": si hay bandeja, pero el add() fallo. */
+    private String motivoTray() {
+        if (!SystemTray.isSupported())
+            return "el sistema dice que NO HAY bandeja (SystemTray.isSupported=false)";
+        return "hay bandeja pero rechazo el icono: " + ultimoErrorTray;
+    }
+
+    /** Pone el icono en la bandeja, REINTENTANDO si todavia no hay bandeja.
+     *
+     *  Java usa el protocolo viejo de bandeja (XEmbed) y exige que la bandeja YA
+     *  EXISTA en el instante en que se llama: SystemTray.isSupported() mira quien
+     *  posee la seleccion _NET_SYSTEM_TRAY_S0 en ese momento. El kiosko arranca
+     *  con la sesion, ANTES que factupos-panel, asi que la respuesta es "no hay"
+     *  y —a diferencia de AppIndicator, que se re-registra solo cuando el panel
+     *  aparece— Java no vuelve a intentarlo nunca. Sintoma en campo: el kiosko
+     *  no sale en la bandeja, y solo aparece si se reinicia el panel a mano.
+     *  Con el reintento, en cuanto el panel levanta el icono entra solo. */
     private void setupTray() {
-        if (!SystemTray.isSupported()) { Log.i("SystemTray no soportado en este entorno"); return; }
+        if (crearTrayIcon()) { Log.i("Icono de bandeja creado al arrancar"); return; }
+        Log.i("BANDEJA: no se pudo poner el icono al arrancar. Motivo -> " + motivoTray()
+              + " | se reintenta cada 10 s");
+        reintentoTray = new Timer(10000, e -> {
+            if (crearTrayIcon()) {
+                Log.i("BANDEJA: icono creado en el reintento numero " + vueltasTray);
+                reintentoTray.stop();
+                return;
+            }
+            vueltasTray++;
+            // Se anota cada 6 vueltas (1 min) para no llenar el log, pero que quede
+            // rastro de POR QUE sigue sin entrar.
+            if (vueltasTray % 6 == 0) {
+                Log.i("BANDEJA: sigue sin entrar tras " + vueltasTray + " intentos -> " + motivoTray());
+            }
+        });
+        reintentoTray.start();
+    }
+
+    /** @return true si el icono quedo puesto. No registra error en cada vuelta:
+     *  fallar mientras el panel no esta arriba es lo esperado, no una averia. */
+    private boolean crearTrayIcon() {
+        if (trayIcon != null) return true;
+        if (!SystemTray.isSupported()) return false;
         try {
             PopupMenu menu = new PopupMenu();
             MenuItem miOpen = new MenuItem("Abrir"); miOpen.addActionListener(e -> showWindow());
             MenuItem miExit = new MenuItem("Salir");  miExit.addActionListener(e -> exitApp());
             menu.add(miOpen); menu.addSeparator(); menu.add(miExit);
-            trayIcon = new TrayIcon(makeTrayImage(FG_MUTE), "FactuPOS Kiosko Huella", menu);
-            trayIcon.setImageAutoSize(true);
-            trayIcon.addActionListener(e -> showWindow());   // click / doble click -> abrir normal
-            SystemTray.getSystemTray().add(trayIcon);
+            TrayIcon ti = new TrayIcon(makeTrayImage(FG_MUTE), "FactuPOS Kiosko Huella", menu);
+            ti.setImageAutoSize(true);
+            ti.addActionListener(e -> showWindow());   // click / doble click -> abrir normal
+            SystemTray.getSystemTray().add(ti);
+            trayIcon = ti;      // solo se guarda si el add() NO tiro excepcion
+            lastTrayConn = null;   // que el proximo updateTray() repinte el color
+            return true;
         } catch (Exception e) {
-            Log.e("No se pudo crear el tray icon", e);
+            ultimoErrorTray = e.getClass().getSimpleName() + ": " + e.getMessage();
+            return false;
         }
     }
 
