@@ -175,7 +175,7 @@ except Exception as _e:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.59" if IS_LINUX else "4.52")  # 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.60" if IS_LINUX else "4.53")  # 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -825,12 +825,65 @@ def _list_printers_linux():
         impresoras = ['(sin impresoras CUPS)']
     return impresoras, default
 
-def print_raw(printer_name, data_bytes):
-    """Enviar bytes RAW directo a la impresora (modo POS)."""
+# ---------------------------------------------------------------------------
+# #760 — Envio EN TROZOS CON PAUSA (Francisco Aguero, ferrebribri)
+#
+# Una matricial Epson tiene un buffer de entrada chico. Si se le entrega un
+# documento largo de un solo golpe, imprime hasta donde le alcanzo el buffer y
+# el resto SE PIERDE. Lo peor del sintoma es que **no da error**: el trabajo
+# sale como "impreso" y el papel simplemente termina a mitad — en el reporte
+# original, con las 19 lineas de la proforma completas y sin los totales.
+#
+# La receta de siempre para esas impresoras: mandar un pedazo, esperar a que lo
+# saque, mandar el siguiente. Ya estaba implementada, pero SOLO para las
+# termicas (`print_raw_thermal`); las matriciales seguian yendo de un tiro.
+#
+# 🔑 Que valores tocar si una impresora sigue cortando: bajar `chunk_size` o
+#    subir `delay` en el perfil de esa impresora (`chunkSize` / `chunkDelay`).
+#    No hay un valor bueno para todas: depende del buffer y de la velocidad.
+# ---------------------------------------------------------------------------
+CHUNK_TAMANO = 256      # bytes por envio
+CHUNK_PAUSA  = 0.05     # segundos entre envios
+
+
+def _escribir_en_trozos(escribir, data_bytes, chunk_size, delay, vaciar=None):
+    """Entregar `data_bytes` de a pedazos, con una pausa entre uno y otro.
+
+    `escribir` es la funcion de salida (f.write, WritePrinter, sock.sendall…) y
+    `vaciar` el flush opcional: sin el, el buffer de Python junta los trozos y
+    la pausa no sirve de nada — se termina mandando todo junto igual.
+    """
+    try:
+        chunk_size = max(32, int(chunk_size or CHUNK_TAMANO))
+    except (TypeError, ValueError):
+        chunk_size = CHUNK_TAMANO
+    try:
+        delay = max(0.0, float(delay if delay is not None else CHUNK_PAUSA))
+    except (TypeError, ValueError):
+        delay = CHUNK_PAUSA
+
+    total = len(data_bytes)
+    offset = 0
+    while offset < total:
+        escribir(data_bytes[offset:offset + chunk_size])
+        if vaciar:
+            vaciar()
+        offset += chunk_size
+        if offset < total and delay:
+            time.sleep(delay)
+
+
+def print_raw(printer_name, data_bytes, chunk_size=CHUNK_TAMANO, delay=CHUNK_PAUSA):
+    """Enviar bytes RAW directo a la impresora (modo POS).
+
+    #760 — En Windows va en trozos con pausa, igual que el camino termico. En
+    Linux sale por `lp` (CUPS), que hace su propio control de flujo contra el
+    puerto, asi que ahi no hace falta trocear nada.
+    """
     if IS_LINUX:
         return _print_raw_linux(printer_name, data_bytes)
     if not HAS_WIN32:
-        log.info(f"[MOCK] RAW {len(data_bytes)} bytes → '{printer_name}'")
+        log.info(f"[MOCK] RAW {len(data_bytes)} bytes → '{printer_name}' (trozos {chunk_size})")
         return True, f"Simulado OK en {printer_name}"
     try:
         hPrinter = win32print.OpenPrinter(printer_name)
@@ -838,7 +891,8 @@ def print_raw(printer_name, data_bytes):
             win32print.StartDocPrinter(hPrinter, 1, ("FactuPOS", None, "RAW"))
             try:
                 win32print.StartPagePrinter(hPrinter)
-                win32print.WritePrinter(hPrinter, data_bytes)
+                _escribir_en_trozos(lambda t: win32print.WritePrinter(hPrinter, t),
+                                    data_bytes, chunk_size, delay)
                 win32print.EndPagePrinter(hPrinter)
             finally:
                 win32print.EndDocPrinter(hPrinter)
@@ -1657,40 +1711,29 @@ def _print_json_datareport_single(json_data, printer_name='', copia_etiqueta='OR
         return False, f"Error imprimiendo PDF: {e}"
 
 
-def print_raw_thermal(printer_name, data_bytes, chunk_size=256, delay=0.05):
-    """Enviar bytes RAW — en Linux usa el mismo método que raw normal."""
-    if IS_LINUX:
-        return _print_raw_linux(printer_name, data_bytes)
-    if not HAS_WIN32:
-        log.info(f"[MOCK] RAW-THERMAL {len(data_bytes)} bytes → '{printer_name}' (chunks {chunk_size})")
-        return True, f"Simulado OK en {printer_name}"
-    try:
-        hPrinter = win32print.OpenPrinter(printer_name)
-        try:
-            win32print.StartDocPrinter(hPrinter, 1, ("FactuPOS", None, "RAW"))
-            try:
-                win32print.StartPagePrinter(hPrinter)
-                offset = 0
-                while offset < len(data_bytes):
-                    chunk = data_bytes[offset:offset + chunk_size]
-                    win32print.WritePrinter(hPrinter, chunk)
-                    offset += chunk_size
-                    if offset < len(data_bytes):
-                        time.sleep(delay)
-                win32print.EndPagePrinter(hPrinter)
-            finally:
-                win32print.EndDocPrinter(hPrinter)
-        finally:
-            win32print.ClosePrinter(hPrinter)
-        return True, f"Impreso en {printer_name} (thermal)"
-    except Exception as e:
-        return False, f"Error: {e}"
+def print_raw_thermal(printer_name, data_bytes, chunk_size=CHUNK_TAMANO, delay=CHUNK_PAUSA):
+    """Enviar bytes RAW — en Linux usa el mismo método que raw normal.
 
-def print_raw_virtual_port(port_name, data_bytes):
-    """Enviar bytes RAW via puerto virtual (LPTx en Windows, /dev/usb/lpX en Linux)."""
+    #760 — Desde que `print_raw` tambien va en trozos, esto es lo mismo con otro
+    rotulo. Se conserva el nombre porque hay perfiles marcados `isThermal` que
+    entran por aca, pero el troceo es UNO SOLO: si mañana hay que ajustarlo, se
+    ajusta en `_escribir_en_trozos` y vale para todas.
+    """
+    return print_raw(printer_name, data_bytes, chunk_size, delay)
+
+def print_raw_virtual_port(port_name, data_bytes, chunk_size=CHUNK_TAMANO, delay=CHUNK_PAUSA):
+    """Enviar bytes RAW via puerto virtual (LPTx en Windows, /dev/usb/lpX en Linux).
+
+    #760 — Va EN TROZOS CON PAUSA, no de un solo write. Por este camino no hay spooler
+    en el medio: los bytes entran directo al buffer de la impresora, y una matricial
+    Epson lo tiene chico. Si se le manda un documento largo de golpe, imprime hasta
+    donde le alcanzo y el resto se PIERDE — sin error, sin aviso, y el trabajo se
+    reporta como impreso. Se detecto con una proforma de 19 lineas (~90 renglones):
+    salieron todas las lineas y se corto justo antes de los totales.
+    """
     try:
         with open(port_name, 'wb') as f:
-            f.write(data_bytes)
+            _escribir_en_trozos(f.write, data_bytes, chunk_size, delay, f.flush)
         return True, f"Impreso via {port_name}"
     except Exception as e:
         return False, f"Error puerto {port_name}: {e}"
@@ -1946,6 +1989,12 @@ def despachar_raw(perfil, data_bytes, nombre_cups=''):
     direccion = str(perfil.get('address', '') or '').strip()
     vport = str(perfil.get('virtualPort', '') or '').strip()
 
+    # #760 — Troceo del envio. Se puede afinar POR IMPRESORA sin tocar el programa:
+    # si una matricial sigue cortando el final, se le baja `chunkSize` o se le sube
+    # `chunkDelay` en su perfil. Sin nada configurado van los valores de siempre.
+    trozo = perfil.get('chunkSize', CHUNK_TAMANO)
+    pausa = perfil.get('chunkDelay', CHUNK_PAUSA)
+
     # Perfil viejo que nunca paso por la migracion: comportamiento de siempre.
     if not transporte:
         transporte = 'virtual' if vport else 'cups'
@@ -1971,14 +2020,14 @@ def despachar_raw(perfil, data_bytes, nombre_cups=''):
                                    perfil.get('btChannel', 1))
 
     if transporte == 'virtual':
-        return print_raw_virtual_port(direccion or vport, data_bytes)
+        return print_raw_virtual_port(direccion or vport, data_bytes, trozo, pausa)
 
     # 'cups' y cualquier valor desconocido → exactamente lo de antes.
     if vport:
-        return print_raw_virtual_port(vport, data_bytes)
+        return print_raw_virtual_port(vport, data_bytes, trozo, pausa)
     if perfil.get('isThermal', False):
-        return print_raw_thermal(nombre_cups or direccion, data_bytes)
-    return print_raw(nombre_cups or direccion, data_bytes)
+        return print_raw_thermal(nombre_cups or direccion, data_bytes, trozo, pausa)
+    return print_raw(nombre_cups or direccion, data_bytes, trozo, pausa)
 
 
 def solo_direccion(valor):

@@ -72,15 +72,15 @@ jobs:
 
       - name: Compilar instalador x64 (Inno Setup)
         shell: cmd
-        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DARCH=x64 print\installer\factupos-print.iss'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DARCH=x64 linux\factupos-print\installer\factupos-print.iss'
 
       - name: Compilar instalador x86 (Inno Setup)
         shell: cmd
-        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DARCH=x86 print\installer\factupos-print.iss'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DARCH=x86 linux\factupos-print\installer\factupos-print.iss'
 
       - name: Subir instaladores (x64 + x86)
         uses: actions/upload-artifact@v4
         with:
           name: factupos-print-installers
-          path: print\installer\Output\Factupos-Print-*.exe
+          path: linux\factupos-print\installer\Output\Factupos-Print-*.exe
           if-no-files-found: error
