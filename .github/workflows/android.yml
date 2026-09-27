@@ -28,9 +28,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - dir: bridge-android
+          # Rutas desde jul-2026 (commit fa6cdb2 «cada carpeta se llama igual que su app»): el build buscaba las viejas.
+          - dir: android/factupos-print-android
+            nombre: bridge-android
             apk: FactuPOS-Print-Android.apk
-          - dir: sms-android
+          - dir: android/factupos-sms-android
+            nombre: sms-android
             apk: FactuPOS-SMS-Android.apk
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +101,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.dir }}-apk
+          name: ${{ matrix.nombre }}-apk
           path: ${{ matrix.dir }}/${{ matrix.apk }}
           if-no-files-found: error
           retention-days: 90
