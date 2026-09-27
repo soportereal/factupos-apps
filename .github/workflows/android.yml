@@ -43,6 +43,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # El paquete 'tools' (el que pide por defecto) Google lo retiró: sdkmanager falla con
+          # «Failed to find package 'tools'» y el build moría acá desde jul-2026. Gradle baja solo la plataforma.
+          packages: 'platform-tools'
 
       - name: Restaurar keystore (si hay secret)
         id: ks
