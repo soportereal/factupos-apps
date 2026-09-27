@@ -53,6 +53,62 @@ public class PrintService extends Service {
 
     private static final String TAG = "SunmiPrintBridge";
     private static final int PORT = 8765;
+    /**
+     * #1778 (27-sep-2026) — PUERTO LOCAL UNIFICADO: el MISMO puerto y el MISMO contrato que FactuPOS Print de Windows y
+     * Linux (dueño: «que los 3 escuchen el mismo puerto»). FactuSuper imprime por acá SIN internet:
+     *   GET /ping · POST /print {queue, data base64 | text, empresa?, jobId?} → sale por la impresora de ESA cola.
+     * El 8765 sigue para lo que ya lo usa (impresión por ruta 3 de FactuPOS).
+     */
+    private static final int PORT_LOCAL = 9302;
+    /** Páginas que pueden mandar a imprimir (misma lista que la PC). Cualquier otro origen → 403. */
+    private static final String[] DOMINIOS = { "factupos.com", "factupos.local", "soportereal.com", "invefacon.com", "invefacon.net" };
+
+    /**
+     * 🔒 Seguridad de los dos puertos. 🪤 NO se puede escuchar solo en 127.0.0.1: en los Xiaomi ese bind no funciona
+     * (por eso es 0.0.0.0). Entonces se filtra cada pedido: (1) tiene que venir de ESTA tablet (loopback o una IP
+     * propia) — otro equipo de la wifi ya no puede mandar a imprimir ni cambiar la impresora; (2) si trae Origin,
+     * tiene que ser una página de FactuPOS.
+     */
+    static boolean origenPermitido(String origen) {
+        if (origen == null || origen.isEmpty()) return true;          // sin Origin = programa de la propia tablet
+        try {
+            String host = java.net.URI.create(origen).getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            if (host.equals("127.0.0.1") || host.equals("localhost")) return true;
+            for (String d : DOMINIOS) if (host.equals(d) || host.endsWith("." + d)) return true;
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    static boolean esDeEstaTablet(NanoHTTPD.IHTTPSession s) {
+        try {
+            java.net.InetAddress a = java.net.InetAddress.getByName(s.getRemoteIpAddress());
+            if (a.isLoopbackAddress() || a.isAnyLocalAddress()) return true;
+            java.util.Enumeration<java.net.NetworkInterface> ifs = java.net.NetworkInterface.getNetworkInterfaces();
+            while (ifs != null && ifs.hasMoreElements()) {
+                java.util.Enumeration<java.net.InetAddress> ips = ifs.nextElement().getInetAddresses();
+                while (ips.hasMoreElements()) if (ips.nextElement().equals(a)) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    static void corsHeaders(NanoHTTPD.Response r, String origen) {
+        if (origen != null && !origen.isEmpty() && origenPermitido(origen)) {
+            r.addHeader("Access-Control-Allow-Origin", origen);
+            r.addHeader("Vary", "Origin");
+        }
+        r.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        r.addHeader("Access-Control-Allow-Headers", "Content-Type");
+        r.addHeader("Access-Control-Allow-Private-Network", "true");   // Chrome: página de internet → puerto local
+        r.addHeader("Access-Control-Max-Age", "600");
+    }
+
+    static NanoHTTPD.Response rechazo(String motivo) {
+        return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.FORBIDDEN, "application/json",
+                "{\"ok\":false,\"error\":\"" + motivo + "\",\"mensaje\":\"" + motivo + "\"}");
+    }
     private static final String CHANNEL_ID = "sunmi_print_bridge";
     private static final int NOTIFICATION_ID = 1;
 
@@ -170,6 +226,17 @@ public class PrintService extends Service {
             }
         }
 
+        if (puertoLocal == null) {
+            try {
+                puertoLocal = new PuertoLocalServer(PORT_LOCAL);
+                puertoLocal.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
+                Log.i(TAG, "Puerto local " + PORT_LOCAL + " escuchando (impresión sin internet)");
+            } catch (IOException e) {
+                Log.e(TAG, "Puerto local " + PORT_LOCAL + " no disponible", e);
+                puertoLocal = null;
+            }
+        }
+
         // Cliente de cola: solo arranca si la estacion ya fue configurada para
         // WebSocket. Las estaciones sin migrar siguen usando el HTTP local.
         if (queueClient != null && queueClient.isEnabled()) {
@@ -196,6 +263,10 @@ public class PrintService extends Service {
         if (httpServer != null) {
             httpServer.stop();
             httpServer = null;
+        }
+        if (puertoLocal != null) {
+            puertoLocal.stop();
+            puertoLocal = null;
         }
         sRunning = false;
         sunmiPrinter.release();
@@ -260,6 +331,82 @@ public class PrintService extends Service {
     }
 
     // =========================================================================
+    // Puerto local 9302 — el MISMO contrato que FactuPOS Print de Windows/Linux (#1778)
+    // =========================================================================
+    private class PuertoLocalServer extends NanoHTTPD {
+        private final java.util.LinkedHashSet<String> hechos = new java.util.LinkedHashSet<>();   // jobId ya impresos
+
+        PuertoLocalServer(int port) { super("0.0.0.0", port); }
+
+        private Response json(Response.Status st, JSONObject j, String origen) {
+            Response r = newFixedLengthResponse(st, "application/json; charset=utf-8", j.toString());
+            corsHeaders(r, origen);
+            return r;
+        }
+
+        @Override
+        public Response serve(IHTTPSession session) {
+            String origen = session.getHeaders().get("origin");
+            if (!esDeEstaTablet(session)) return rechazo("Solo se acepta desde esta tablet");
+            if (!origenPermitido(origen)) return rechazo("Origen no permitido");
+            try {
+                if (Method.OPTIONS.equals(session.getMethod())) {
+                    Response r = newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "");
+                    corsHeaders(r, origen);
+                    return r;
+                }
+                String uri = session.getUri();
+                if (Method.GET.equals(session.getMethod()) && "/ping".equals(uri)) {
+                    JSONObject j = new JSONObject();
+                    j.put("ok", true); j.put("app", "FactuPOS Print"); j.put("plataforma", "android");
+                    j.put("version", BuildConfig.VERSION_NAME); j.put("puerto", PORT_LOCAL);
+                    j.put("nube", queueClient != null && queueClient.isConnected());
+                    j.put("colas", queueClient != null ? queueClient.getColasJSON() : new JSONArray());
+                    return json(Response.Status.OK, j, origen);
+                }
+                if (!Method.POST.equals(session.getMethod()) || !"/print".equals(uri)) {
+                    return json(Response.Status.NOT_FOUND, new JSONObject().put("ok", false).put("mensaje", "Ruta no encontrada"), origen);
+                }
+                Map<String, String> m = new HashMap<>();
+                session.parseBody(m);
+                String cuerpo = m.get("postData");
+                if (cuerpo == null || cuerpo.isEmpty()) return json(Response.Status.BAD_REQUEST, new JSONObject().put("ok", false).put("mensaje", "Cuerpo vacío"), origen);
+                cuerpo = new String(cuerpo.getBytes("ISO-8859-1"), "UTF-8");   // NanoHTTPD lo lee en ISO-8859-1
+                JSONObject b = new JSONObject(cuerpo);
+                String cola = b.optString("queue", "").trim();
+                String empresa = b.optString("empresa", "").trim();
+                String jobId = b.optString("jobId", "").trim();
+                String data = b.optString("data", "");
+                if (data.isEmpty() && !b.optString("text", "").isEmpty()) {
+                    // Texto: en latin-1, igual que la PC (lo que no entra, «?»).
+                    data = android.util.Base64.encodeToString(b.optString("text").getBytes("ISO-8859-1"), android.util.Base64.NO_WRAP);
+                }
+                if (cola.isEmpty()) return json(Response.Status.BAD_REQUEST, new JSONObject().put("ok", false).put("mensaje", "Falta la cola (queue)"), origen);
+                if (data.isEmpty()) return json(Response.Status.BAD_REQUEST, new JSONObject().put("ok", false).put("mensaje", "Falta el documento (data o text)"), origen);
+                synchronized (hechos) {
+                    if (!jobId.isEmpty() && hechos.contains(jobId)) {
+                        return json(Response.Status.OK, new JSONObject().put("ok", true).put("duplicado", true).put("mensaje", "Ya se había impreso"), origen);
+                    }
+                }
+                if (queueClient == null) return json(Response.Status.SERVICE_UNAVAILABLE, new JSONObject().put("ok", false).put("mensaje", "La app todavía está arrancando"), origen);
+                String err = queueClient.imprimirLocal(cola, empresa, data);
+                if (err == null && !jobId.isEmpty()) {
+                    synchronized (hechos) {
+                        hechos.add(jobId);
+                        while (hechos.size() > 500) { String primero = hechos.iterator().next(); hechos.remove(primero); }
+                    }
+                }
+                JSONObject r = new JSONObject().put("ok", err == null).put("mensaje", err == null ? "Impreso" : err);
+                return json(err == null ? Response.Status.OK : (err.contains("no está configurada") ? Response.Status.NOT_FOUND : Response.Status.INTERNAL_ERROR), r, origen);
+            } catch (Exception e) {
+                try { return json(Response.Status.BAD_REQUEST, new JSONObject().put("ok", false).put("mensaje", "Pedido inválido: " + e.getMessage()), origen); }
+                catch (Exception ex) { return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Error"); }
+            }
+        }
+    }
+    private PuertoLocalServer puertoLocal;
+
+    // =========================================================================
     // Servidor HTTP embebido (NanoHTTPD)
     // =========================================================================
     private class HttpServer extends NanoHTTPD {
@@ -277,9 +424,12 @@ public class PrintService extends Service {
             Response response;
 
             // Preflight OPTIONS
+            String origen = session.getHeaders().get("origin");
+            if (!esDeEstaTablet(session)) return rechazo("Solo se acepta desde esta tablet");
+            if (!origenPermitido(origen)) return rechazo("Origen no permitido");
             if (Method.OPTIONS.equals(method)) {
                 response = newFixedLengthResponse(Response.Status.OK, "text/plain", "");
-                addCorsHeaders(response);
+                addCorsHeaders(response, origen);
                 return response;
             }
 
@@ -353,16 +503,11 @@ public class PrintService extends Service {
                 }
             }
 
-            addCorsHeaders(response);
+            addCorsHeaders(response, origen);
             return response;
         }
 
-        private void addCorsHeaders(Response response) {
-            response.addHeader("Access-Control-Allow-Origin", "*");
-            response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-            response.addHeader("Access-Control-Allow-Headers", "Content-Type");
-            response.addHeader("Access-Control-Max-Age", "86400");
-        }
+        private void addCorsHeaders(Response response, String origen) { corsHeaders(response, origen); }
 
         /**
          * GET /ping - Verificar que el puente esta activo

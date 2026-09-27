@@ -454,6 +454,32 @@ public class PrintQueueClient {
         }
     }
 
+    /** Un trabajo a la vez en la impresora, venga de la nube o del puerto local (#1778). */
+    private final Object lockImpresion = new Object();
+
+    /**
+     * Puerto local 127.0.0.1:9302 (#1778, FactuSuper): imprime YA, sin encolar, por el MISMO camino que un trabajo de
+     * la nube (perfil de la cola + printBytes). Es el mismo contrato que FactuPOS Print de Windows/Linux.
+     * @return null si salió bien; si no, el motivo.
+     */
+    public String imprimirLocal(String queueCode, String empresa, String dataB64) {
+        PrinterProfile perfil = profileStore.findByQueue(PrinterProfile.normalizeQueue(queueCode), empresa);
+        if (perfil == null) return "La cola " + queueCode + " no está configurada en este equipo";
+        byte[] bytes;
+        try { bytes = Base64.decode(dataB64, Base64.DEFAULT); }
+        catch (Exception e) { return "Documento inválido (base64)"; }
+        boolean ok;
+        synchronized (lockImpresion) { ok = printerManager.printBytes(perfil, bytes); }
+        if (ok) { impresos++; log("Puerto local → " + perfil.getDisplayName() + " OK"); return null; }
+        errores++;
+        String err = detalleError(perfil);
+        log("Puerto local → ERROR: " + err);
+        return err;
+    }
+
+    /** Las colas configuradas en este equipo (para GET /ping del puerto local). */
+    public org.json.JSONArray getColasJSON() { return profileStore.getQueuesJSON(); }
+
     private void imprimirTrabajo(JobQueue.Job job, long now) {
         PrinterProfile perfil = profileStore.findByQueue(job.queue, job.empresa);
         if (perfil == null) {
@@ -475,7 +501,8 @@ public class PrintQueueClient {
             return;
         }
 
-        boolean ok = printerManager.printBytes(perfil, bytes);
+        boolean ok;
+        synchronized (lockImpresion) { ok = printerManager.printBytes(perfil, bytes); }
 
         String jobCorto = job.jobId.substring(0, Math.min(8, job.jobId.length()));
         if (ok) {
