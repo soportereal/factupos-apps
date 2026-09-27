@@ -111,6 +111,17 @@ UPDATE_CHECK_INTERVAL = 600
 # El servidor de colas expone una API HTTP en el puerto del WS + 1 (9300 → 9301).
 # Se usa para vaciar la cola del servidor (POST /job-delete).
 HTTP_API_PORT = 9301
+# PUERTO LOCAL (#1778, FactuSuper): la web del MISMO equipo le entrega el trabajo directo a la
+# app cuando NO hay internet (con internet todo sigue por la nube). Solo escucha en 127.0.0.1:
+# desde la red no se alcanza. 9302 y no 8765 porque el 8765 es del Bridge (ruta 3) y pueden
+# estar instalados los dos en la misma caja.
+PUERTO_LOCAL = 9302
+PUERTO_LOCAL_MAX_BYTES = 2 * 1024 * 1024
+# Solo estas páginas pueden mandar a imprimir (si no, cualquier sitio abierto en el navegador
+# de la caja podría sacar papel). Se amplía por config.json → "puertoLocalOrigenes".
+PUERTO_LOCAL_DOMINIOS = ('factupos.com', 'factupos.local', 'soportereal.com', 'invefacon.com')
+# Un trabajo a la vez en la impresora, venga de la nube o del puerto local.
+IMPRESION_LOCK = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -175,7 +186,7 @@ except Exception as _e:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.60" if IS_LINUX else "4.53")  # 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.61" if IS_LINUX else "4.54")  # 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -2740,25 +2751,44 @@ class PrintQueueClient:
     def _handle_print_job(self, ws, msg):
         job_id = msg.get('jobId', '?')
         queue = msg.get('queue', '')
-        data_b64 = msg.get('data', '')
-        short_id = job_id[:8]
-        self._log(f"Job {short_id} recibido → cola {queue}")
+        self._log(f"Job {job_id[:8]} recibido → cola {queue}")
+        ok, result_msg = self.imprimir_trabajo(job_id, queue, msg.get('data', ''))
+        if ok:
+            self._send_ack(ws, job_id, 'ok')
+        else:
+            self._send_ack(ws, job_id, 'error', result_msg)
 
-        printer_config = self.queue_map.get(queue)
+    def buscar_cola(self, queue, empresa=''):
+        """Perfil de impresora de una cola. Con `empresa`, la de ESA empresa (el mismo
+        código de cola puede estar en dos empresas del mismo equipo)."""
+        if empresa:
+            for p in self.printers:
+                if p.get('queueCode') == queue and p.get('empresa', '') == empresa:
+                    return p
+        return self.queue_map.get(queue)
+
+    def imprimir_trabajo(self, job_id, queue, data_b64, empresa=''):
+        """El ÚNICO camino de impresión de un trabajo, venga de la nube (WS) o del
+        puerto local (sin internet). → (ok, mensaje). Un trabajo a la vez: la nube y el
+        puerto local pueden coincidir y la impresora no se comparte a medias."""
+        with IMPRESION_LOCK:
+            return self._imprimir_trabajo(job_id, queue, data_b64, empresa)
+
+    def _imprimir_trabajo(self, job_id, queue, data_b64, empresa=''):
+        short_id = job_id[:8]
+        printer_config = self.buscar_cola(queue, empresa)
         if not printer_config:
             self._log(f"Job {short_id} → cola no mapeada: {queue}", 'error')
-            self._send_ack(ws, job_id, 'error', f'Cola no mapeada: {queue}')
             self.jobs_err += 1
-            return
+            return False, f'Cola no mapeada: {queue}'
 
         win_printer = printer_config.get('windowsPrinter', printer_config.get('printer', ''))
         try:
             data_bytes = base64.b64decode(data_b64)
         except Exception as e:
             self._log(f"Job {short_id} → error base64: {e}", 'error')
-            self._send_ack(ws, job_id, 'error', str(e))
             self.jobs_err += 1
-            return
+            return False, str(e)
 
         print_mode = printer_config.get('printMode', 'raw')
         uses_vb6 = is_vb6_protocol(data_bytes)
@@ -2781,13 +2811,11 @@ class PrintQueueClient:
             elapsed = time.time() - t0
             if ok:
                 self._log(f"Job {short_id} → DataReport OK ({elapsed:.1f}s) [{result_msg}]")
-                self._send_ack(ws, job_id, 'ok')
                 self.jobs_ok += 1
             else:
                 self._log(f"Job {short_id} → ERROR: {result_msg}", 'error')
-                self._send_ack(ws, job_id, 'error', result_msg)
                 self.jobs_err += 1
-            return
+            return ok, result_msg
 
         # --- Modo COORD (GDI con coordenadas absolutas): impresoras matriciales ---
         if text_check.startswith('COORD:'):
@@ -2804,13 +2832,11 @@ class PrintQueueClient:
             elapsed = time.time() - t0
             if ok:
                 self._log(f"Job {short_id} → COORD OK ({elapsed:.1f}s) [{result_msg}]")
-                self._send_ack(ws, job_id, 'ok')
                 self.jobs_ok += 1
             else:
                 self._log(f"Job {short_id} → ERROR: {result_msg}", 'error')
-                self._send_ack(ws, job_id, 'error', result_msg)
                 self.jobs_err += 1
-            return
+            return ok, result_msg
 
         # --- Modo URL (fallback): abrir en navegador ---
         if text_check.startswith('URL:'):
@@ -2824,13 +2850,11 @@ class PrintQueueClient:
             elapsed = time.time() - t0
             if ok:
                 self._log(f"Job {short_id} → URL OK ({elapsed:.1f}s) [{result_msg}]")
-                self._send_ack(ws, job_id, 'ok')
                 self.jobs_ok += 1
             else:
                 self._log(f"Job {short_id} → ERROR: {result_msg}", 'error')
-                self._send_ack(ws, job_id, 'error', result_msg)
                 self.jobs_err += 1
-            return
+            return ok, result_msg
 
         if print_mode == 'spooler':
             # --- Modo Spooler: texto plano a la cola del SO ---
@@ -2880,12 +2904,11 @@ class PrintQueueClient:
         if ok:
             mode_str = f"{print_mode}" + (" vb6" if uses_vb6 else "")
             self._log(f"Job {short_id} → {win_printer} OK ({elapsed:.1f}s, {mode_str}) [{result_msg}]")
-            self._send_ack(ws, job_id, 'ok')
             self.jobs_ok += 1
         else:
             self._log(f"Job {short_id} → ERROR: {result_msg}", 'error')
-            self._send_ack(ws, job_id, 'error', result_msg)
             self.jobs_err += 1
+        return ok, result_msg
 
     def _send_ack(self, ws, job_id, status, error=None):
         ack = {"action": "ack", "jobId": job_id, "status": status}
@@ -3153,6 +3176,191 @@ del "%~f0"
         self.running = False
         if self.ws:
             self.ws.close()
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Puerto local 127.0.0.1:9302 — imprimir SIN internet (#1778, FactuSuper)
+# ═══════════════════════════════════════════════════════════════════════════
+# La web arma el documento en el equipo y lo entrega acá con la MISMA forma que un trabajo
+# de la nube ({queue, data base64}); sale por el mismo imprimir_trabajo(), así que la
+# impresora, el corte, el cajón y la letra son los de esa cola, sin nada aparte.
+#   GET  /ping   → {ok, app, version, puerto, colas:[{queue, empresa, impresora}]}
+#   POST /print  {queue, data(base64) | text, empresa?, jobId?} → {ok, mensaje}
+# jobId repetido NO vuelve a imprimir (el navegador reintenta si no le llegó la respuesta).
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
+from urllib.parse import urlparse
+
+
+class _ServidorLocal(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+    # Linux: sin reuse, al reiniciar la app el puerto queda tomado ~60 s por conexiones viejas
+    # (TIME_WAIT). Windows: con reuse OTRO proceso podría abrir el mismo puerto encima.
+    allow_reuse_address = not IS_WINDOWS
+
+
+def origen_permitido(origen, extra=()):
+    """¿Esta página puede mandar a imprimir? Sin Origin = un programa del propio equipo
+    (curl, pruebas): se acepta, ya está adentro de la máquina."""
+    if not origen:
+        return True
+    try:
+        host = (urlparse(origen).hostname or '').lower()
+    except Exception:
+        return False
+    if host in ('127.0.0.1', 'localhost'):
+        return True
+    for d in tuple(PUERTO_LOCAL_DOMINIOS) + tuple(extra or ()):
+        d = str(d).lower().strip().lstrip('.')
+        if d and (host == d or host.endswith('.' + d)):
+            return True
+    return False
+
+
+class PuertoLocal:
+    def __init__(self, obtener_cliente, config, on_log=None):
+        self._cliente = obtener_cliente          # el cliente se recrea al reconectar
+        self._config = config
+        self._on_log = on_log
+        self._servidor = None
+        self._hechos = deque(maxlen=500)         # jobId ya impresos
+        self._hechos_lock = threading.Lock()
+
+    def _log(self, msg, level='info'):
+        getattr(log, level)(msg)
+        if self._on_log:
+            self._on_log(f"{datetime.now().strftime('%H:%M:%S')} {msg}")
+
+    def iniciar(self):
+        dueno = self
+        extra = self._config.get('puertoLocalOrigenes', []) or []
+
+        class Handler(BaseHTTPRequestHandler):
+            server_version = 'FactuPOSPrint/' + VERSION
+
+            def log_message(self, *a):
+                pass
+
+            def _origen(self):
+                return self.headers.get('Origin', '')
+
+            def _cors(self):
+                o = self._origen()
+                if o and origen_permitido(o, extra):
+                    self.send_header('Access-Control-Allow-Origin', o)
+                    self.send_header('Vary', 'Origin')
+                    self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                    self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                    # Chrome: una página de internet que llama a 127.0.0.1 pide este permiso.
+                    self.send_header('Access-Control-Allow-Private-Network', 'true')
+                    self.send_header('Access-Control-Max-Age', '600')
+
+            def _json(self, obj, status=200):
+                cuerpo = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(cuerpo)))
+                self._cors()
+                self.end_headers()
+                try:
+                    self.wfile.write(cuerpo)
+                except Exception:
+                    pass
+
+            def _rechazar_origen(self):
+                if origen_permitido(self._origen(), extra):
+                    return False
+                dueno._log(f"Puerto local: pedido rechazado de {self._origen()}", 'warning')
+                self._json({'ok': False, 'mensaje': 'Origen no permitido'}, 403)
+                return True
+
+            def do_OPTIONS(self):
+                self.send_response(204 if origen_permitido(self._origen(), extra) else 403)
+                self._cors()
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
+            def do_GET(self):
+                if self._rechazar_origen():
+                    return
+                if self.path.split('?')[0] != '/ping':
+                    return self._json({'ok': False, 'mensaje': 'Ruta no encontrada'}, 404)
+                c = dueno._cliente()
+                colas = [{'queue': p.get('queueCode', ''), 'empresa': p.get('empresa', ''),
+                          'impresora': p.get('windowsPrinter', p.get('printer', ''))}
+                         for p in (c.printers if c else [])]
+                self._json({'ok': True, 'app': 'FactuPOS Print', 'version': VERSION,
+                            'puerto': PUERTO_LOCAL, 'nube': bool(c and c.connected), 'colas': colas})
+
+            def do_POST(self):
+                if self._rechazar_origen():
+                    return
+                if self.path.split('?')[0] != '/print':
+                    return self._json({'ok': False, 'mensaje': 'Ruta no encontrada'}, 404)
+                try:
+                    largo = int(self.headers.get('Content-Length', 0) or 0)
+                except ValueError:
+                    largo = -1
+                if largo <= 0 or largo > PUERTO_LOCAL_MAX_BYTES:
+                    return self._json({'ok': False, 'mensaje': 'Tamaño de trabajo no válido'}, 413)
+                try:
+                    cuerpo = json.loads(self.rfile.read(largo).decode('utf-8'))
+                    if not isinstance(cuerpo, dict):
+                        raise ValueError('se esperaba un objeto')
+                except Exception as e:
+                    return self._json({'ok': False, 'mensaje': f'JSON inválido: {e}'}, 400)
+                self._json(*dueno.imprimir(cuerpo))
+
+        try:
+            self._servidor = _ServidorLocal(('127.0.0.1', PUERTO_LOCAL), Handler)
+        except OSError as e:
+            # Otra copia de la app ya lo tiene, o algo más usa el puerto: la app sigue
+            # imprimiendo por la nube igual.
+            self._log(f"Puerto local 127.0.0.1:{PUERTO_LOCAL} no disponible ({e}) — sin impresión sin internet", 'warning')
+            return False
+        threading.Thread(target=self._servidor.serve_forever, daemon=True).start()
+        self._log(f"Puerto local 127.0.0.1:{PUERTO_LOCAL} escuchando (impresión sin internet)")
+        return True
+
+    def imprimir(self, cuerpo):
+        """→ (respuesta, status http)"""
+        queue = str(cuerpo.get('queue', '')).strip()
+        empresa = str(cuerpo.get('empresa', '') or '').strip()
+        job_id = str(cuerpo.get('jobId', '') or '').strip()[:80]
+        if not queue:
+            return {'ok': False, 'mensaje': 'Falta la cola (queue)'}, 400
+        data = cuerpo.get('data', '')
+        if not data and cuerpo.get('text'):
+            # Texto: en latin-1, que es como lo lee el resto del camino (plain_to_escp / spooler
+            # decodifican latin-1) — igual que un trabajo de la nube. Lo que no entre, "?".
+            data = base64.b64encode(str(cuerpo['text']).encode('latin-1', errors='replace')).decode('ascii')
+        if not data:
+            return {'ok': False, 'mensaje': 'Falta el documento (data o text)'}, 400
+        cliente = self._cliente()
+        if not cliente:
+            return {'ok': False, 'mensaje': 'La app todavía está arrancando'}, 503
+        if not cliente.buscar_cola(queue, empresa):
+            return {'ok': False, 'mensaje': f'La cola {queue} no está configurada en este equipo'}, 404
+        if job_id:
+            with self._hechos_lock:
+                if job_id in self._hechos:
+                    return {'ok': True, 'duplicado': True, 'mensaje': 'Ya se había impreso'}, 200
+        id_log = job_id or f"local-{int(time.time() * 1000)}"
+        cliente._log(f"Job {id_log[:12]} recibido por el PUERTO LOCAL → cola {queue}")
+        ok, msg = cliente.imprimir_trabajo(id_log, queue, data, empresa)
+        if ok and job_id:
+            with self._hechos_lock:
+                self._hechos.append(job_id)
+        return {'ok': bool(ok), 'mensaje': msg}, (200 if ok else 500)
+
+    def detener(self):
+        if self._servidor:
+            try:
+                self._servidor.shutdown()
+                self._servidor.server_close()
+            except Exception:
+                pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3531,6 +3739,11 @@ class MainWindow:
         # Start connection
         self.conn_thread = threading.Thread(target=self.client.connect, daemon=True)
         self.conn_thread.start()
+
+        # Puerto local 127.0.0.1:9302: la web imprime directo cuando no hay internet (#1778).
+        # Se le pasa CÓMO obtener el cliente, no el cliente: al reconectar se crea otro.
+        self.puerto_local = PuertoLocal(lambda: self.client, config, on_log=self._append_log)
+        self.puerto_local.iniciar()
 
         self._update_counters()
 
@@ -4393,6 +4606,8 @@ class MainWindow:
     def _quit_app(self):
         """Cerrar todo: cliente WS, bandeja e interfaz."""
         self.client.stop()
+        if getattr(self, 'puerto_local', None):
+            self.puerto_local.detener()
         if self.tray_icon:
             self.tray_icon.stop()
         self.root.destroy()
