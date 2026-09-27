@@ -32,9 +32,11 @@ jobs:
           - dir: android/factupos-print-android
             nombre: bridge-android
             apk: FactuPOS-Print-Android.apk
+            firmar: si      # clave oficial de FactuPOS (secrets ANDROID_*) desde 3.9.6
           - dir: android/factupos-sms-android
             nombre: sms-android
             apk: FactuPOS-SMS-Android.apk
+            firmar: no      # su build.gradle no tiene signingConfig: con la clave, assembleRelease saldría sin firmar
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +58,7 @@ jobs:
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
-          if [ -n "$KS_B64" ]; then
+          if [ -n "$KS_B64" ] && [ "${{ matrix.firmar }}" = "si" ]; then
             echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "have=true" >> "$GITHUB_OUTPUT"
             echo "Keystore release restaurada."
