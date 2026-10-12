@@ -50,8 +50,8 @@ except Exception:
     print("ERROR: este programa necesita Tkinter (viene con el instalador estandar de Python).")
     sys.exit(1)
 
-APP_VERSION    = "1.0.4"
-BUILD_DATE     = "2026-10-11"
+APP_VERSION    = "1.0.5"
+BUILD_DATE     = "2026-10-12"
 BASE_DIR       = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE    = os.path.join(BASE_DIR, "config.json")
 TOKENCONF_FILE = os.path.join(BASE_DIR, "token.conf")
@@ -392,7 +392,7 @@ class KioskApp(object):
         ident = ("Token: " + self.serverdb) if self.token else (("Empresa: " + self.db) if self.db else "(sin configurar)")
         self.lbl_db = tk.Label(mid, text=ident, bg="#0f172a", fg="#64748b", font=("Segoe UI", 9))
         self.lbl_db.pack()
-        self.lbl_build = tk.Label(mid, text="build " + BUILD_DATE, bg="#0f172a", fg="#334155", font=("Segoe UI", 8))
+        self.lbl_build = tk.Label(mid, text="build " + BUILD_DATE, bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 8))
         self.lbl_build.pack()
 
         self.lbl_fp = tk.Label(mid, text="\U0001F58A", bg="#0f172a", fg="#64748b", font=("Segoe UI Emoji", 56))
@@ -418,7 +418,7 @@ class KioskApp(object):
                                  relief="flat", font=("Segoe UI", 10), padx=10, pady=6, cursor="hand2", bd=0)
         self.btn_cfg.pack(side="left")
         self.lbl_ver = tk.Label(self.root, text="FactuPOS Biometria v" + APP_VERSION + " (" + BUILD_DATE + ")  ·  Esc=pantalla completa  ·  F10=salir",
-                                bg="#0f172a", fg="#334155", font=("Segoe UI", 8))
+                                bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 8))
         self.lbl_ver.pack(side="bottom", pady=(0, 3))
 
     def _toggle_fullscreen(self):
@@ -755,6 +755,9 @@ class KioskApp(object):
         tk.Label(win, text="Generalo en la web:  FactuPOS → Biometría → Configurar Kiosko → «Generar token»\ny pegalo acá. Formato: empresa~aleatorio  (ej: invefacon~a1b2c3...)",
                  bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 9), justify="center").pack(pady=(0, 10))
 
+        # 1.0.5: los botones se empacan ANTES que el cuerpo y abajo, para que «Guardar» se vea siempre
+        # (con la escala de Windows en 125-150 % el alto fijo de 360 lo dejaba afuera).
+        btns = tk.Frame(win, bg="#0f172a"); btns.pack(side="bottom", fill="x", padx=22, pady=(8, 14))
         body = tk.Frame(win, bg="#0f172a"); body.pack(fill="both", expand=True, padx=22)
         tk.Label(body, text="Token:", bg="#0f172a", fg="#cbd5e1", font=("Segoe UI", 11)).pack(anchor="w")
         e_tok = tk.Entry(body, font=("Consolas", 12), bg="#0f172a", fg="#fff", insertbackground="#fff",
@@ -787,7 +790,6 @@ class KioskApp(object):
         if sys.platform != "win32":
             chk.config(state="disabled")
 
-        btns = tk.Frame(win, bg="#0f172a"); btns.pack(fill="x", padx=22, pady=(8, 14))
         def cerrar(): win.destroy()
         def guardar():
             tok = e_tok.get().strip()
@@ -815,6 +817,17 @@ class KioskApp(object):
                   font=("Segoe UI", 10, "bold"), padx=18, pady=6, bd=0, cursor="hand2").pack(side="right", padx=(0, 8))
         e_tok.bind("<Return>", lambda e: guardar())
         win.protocol("WM_DELETE_WINDOW", cerrar)
+        # 1.0.5: el alto sale de lo que el contenido pide (escala de Windows), nunca menos de 360
+        try:
+            win.update_idletasks()
+            h2 = max(h, win.winfo_reqheight() + 10)
+            h2 = min(h2, max(h, win.winfo_screenheight() - 80))
+            win.geometry("%dx%d+%d+%d" % (w, h2,
+                         self.root.winfo_rootx() + max(0, (self.root.winfo_width() - w) // 2),
+                         max(0, self.root.winfo_rooty() + (self.root.winfo_height() - h2) // 2)))
+            win.minsize(w, h2)
+        except Exception:
+            pass
 
     # ---------------- Enroll ----------------
     def _open_enroll(self):
