@@ -5,9 +5,11 @@
 ;      habla con el lector). AL ARRANCAR, el servicio LANZA SOLO al kiosko.
 ;    - FactuposKiosko.exe     : app de marcaje de asistencia.
 ;
-;  Este instalador EMPAQUETA los binarios YA COMPILADOS (no compila C#). El
-;  workflow fingerprint.yml baja el ZIP v1.0.3 publicado, lo extrae a fp\ y
-;  compila este .iss. Solo x64.
+;  Desde 1.0.4 (#1341, 11-oct-2026) el workflow fingerprint.yml COMPILA los dos
+;  .exe desde el fuente Python (windows/factupos-fingerprint/python/) con
+;  PyInstaller, los pone en fp\ junto a los recursos del ZIP 1.0.3 y compila este
+;  .iss con /DMyAppVersion=<version de kiosk.py>. Solo x64.
+;  El kiosko 1.0.4+ se ACTUALIZA SOLO (manifiesto factupos-fingerprint-windows_version.json).
 ;
 ;  Que hace:
 ;    - Instala todo en "Archivos de programa\factupos-fingerprint".
@@ -21,7 +23,9 @@
 
 #define MyAppName "FactuPOS Biometria"
 #define MyAppId "factupos-fingerprint"
-#define MyAppVersion "1.0.3"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.4"
+#endif
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppSvc "FactuposFpServicio.exe"

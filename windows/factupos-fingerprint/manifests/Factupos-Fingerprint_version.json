@@ -1,6 +1,6 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "downloadUrl": "https://soportereal.com/software/factupos-app/windows/Factupos-Fingerprint-x64.exe",
   "mandatory": false,
-  "notes": "Servicio de huella (C#/.NET, DigitalPersona). Instalador empaqueta el ZIP de binarios ya compilados."
+  "notes": "Kiosko + servicio de huella (Python/PyInstaller). Usa /apis/biometria/kiosko/ y se actualiza solo (manifiesto factupos-fingerprint-windows_version.json)."
 }

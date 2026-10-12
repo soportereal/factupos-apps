@@ -1,0 +1,119 @@
+============================================================
+ FactuPOS - Biometría (Huella Digital) - intermediario en Python
+============================================================
+
+¿QUÉ HAY ACÁ?
+-------------
+Dos programas Python (sin pip, sólo stdlib) que reemplazan al servicio C# de
+Windows (que tenía el bug del "foco de ventana"):
+
+  1) fingerprint_service.py   -> SERVICIO LOCAL del lector.
+        Habla con el lector DigitalPersona U.are.U 4500 usando la C-API del
+        SDK (DPFPApi.dll + dpHFtrEx.dll + dpHMatch.dll) vía ctypes, y abre la
+        adquisición con prioridad HIGH -> recibe los eventos del lector aunque
+        la ventana no tenga el foco (eso es lo que arregla el bug del .NET).
+        Expone una API HTTPS en https://127.0.0.1:52181:
+          GET  /status                 estado
+          GET  /get_connection         {connected, device, ...}
+          GET  /prints                 {users:{cod:cant}}
+          POST /fingerprint/identify   {timeout} -> {matched,user_id} | {waiting:true}
+          POST /fingerprint/enroll     {user_id,finger} -> {ok,template_b64,serial}  (4 toques)
+          POST /prints/import          carga plantillas en memoria/disco
+          POST /prints/clear           {wipe_disk:bool}
+          POST /prints/reload
+          DELETE /prints/{user_id}
+
+  2) kiosk.py                 -> KIOSKO de marcaje (ventana Tkinter, standalone,
+        SIN login web). Identifica con el servicio local y registra la marca
+        consumiendo la API web /api/planilla/marca_registrar_vb6.php (que NO
+        requiere sesión). Botón "Registrar huella": pide la lista de usuarios
+        activos a /api/planilla/empleados_listar_vb6.php, captura la huella,
+        la sube a la BD (/api/planilla/huella_registrar_vb6.php) y hace la
+        marca automática. Al arrancar baja las plantillas de la BD
+        (/api/planilla/huellas_listar_vb6.php) y las carga en el servicio local.
+
+  Las plantillas de huella se guardan en la BD de la empresa: tabla
+  dbo.HuellaUsuario (migración 20260511104641 — aplicar desde
+  https://soportereal.com/administra/migraciones.php). El kiosko mantiene
+  además un cache local en la carpeta prints/.
+
+REQUISITOS EN EL PC WINDOWS
+---------------------------
+  * Python 3.8 o superior (en esta carpeta hay python-3.8.10.exe). El instalador
+    estándar ya incluye Tkinter. Marcá "Add Python to PATH" al instalar.
+  * El RUNTIME del "DigitalPersona One Touch for Windows SDK" instalado
+    (el mismo que usa hoy el servicio .NET). Eso registra DPFPApi.dll,
+    dpHFtrEx.dll, dpHMatch.dll y el servicio "DigitalPersona ... (DpHostW)".
+  * El lector DigitalPersona U.are.U 4500 conectado por USB.
+  * Importante: Python y el SDK deben ser de la MISMA arquitectura (32 ó 64 bits).
+    El python-3.8.10.exe que está acá suele ser de 32 bits -> usá el RTE de 32 bits.
+
+PUESTA EN MARCHA
+----------------
+  1) Aplicar las migraciones a la(s) empresa(s) desde la UI de migraciones:
+        20260511104641  -> tabla HuellaUsuario (plantillas de huella)
+        20260511104642  -> tabla KioskoToken   (tokens de acceso del kiosko)
+  2) TOKEN (recomendado): en la web, ir a  FactuPOS > Biometría > Configurar Kiosko
+     -> "Generar token" -> copiar el token (formato "<empresa>~<aleatorio>") y
+     pegarlo en el archivo  token.conf  de esta carpeta, en UNA sola línea.
+     (Alternativa legacy: poner "db" en config.json en vez de usar token.conf.)
+  3) Editar config.json: "dispositivo_id" (ej "KIOSKO-01"), y "api_base" como
+     LISTA de URLs para tolerar caídas, ej:
+        "api_base": ["https://invefacon.net", "https://invefacon.com"]
+     El kiosko prueba cada URL en orden hasta que una responde.
+     ¡OJO! NO uses "https://factupos.com" desde internet — apunta a otra IP y
+     da HTTP 404. Solo "invefacon.net" / "invefacon.com" sirven desde afuera.
+  4) Doble clic en  iniciar_servicio.bat   (deja la ventana abierta; la salida va
+     a logs\error.log). La primera vez, abrir en Chrome https://127.0.0.1:52181/status
+     y aceptar el certificado autofirmado (Avanzado -> Continuar).
+  5) Doble clic en  iniciar_kiosko.bat     (abre la ventana de marcaje).
+  6) Para registrar huellas: botón "Registrar huella" -> elegir el empleado
+     (sale la lista de usuarios activos, viene de la API) -> "Iniciar registro" -> 4 toques.
+  7) Listo: cualquiera pone el dedo y queda la marca (Entrada/Salida) en
+     MarcaReloj + JornadaLaboral. El control de "minutos entre marcas" lo hace
+     el servidor.
+
+PARA QUE ARRANQUEN SOLOS AL INICIAR WINDOWS
+-------------------------------------------
+  Crear accesos directos a iniciar_servicio.bat y iniciar_kiosko.bat dentro de
+  shell:startup  (Win+R -> shell:startup). O programar tareas en el Programador
+  de tareas con "Al iniciar sesión".
+
+ARCHIVOS
+--------
+  fingerprint_service.py   servicio del lector
+  kiosk.py                 kiosko de marcaje (Tkinter)
+  config.json              configuración del kiosko (completar "db")
+  iniciar_servicio.bat     arranca el servicio (con log visible)
+  iniciar_kiosko.bat       arranca el kiosko
+  certs/cert.pem,key.pem   certificado autofirmado del servicio (HTTPS local)
+  prints/                  cache local de plantillas .fpt
+  logs/                    logs diarios (fingerprint-YYYY-MM-DD.log, kiosk-...)
+
+API WEB NUEVA (en factupos.com/api/planilla/) — todas SIN login; aceptan
+"token" (formato "<empresa>~<aleatorio>") o "db" directo:
+  marca_registrar_vb6.php      (ya existía; ahora acepta "origen" y "token") — registra la marca
+  huella_registrar_vb6.php     guarda/actualiza la plantilla de un usuario en HuellaUsuario
+  huellas_listar_vb6.php       lista las plantillas de la empresa (para cargarlas al arrancar)
+  huella_eliminar_vb6.php      borra plantillas de un usuario
+  empleados_listar_vb6.php     lista usuarios/empleados activos (estado 1)
+  _kiosko_lib.php              helper compartido: resuelve token/db -> conexión a la empresa
+
+PÁGINA WEB NUEVA:
+  FactuPOS > Biometría > Configurar Kiosko  (modulos/biometria/configurar_kiosko.php)
+  -> genera/lista/desactiva tokens del kiosko; botón "Descargar token.conf".
+
+ARCHIVO token.conf:
+  Va en esta misma carpeta (junto a kiosk.py o el .exe). Una sola línea = el token.
+  Las líneas que empiezan con # se ignoran. Si está vacío/sólo comentarios, el
+  kiosko usa el campo "db" de config.json (modo legacy).
+
+PROBLEMAS COMUNES
+-----------------
+  * /status dice "SDK no disponible" o el log dice "DPFPInit ...": falta el RTE
+    del DigitalPersona, o el servicio DpHostW está parado, o Python es 64 bits y
+    el RTE 32 bits (o al revés).
+  * El kiosko dice "config.json sin 'db'": editá config.json.
+  * El kiosko dice "Falta migracion HuellaUsuario": aplicá la migración 20260511104641.
+  * "No se pudo contactar el servicio local de huella": arrancá iniciar_servicio.bat
+    y aceptá el certificado en Chrome.

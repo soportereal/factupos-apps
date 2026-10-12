@@ -1,8 +1,12 @@
-name: Build Fingerprint Windows Installer
+name: Build Fingerprint Windows (kiosko + servicio + instalador)
 
-# Empaqueta el instalador de FactuPOS Biometria (Huella Digital) a partir de
-# los binarios YA COMPILADOS (C#/.NET) que viven en el ZIP publicado. NO compila
-# C# (no hay SDK aqui): baja el ZIP, lo extrae e Inno Setup lo empaqueta.
+# Compila la app de huella de WINDOWS desde el fuente Python del monorepo
+# (windows/factupos-fingerprint/python/): PyInstaller -> FactuposKiosko.exe +
+# FactuposFpServicio.exe, arma el ZIP versionado y el instalador Inno.
+# La version sale de kiosk.py (APP_VERSION) y TIENE que coincidir con la del
+# servicio y la de compilar.bat: si no, falla (#1341, 11-oct-2026).
+# Los certificados locales, el .vbs y las plantillas de config/token se toman del
+# ZIP 1.0.3 publicado: no se guardan en el repo (el repo es publico).
 on:
   push:
     branches: [ main ]
@@ -12,29 +16,67 @@ on:
   workflow_dispatch:
 
 jobs:
-  installer:
+  build:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows/factupos-fingerprint
     steps:
       - uses: actions/checkout@v4
 
-      - name: Descargar y extraer el ZIP de binarios (v1.0.3)
+      - name: Python 3.8 x64 (misma arquitectura que el RTE de DigitalPersona del instalador x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: 'x64'
+
+      - name: Version (kiosk.py = servicio = compilar.bat)
+        id: ver
         shell: pwsh
         run: |
-          $zip = "fp.zip"
-          Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/factupos-fingerprint-windows_v1.0.3.zip" -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "windows/factupos-fingerprint/installer/fp" -Force
-          Get-ChildItem -Recurse windows/factupos-fingerprint/installer/fp | Select-Object FullName, Length
+          $k = (Select-String -Path python/kiosk.py -Pattern 'APP_VERSION\s*=\s*"([0-9.]+)"').Matches[0].Groups[1].Value
+          $s = (Select-String -Path python/fingerprint_service.py -Pattern '^VERSION\s*=\s*"([0-9.]+)"').Matches[0].Groups[1].Value
+          $b = (Select-String -Path python/compilar.bat -Pattern 'APP_VERSION=([0-9.]+)').Matches[0].Groups[1].Value
+          Write-Host "kiosko=$k servicio=$s compilar.bat=$b"
+          if ($k -ne $s -or $k -ne $b) { throw "Versiones distintas: kiosko=$k servicio=$s compilar.bat=$b" }
+          "version=$k" >> $env:GITHUB_OUTPUT
+
+      - name: PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller==5.13.2
+
+      - name: Compilar los dos .exe
+        working-directory: windows/factupos-fingerprint/python
+        run: |
+          python -m PyInstaller --noconfirm --onefile --console  --name FactuposFpServicio fingerprint_service.py
+          python -m PyInstaller --noconfirm --onefile --windowed --name FactuposKiosko     kiosk.py
+
+      - name: Armar fp\ (exes nuevos + recursos del ZIP 1.0.3) y el ZIP versionado
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          Invoke-WebRequest -Uri "https://soportereal.com/software/factupos-app/windows/factupos-fingerprint-windows_v1.0.3.zip" -OutFile base.zip
+          Expand-Archive base.zip -DestinationPath installer/fp -Force
+          Copy-Item python/dist/FactuposFpServicio.exe installer/fp/ -Force
+          Copy-Item python/dist/FactuposKiosko.exe     installer/fp/ -Force
+          Copy-Item python/iniciar_oculto.vbs          installer/fp/ -Force
+          "FactuPOS Biometria - Kiosko + Servicio de Huella Digital (Windows)`r`nversion: $v`r`nbuild:   $(Get-Date -Format yyyy-MM-dd)" | Set-Content installer/fp/version.txt -Encoding ascii
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path installer/fp/* -DestinationPath "out/factupos-fingerprint-windows_v$v.zip" -Force
+          Copy-Item installer/fp/FactuposKiosko.exe, installer/fp/FactuposFpServicio.exe out/
+          Get-ChildItem -Recurse installer/fp, out | Select-Object FullName, Length
 
       - name: Instalar Inno Setup
         run: choco install innosetup -y --no-progress
 
       - name: Compilar instalador (Inno Setup)
         shell: cmd
-        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" fingerprint\installer\factupos-fingerprint.iss'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.ver.outputs.version }} installer\factupos-fingerprint.iss'
 
-      - name: Subir instalador
+      - name: Subir artefactos
         uses: actions/upload-artifact@v4
         with:
-          name: factupos-fingerprint-installer
-          path: fingerprint\installer\Output\Factupos-Fingerprint-x64.exe
+          name: factupos-fingerprint-windows-${{ steps.ver.outputs.version }}
+          path: |
+            windows/factupos-fingerprint/out/*
+            windows/factupos-fingerprint/installer/Output/Factupos-Fingerprint-x64.exe
           if-no-files-found: error
