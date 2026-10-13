@@ -59,7 +59,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # ---------------------------------------------------------------------------
 # Configuracion
 # ---------------------------------------------------------------------------
-VERSION              = "1.0.5"
+VERSION              = "1.1.0"
 BUILD_DATE           = "2026-10-11"
 PORT                 = 52181
 # Carpeta base: la del .exe si está compilado con PyInstaller, si no la del .py

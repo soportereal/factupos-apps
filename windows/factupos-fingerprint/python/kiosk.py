@@ -50,8 +50,8 @@ except Exception:
     print("ERROR: este programa necesita Tkinter (viene con el instalador estandar de Python).")
     sys.exit(1)
 
-APP_VERSION    = "1.0.5"
-BUILD_DATE     = "2026-10-12"
+APP_VERSION    = "1.1.0"
+BUILD_DATE     = "2026-10-13"
 BASE_DIR       = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE    = os.path.join(BASE_DIR, "config.json")
 TOKENCONF_FILE = os.path.join(BASE_DIR, "token.conf")
@@ -272,6 +272,61 @@ def aplicar_actualizacion(man):
 
 
 # ---------------------------------------------------------------------------
+# Diseno NAVY 1.1.0 (#2698): copia del kiosko Linux 1.8.13. Tkinter no tiene bordes
+# redondeados ni degradados: se DIBUJAN en Canvas (botones, encabezado, tarjeta y anillo).
+NAVY_BG, NAVY_CARD, NAVY_TXT, NAVY_DIM, NAVY_MUTE = "#0b1533", "#14224d", "#e2e8f0", "#b4c2e0", "#7184ad"
+
+
+def _mezclar(c1, c2, t):
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b))
+
+
+def _rect_redondo(cv, x1, y1, x2, y2, r, **kw):
+    """Rectangulo de esquinas redondeadas (poligono suavizado)."""
+    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
+           x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    return cv.create_polygon(pts, smooth=True, **kw)
+
+
+class _TxtItem(object):
+    """Hace que un texto del Canvas responda a .config(text=, fg=) como un Label."""
+    def __init__(self, cv, item, al_cambiar=None):
+        self.cv, self.item, self.al_cambiar = cv, item, al_cambiar
+    def config(self, **kw):
+        if "text" in kw: self.cv.itemconfig(self.item, text=kw["text"])
+        if "fg" in kw: self.cv.itemconfig(self.item, fill=kw["fg"])
+        if self.al_cambiar: self.al_cambiar(kw)
+    configure = config
+
+
+class BotonRedondo(tk.Canvas):
+    """Boton redondeado con borde: el borde es el color aclarado; se aclara al pasar el
+    mouse y se oscurece al apretar (igual que el flatButton del kiosko Linux)."""
+    def __init__(self, master, texto, color, command=None, alto=44):
+        tk.Canvas.__init__(self, master, height=alto, bg=master["bg"], highlightthickness=0, cursor="hand2")
+        self.texto, self.color, self.command, self._estado = texto, color, command, "normal"
+        self.bind("<Configure>", lambda e: self._dibujar())
+        self.bind("<Enter>", lambda e: self._dibujar("hover"))
+        self.bind("<Leave>", lambda e: self._dibujar())
+        self.bind("<ButtonPress-1>", lambda e: self._dibujar("press"))
+        self.bind("<ButtonRelease-1>", self._soltar)
+    def _soltar(self, e):
+        self._dibujar("hover")
+        if self.command and 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height():
+            self.command()
+    def _dibujar(self, modo=None):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 10: return
+        fill = (_mezclar(self.color, "#ffffff", 0.12) if modo == "hover" else
+                _mezclar(self.color, "#000000", 0.18) if modo == "press" else self.color)
+        _rect_redondo(self, 2, 2, w - 2, h - 2, 12, fill=fill,
+                      outline=_mezclar(self.color, "#ffffff", 0.45), width=2)
+        self.create_text(w // 2, h // 2, text=self.texto, fill="#ffffff", font=("Segoe UI", 10, "bold"))
+
+
 class KioskApp(object):
     def __init__(self, root, cfg):
         self.root = root
@@ -356,70 +411,166 @@ class KioskApp(object):
 
     # ---------------- UI ----------------
     def _build_ui(self):
+        """Interfaz 1.1.0 (#2698): la MISMA del kiosko Linux 1.8.13 — encabezado con degradado
+        (estado en pastilla, reloj grande y fecha), tarjeta con la huella dentro de un anillo
+        que toma el color del estado, y 4 botones redondeados en 2x2."""
         c = self.cfg
         self.root.title("FactuPOS - " + c.get("titulo", "Marcaje") + " (v" + APP_VERSION + ")")
-        self.root.configure(bg="#0f172a")
+        self.root.configure(bg=NAVY_BG)
         geo = str(c.get("ventana", "420x640")).strip() or "420x640"
         if c.get("fullscreen", False):
             try: self.root.attributes("-fullscreen", True)
             except Exception: self.root.geometry(geo)
         else:
             self.root.geometry(geo)
-            try: self.root.minsize(360, 520)
+            try: self.root.minsize(360, 560)
             except Exception: pass
-        self.root.bind("<Escape>", lambda e: self._toggle_fullscreen())
-        self.root.bind("<F10>", lambda e: self.root.destroy())
+        # Esc oculta (minimiza) como en Linux; F10 cierra
+        self.root.bind("<Escape>", lambda e: self.root.iconify())
+        self.root.bind("<F10>", lambda e: self._salir())
 
-        hdr = tk.Frame(self.root, bg="#1e293b"); hdr.pack(fill="x")
-        self.led = tk.Canvas(hdr, width=16, height=16, bg="#1e293b", highlightthickness=0)
-        self._led_id = self.led.create_oval(3, 3, 13, 13, fill="#64748b", outline="")
-        self.led.pack(side="left", padx=(14, 8), pady=10)
-        self.lbl_status = tk.Label(hdr, text="Conectando...", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 11))
-        self.lbl_status.pack(side="left", pady=10)
-        self.lbl_clock = tk.Label(hdr, text="--:--:--", bg="#1e293b", fg="#e2e8f0", font=("Consolas", 14, "bold"))
-        self.lbl_clock.pack(side="right", padx=14, pady=10)
+        # ---- encabezado (Canvas: degradado + pastilla de estado + reloj + fecha) ----
+        self.hdr = tk.Canvas(self.root, height=122, bg=NAVY_BG, highlightthickness=0)
+        self.hdr.pack(fill="x")
+        hc = self.hdr
+        self._led_id = hc.create_oval(0, 0, 0, 0, fill="#64748b", outline="")
+        self._st_id = hc.create_text(0, 0, text="Conectando...", anchor="w", fill=NAVY_TXT,
+                                     font=("Segoe UI", 10, "bold"))
+        self._clk_id = hc.create_text(0, 0, text="--:--:--", fill="#ffffff", font=("Consolas", 26, "bold"))
+        self._fecha_id = hc.create_text(0, 0, text="", fill="#c7d2fe", font=("Segoe UI", 10))
+        self.led = hc
+        self.lbl_status = _TxtItem(hc, self._st_id, lambda kw: self._hdr_layout())
+        self.lbl_clock = _TxtItem(hc, self._clk_id)
+        hc.bind("<Configure>", lambda e: self._hdr_layout(True))
 
-        mid = tk.Frame(self.root, bg="#0f172a"); mid.pack(fill="both", expand=True)
-        # Fila titulo + pill de version (estilo "código de módulo")
-        titulo_row = tk.Frame(mid, bg="#0f172a"); titulo_row.pack(pady=(14, 2))
+        # ---- titulo + version ----
+        mid = tk.Frame(self.root, bg=NAVY_BG); mid.pack(fill="both", expand=True, padx=16, pady=(12, 6))
+        titulo_row = tk.Frame(mid, bg=NAVY_BG); titulo_row.pack()
         self.lbl_company = tk.Label(titulo_row, text=c.get("titulo", "Marcaje de Asistencia"),
-                                    bg="#0f172a", fg="#cbd5e1", font=("Segoe UI", 14, "bold"))
+                                    bg=NAVY_BG, fg="#ffffff", font=("Segoe UI", 15, "bold"))
         self.lbl_company.pack(side="left")
-        self.lbl_ver_pill = tk.Label(titulo_row, text=" v" + APP_VERSION + " ",
-                                     bg="#ffff00", fg="#000000", font=("Segoe UI", 9, "bold"),
-                                     padx=4)
+        self.lbl_ver_pill = tk.Label(titulo_row, text=" v" + APP_VERSION + " ", bg="#facc15", fg="#1e1b4b",
+                                     font=("Segoe UI", 9, "bold"), padx=4)
         self.lbl_ver_pill.pack(side="left", padx=(8, 0))
         ident = ("Token: " + self.serverdb) if self.token else (("Empresa: " + self.db) if self.db else "(sin configurar)")
-        self.lbl_db = tk.Label(mid, text=ident, bg="#0f172a", fg="#64748b", font=("Segoe UI", 9))
-        self.lbl_db.pack()
-        self.lbl_build = tk.Label(mid, text="build " + BUILD_DATE, bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 8))
-        self.lbl_build.pack()
+        self.lbl_db = tk.Label(mid, text=ident, bg=NAVY_BG, fg=NAVY_MUTE, font=("Segoe UI", 9))
+        self.lbl_db.pack(pady=(0, 8))
 
-        self.lbl_fp = tk.Label(mid, text="\U0001F58A", bg="#0f172a", fg="#64748b", font=("Segoe UI Emoji", 56))
-        self.lbl_fp.pack(pady=10)
-        self.lbl_msg = tk.Label(mid, text="Coloque su dedo en el lector", bg="#0f172a", fg="#94a3b8",
-                                font=("Segoe UI", 12), wraplength=380, justify="center")
-        self.lbl_msg.pack(pady=(0, 2))
+        # ---- tarjeta (Canvas): anillo + huella + mensaje + resultado ----
+        self.card = tk.Canvas(mid, bg=NAVY_BG, highlightthickness=0)
+        self.card.pack(fill="both", expand=True)
+        cv = self.card
+        self._ring_col = "#64748b"
+        self._fp_id = cv.create_text(0, 0, text="\U0001F58A", fill="#64748b", font=("Segoe UI Emoji", 40))
+        self._msg_id = cv.create_text(0, 0, text="Coloque su dedo en el lector", fill=NAVY_TXT,
+                                      font=("Segoe UI", 12, "bold"), justify="center")
+        self._ra_id = cv.create_text(0, 0, text="", fill=NAVY_TXT, font=("Segoe UI", 11, "bold"))
+        self._rn_id = cv.create_text(0, 0, text="", fill="#ffffff", font=("Segoe UI", 18, "bold"), justify="center")
+        self._rt_id = cv.create_text(0, 0, text="", fill=NAVY_DIM, font=("Segoe UI", 10))
+        self.lbl_fp = _TxtItem(cv, self._fp_id, self._fp_cambio)
+        self.lbl_msg = _TxtItem(cv, self._msg_id)
+        self.lbl_result_action = _TxtItem(cv, self._ra_id)
+        self.lbl_result_name = _TxtItem(cv, self._rn_id)
+        self.lbl_result_time = _TxtItem(cv, self._rt_id)
+        cv.bind("<Configure>", lambda e: self._card_layout())
 
-        self.result = tk.Frame(mid, bg="#0f172a"); self.result.pack(pady=6, fill="x", padx=24)
-        self.lbl_result_action = tk.Label(self.result, text="", bg="#0f172a", fg="#e2e8f0", font=("Segoe UI", 11, "bold"))
-        self.lbl_result_name = tk.Label(self.result, text="", bg="#0f172a", fg="#f1f5f9", font=("Segoe UI", 18, "bold"))
-        self.lbl_result_time = tk.Label(self.result, text="", bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 10))
-        self.lbl_result_action.pack(); self.lbl_result_name.pack(); self.lbl_result_time.pack()
+        # ---- botones 2x2 ----
+        btns = tk.Frame(self.root, bg=NAVY_BG); btns.pack(fill="x", padx=16, pady=(4, 6))
+        btns.columnconfigure(0, weight=1, uniform="b"); btns.columnconfigure(1, weight=1, uniform="b")
+        self.btn_enroll = BotonRedondo(btns, "✋ Registrar huella", "#7c3aed", self._open_enroll)
+        self.btn_cfg = BotonRedondo(btns, "⚙ Config", "#2563eb", self._open_token_config)
+        self.btn_upd = BotonRedondo(btns, "⟳ Actualizar", "#0891b2", self._buscar_update_manual)
+        self.btn_exit = BotonRedondo(btns, "⏻ Salir", "#e11d48", self._salir)
+        for i, b in enumerate((self.btn_enroll, self.btn_cfg, self.btn_upd, self.btn_exit)):
+            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=4, pady=4)
 
-        ftr = tk.Frame(self.root, bg="#0f172a"); ftr.pack(fill="x", pady=(0, 8))
-        inner = tk.Frame(ftr, bg="#0f172a"); inner.pack()
-        self.btn_enroll = tk.Button(inner, text="✋ Registrar huella", command=self._open_enroll,
-                                    bg="#1e293b", fg="#e2e8f0", activebackground="#334155", activeforeground="#fff",
-                                    relief="flat", font=("Segoe UI", 10), padx=10, pady=6, cursor="hand2", bd=0)
-        self.btn_enroll.pack(side="left", padx=(0, 6))
-        self.btn_cfg = tk.Button(inner, text="⚙ Config", command=self._open_token_config,
-                                 bg="#1e293b", fg="#94a3b8", activebackground="#334155", activeforeground="#fff",
-                                 relief="flat", font=("Segoe UI", 10), padx=10, pady=6, cursor="hand2", bd=0)
-        self.btn_cfg.pack(side="left")
-        self.lbl_ver = tk.Label(self.root, text="FactuPOS Biometria v" + APP_VERSION + " (" + BUILD_DATE + ")  ·  Esc=pantalla completa  ·  F10=salir",
-                                bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 8))
-        self.lbl_ver.pack(side="bottom", pady=(0, 3))
+        self.lbl_ver = tk.Label(self.root, text="v%s  ·  build %s" % (APP_VERSION, BUILD_DATE),
+                                bg=NAVY_BG, fg="#38bdf8", font=("Segoe UI", 9, "bold"))
+        self.lbl_ver.pack()
+        tk.Label(self.root, text="Esc = ocultar   ·   Salir/F10 = cerrar", bg=NAVY_BG, fg=NAVY_MUTE,
+                 font=("Segoe UI", 8)).pack(pady=(0, 6))
+
+    def _hdr_layout(self, fondo=False):
+        hc = self.hdr
+        w, h = hc.winfo_width(), hc.winfo_height()
+        if w < 10: return
+        if fondo:
+            hc.delete("fondo")
+            pasos = 60
+            for i in range(pasos):
+                col = _mezclar("#1e1b4b", "#1e3a8a", i / float(pasos - 1))
+                hc.create_rectangle(i * w / pasos, 0, (i + 1) * w / pasos + 1, h - 3, fill=col, outline="", tags="fondo")
+            hc.create_rectangle(0, h - 3, w, h, fill="#7c3aed", outline="", tags="fondo")
+            hc.tag_lower("fondo")
+        # pastilla de estado (se ajusta al largo del texto)
+        hc.delete("pill")
+        x0, y0 = 12, 10
+        hc.coords(self._st_id, x0 + 30, y0 + 15)
+        bb = hc.bbox(self._st_id) or (x0, y0, x0 + 100, y0 + 30)
+        _rect_redondo(hc, x0, y0, min(bb[2] + 12, w - 12), y0 + 30, 14,
+                      fill=_mezclar("#1e1b4b", "#ffffff", 0.12), outline=_mezclar("#1e1b4b", "#ffffff", 0.30),
+                      tags="pill")
+        hc.coords(self._led_id, x0 + 10, y0 + 9, x0 + 22, y0 + 21)
+        hc.tag_raise(self._led_id); hc.tag_raise(self._st_id)
+        hc.coords(self._clk_id, w // 2, 70)
+        hc.coords(self._fecha_id, w // 2, 102)
+
+    def _card_layout(self):
+        cv = self.card
+        w, h = cv.winfo_width(), cv.winfo_height()
+        if w < 10: return
+        cv.delete("marco")
+        _rect_redondo(cv, 1, 1, w - 1, h - 1, 16, fill=NAVY_CARD, outline="#2e3f78", width=2, tags="marco")
+        cv.tag_lower("marco")
+        cx = w // 2
+        r = 56
+        cy = 20 + r
+        cv.create_oval(cx - r - 4, cy - r - 4, cx + r + 4, cy + r + 4, fill=_mezclar(NAVY_CARD, self._ring_col, 0.18),
+                       outline="", tags=("marco", "aro"))
+        cv.create_oval(cx - r, cy - r, cx + r, cy + r, fill=NAVY_BG, outline=self._ring_col, width=4,
+                       tags=("marco", "aro", "aro_borde"))
+        cv.tag_raise(self._fp_id)
+        cv.coords(self._fp_id, cx, cy)
+        cv.coords(self._msg_id, cx, cy + r + 26); cv.itemconfig(self._msg_id, width=w - 30)
+        cv.coords(self._ra_id, cx, cy + r + 58)
+        cv.coords(self._rn_id, cx, cy + r + 86); cv.itemconfig(self._rn_id, width=w - 30)
+        cv.coords(self._rt_id, cx, cy + r + 114)
+
+    def _fp_cambio(self, kw):
+        """El anillo toma el color del icono (gris sin lector, verde listo, ambar, rojo)."""
+        if "fg" in kw:
+            self._ring_col = kw["fg"]
+            self._card_layout()
+
+    def _tick_fecha(self):
+        dias = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+        meses = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+                 "setiembre", "octubre", "noviembre", "diciembre")
+        n = datetime.now()
+        self.hdr.itemconfig(self._fecha_id, text="%s %d de %s de %d" % (dias[n.weekday()], n.day, meses[n.month - 1], n.year))
+
+    def _buscar_update_manual(self):
+        """Boton «Actualizar»: busca version nueva ya (no espera la hora) y la aplica."""
+        def run():
+            try:
+                man = buscar_actualizacion()
+            except Exception as e:
+                self.ui(messagebox.showwarning, "FactuPOS Kiosko", "No se pudo revisar: %s" % e)
+                return
+            if not man:
+                self.ui(messagebox.showinfo, "FactuPOS Kiosko", "Ya tiene la ultima version (v%s)." % APP_VERSION)
+                return
+            if not getattr(sys, "frozen", False):
+                self.ui(messagebox.showinfo, "FactuPOS Kiosko", "Hay version %s (solo se aplica en el .exe)." % man.get("version"))
+                return
+            self.set_status("Actualizando a la version %s..." % man.get("version"))
+            aplicar_actualizacion(man)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _salir(self):
+        if messagebox.askyesno("FactuPOS Kiosko", "¿Cerrar el kiosko de marcaje?\nMientras este cerrado nadie puede marcar."):
+            self.running = False
+            self.root.destroy()
 
     def _toggle_fullscreen(self):
         try:
@@ -428,12 +579,13 @@ class KioskApp(object):
 
     def _tick_clock(self):
         self.lbl_clock.config(text=datetime.now().strftime("%H:%M:%S"))
+        self._tick_fecha()
         self.root.after(1000, self._tick_clock)
 
     def ui(self, fn, *a, **k):
         try: self.root.after(0, lambda: fn(*a, **k))
         except Exception: pass
-    def set_led(self, color):     self.ui(self.led.itemconfig, self._led_id, fill=color)
+    def set_led(self, color):     self.ui(self.hdr.itemconfig, self._led_id, fill=color)
     def set_status(self, text):   self.ui(self.lbl_status.config, text=text)
     def set_msg(self, text):      self.ui(self.lbl_msg.config, text=text)
     def set_fp_color(self, color):self.ui(self.lbl_fp.config, fg=color)
@@ -616,7 +768,8 @@ class KioskApp(object):
             self.fp_device = data.get("device") or ""
             if self.fp_connected:
                 self.set_led("#22c55e")
-                self.set_status((self.fp_device or "Lector listo") + "  ·  %d huella(s)" % self.users_loaded)
+                # #2698: el nombre largo del lector no cabia en la pastilla
+                self.set_status("Lector listo  ·  %d %s" % (self.users_loaded, "huella" if self.users_loaded == 1 else "huellas"))
                 self.set_fp_color("#22c55e")
         else:
             self.fp_connected = False
