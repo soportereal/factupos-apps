@@ -187,7 +187,7 @@ except Exception as _e:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.65" if IS_LINUX else "4.58")  # 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.66" if IS_LINUX else "4.59")  # 4.66(linux)/4.59(win): #2768 DISEÑO del PDF de la empresa (Configuracion > Preferencias > Diseño de factura / de cotizacion). En el JSON del 005 el servidor manda ademas `pdf_b64` = el PDF ya armado con el diseño escogido (con ORIGINAL/COPIA adentro): la app lo imprime por el MISMO camino silencioso del 005 (SumatraPDF / lp), sacado a _imprimir_pdf_silencioso(). Si no viene o no es un PDF, sigue con el 005 de siempre. Una app vieja ignora el campo: nunca imprime basura. 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -1071,8 +1071,86 @@ def _monto_en_letras(monto, moneda='CRC'):
     return conv(entero) + f' CON {decimales:02d}/100 ' + moneda_nombre
 
 
+def _imprimir_pdf_silencioso(pdf_path, printer_name, ok_msg):
+    """Imprime un PDF ya hecho, sin ventanas (SumatraPDF en Windows, lp en Linux) y lo borra.
+    Es el bloque de impresión de siempre del 005, sacado a una función (#2768) para que lo use
+    también el PDF del diseño que manda el servidor."""
+    try:
+        if IS_WINDOWS:
+            printed = False
+            # SumatraPDF (portable, silencioso)
+            # PyInstaller: sys.executable es el .exe real, __file__ es temporal
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
+            sumatra_paths = [
+                os.path.join(exe_dir, 'SumatraPDF.exe'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SumatraPDF.exe'),
+                r'C:\invefacon\SumatraPDF.exe',
+                r'C:\SumatraPDF\SumatraPDF.exe',
+                os.path.expandvars(r'%ProgramFiles%\SumatraPDF\SumatraPDF.exe'),
+                os.path.expandvars(r'%ProgramFiles(x86)%\SumatraPDF\SumatraPDF.exe'),
+            ]
+            sumatra = None
+            for sp in sumatra_paths:
+                if os.path.isfile(sp):
+                    sumatra = sp
+                    break
+            if sumatra:
+                try:
+                    cmd = [sumatra, '-print-to', printer_name or 'default', '-silent', pdf_path]
+                    log.info(f"[DR] SumatraPDF: {cmd}")
+                    subprocess.run(cmd, capture_output=True, timeout=30)
+                    printed = True
+                except Exception as e:
+                    log.warning(f"SumatraPDF error: {e}")
+            else:
+                log.warning(f"[DR] SumatraPDF NO encontrado. exe_dir={exe_dir}")
+            if not printed:
+                os.startfile(pdf_path)
+                time.sleep(5)
+            time.sleep(2)
+        elif IS_LINUX:
+            lp_cmd = ['lp']
+            if printer_name: lp_cmd += ['-d', printer_name]
+            lp_cmd.append(pdf_path)
+            subprocess.run(lp_cmd, capture_output=True, timeout=15)
+
+        time.sleep(1)
+        try: os.unlink(pdf_path)
+        except: pass
+        return True, ok_msg
+    except Exception as e:
+        try: os.unlink(pdf_path)
+        except: pass
+        return False, f"Error imprimiendo PDF: {e}"
+
+
+
+def _print_pdf_b64(pdf_b64, printer_name=''):
+    """#2768 — DISEÑO de la empresa (Configuración › Preferencias › Diseño de factura / de cotización):
+    el servidor manda, DENTRO del JSON del 005, el PDF ya armado en `pdf_b64`. Se imprime tal cual.
+    → (ok, msg) o None si el PDF no sirve: ahí el que llama sigue con el 005 de siempre."""
+    import tempfile
+    try:
+        datos = base64.b64decode(pdf_b64)
+    except Exception as e:
+        log.warning(f"[PDF] pdf_b64 ilegible ({e}) → se imprime el 005 de siempre")
+        return None
+    if not datos.startswith(b'%PDF'):
+        log.warning("[PDF] pdf_b64 no es un PDF → se imprime el 005 de siempre")
+        return None
+    fd, pdf_path = tempfile.mkstemp(prefix='factupos_dis_', suffix='.pdf')
+    with os.fdopen(fd, 'wb') as fh:
+        fh.write(datos)
+    return _imprimir_pdf_silencioso(pdf_path, printer_name, f"Diseño impreso ({len(datos) // 1024} KB)")
+
 def _print_json_datareport(json_data, printer_name=''):
     """Genera PDF desde JSON e imprime. Maneja copias (ORIGINAL + N copias)."""
+    # #2768: el servidor ya armó el PDF con el DISEÑO de la empresa (con su ORIGINAL/COPIA adentro).
+    # Si no sirve, sigue abajo con el 005 de siempre: los demás datos del JSON vienen igual.
+    if json_data.get('pdf_b64'):
+        r = _print_pdf_b64(json_data['pdf_b64'], printer_name)
+        if r is not None:
+            return r
     if not HAS_REPORTLAB:
         return False, "reportlab no instalado"
 
@@ -1709,55 +1787,8 @@ def _print_json_datareport_single(json_data, printer_name='', copia_etiqueta='OR
     if not os.path.isfile(pdf_path) or os.path.getsize(pdf_path) < 100:
         return False, "PDF no generado"
 
-    # ── IMPRIMIR SILENCIOSAMENTE ──
-    try:
-        if IS_WINDOWS:
-            printed = False
-            # SumatraPDF (portable, silencioso)
-            # PyInstaller: sys.executable es el .exe real, __file__ es temporal
-            exe_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
-            sumatra_paths = [
-                os.path.join(exe_dir, 'SumatraPDF.exe'),
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SumatraPDF.exe'),
-                r'C:\invefacon\SumatraPDF.exe',
-                r'C:\SumatraPDF\SumatraPDF.exe',
-                os.path.expandvars(r'%ProgramFiles%\SumatraPDF\SumatraPDF.exe'),
-                os.path.expandvars(r'%ProgramFiles(x86)%\SumatraPDF\SumatraPDF.exe'),
-            ]
-            sumatra = None
-            for sp in sumatra_paths:
-                if os.path.isfile(sp):
-                    sumatra = sp
-                    break
-            if sumatra:
-                try:
-                    cmd = [sumatra, '-print-to', printer_name or 'default', '-silent', pdf_path]
-                    log.info(f"[DR] SumatraPDF: {cmd}")
-                    subprocess.run(cmd, capture_output=True, timeout=30)
-                    printed = True
-                except Exception as e:
-                    log.warning(f"SumatraPDF error: {e}")
-            else:
-                log.warning(f"[DR] SumatraPDF NO encontrado. exe_dir={exe_dir}")
-            if not printed:
-                os.startfile(pdf_path)
-                time.sleep(5)
-            time.sleep(2)
-        elif IS_LINUX:
-            lp_cmd = ['lp']
-            if printer_name: lp_cmd += ['-d', printer_name]
-            lp_cmd.append(pdf_path)
-            subprocess.run(lp_cmd, capture_output=True, timeout=15)
-
-        time.sleep(1)
-        try: os.unlink(pdf_path)
-        except: pass
-        return True, f"DataReport impreso ({len(lineas_data)} líneas)"
-    except Exception as e:
-        try: os.unlink(pdf_path)
-        except: pass
-        return False, f"Error imprimiendo PDF: {e}"
-
+    # ── IMPRIMIR SILENCIOSAMENTE ── (#2768: el mismo camino imprime el PDF del diseño, ver _print_pdf_b64)
+    return _imprimir_pdf_silencioso(pdf_path, printer_name, f"DataReport impreso ({len(lineas_data)} líneas)")
 
 def print_raw_thermal(printer_name, data_bytes, chunk_size=CHUNK_TAMANO, delay=CHUNK_PAUSA):
     """Enviar bytes RAW — en Linux usa el mismo método que raw normal.
