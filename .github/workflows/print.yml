@@ -34,7 +34,7 @@ jobs:
           pip install -r linux/factupos-print/requirements-build.txt
 
       - name: Build .exe with PyInstaller (${{ matrix.arch }})
-        run: pyinstaller --onefile --windowed --name FactuPOS_Print${{ matrix.suffix }} linux/factupos-print/factupos_print_client.py
+        run: pyinstaller --onefile --windowed --icon linux/factupos-print/installer/factupos-print.ico --name FactuPOS_Print${{ matrix.suffix }} linux/factupos-print/factupos_print_client.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

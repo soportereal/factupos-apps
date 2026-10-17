@@ -50,6 +50,8 @@ WizardStyle=modern
 PrivilegesRequired=admin
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Icono del instalador = la impresora de FactuPOS Print (#2886). El del programa lo pone PyInstaller (--icon).
+SetupIconFile=factupos-print.ico
 #if ARCH == "x64"
   ; El instalador x64 solo corre/instala en Windows de 64-bit.
   ArchitecturesAllowed=x64compatible
