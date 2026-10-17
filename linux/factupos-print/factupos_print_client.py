@@ -187,7 +187,7 @@ except Exception as _e:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.66" if IS_LINUX else "4.59")  # 4.66(linux)/4.59(win): #2768 DISEÑO del PDF de la empresa (Configuracion > Preferencias > Diseño de factura / de cotizacion). En el JSON del 005 el servidor manda ademas `pdf_b64` = el PDF ya armado con el diseño escogido (con ORIGINAL/COPIA adentro): la app lo imprime por el MISMO camino silencioso del 005 (SumatraPDF / lp), sacado a _imprimir_pdf_silencioso(). Si no viene o no es un PDF, sigue con el 005 de siempre. Una app vieja ignora el campo: nunca imprime basura. 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.67" if IS_LINUX else "4.60")  # 4.67(linux)/4.60(win): #2886 VENTANA PRINCIPAL REDISEÑADA (solo interfaz, la impresion no cambia). Bajo la version dice si esta AL DIA ("✓ Ultima version · hh:mm" / "Actualizando a vX" / "No se pudo revisar"), con el estado que el chequeo deja en PrintQueueClient.estado_version. Contadores en tarjetas (Impresos / Errores / Impresoras), tabla en tarjeta con filas alternas y mensaje cuando no hay impresoras, "+ Agregar impresora" en verde y "Quitar" en rojo aparte; Editar/Probar/Limpiar/Quitar grises hasta marcar una fila (doble clic = Editar). Registro abajo empacado ANTES que la tabla: en pantallas chicas se achica la tabla, no los botones. Centrado con el tamaño real (restaba 440 fijos y quedaba corrida). Sin emojis fuera del BMP (Tk viejo de Windows se cae). 4.66(linux)/4.59(win): #2768 DISEÑO del PDF de la empresa (Configuracion > Preferencias > Diseño de factura / de cotizacion). En el JSON del 005 el servidor manda ademas `pdf_b64` = el PDF ya armado con el diseño escogido (con ORIGINAL/COPIA adentro): la app lo imprime por el MISMO camino silencioso del 005 (SumatraPDF / lp), sacado a _imprimir_pdf_silencioso(). Si no viene o no es un PDF, sigue con el 005 de siempre. Una app vieja ignora el campo: nunca imprime basura. 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -361,6 +361,10 @@ CARD      = '#ffffff'
 TEXT      = '#1f2937'
 HEADTXT   = '#bfe3ff'   # versión / acentos claros
 STRIP     = '#dbe7f5'   # barra de estado
+BORDE     = '#c9d8ea'   # borde de tarjetas y campos
+MUTED     = '#5b7596'   # texto secundario
+VERDE     = '#16a34a'
+ROJO      = '#dc2626'
 BASE_FONT_SIZE = 13     # letra grande, legible para adulto mayor
 
 def apply_navy_theme(widget):
@@ -400,6 +404,24 @@ def apply_navy_theme(widget):
     style.configure('Accent.TButton', background=NAVY, foreground='white',
                     padding=(16, 10), font=('Segoe UI', BASE_FONT_SIZE + 1, 'bold'))
     style.map('Accent.TButton', background=[('active', NAVY_DARK)])
+    # Ventana principal (#2886): un botón fuerte por zona y los demás claros,
+    # para que se vea de un vistazo cuál es la acción principal y cuál borra.
+    style.configure('Primario.TButton', background=VERDE, foreground='white',
+                    bordercolor=VERDE, focuscolor=VERDE, padding=(16, 9), font=FBB)
+    style.map('Primario.TButton', background=[('active', '#15803d')])
+    style.configure('Claro.TButton', background='white', foreground=NAVY,
+                    bordercolor=BORDE, focuscolor='white', padding=(14, 9), font=FBB)
+    style.map('Claro.TButton',
+              background=[('disabled', '#f3f6fa'), ('active', '#e8f0fb')],
+              foreground=[('disabled', '#a7b6c8')],
+              bordercolor=[('disabled', '#dde5ef')])
+    style.configure('Peligro.TButton', background='white', foreground=ROJO,
+                    bordercolor='#f3b4b4', focuscolor='white', padding=(14, 9), font=FBB)
+    style.map('Peligro.TButton',
+              background=[('disabled', '#f3f6fa'), ('active', '#fdecec')],
+              foreground=[('disabled', '#a7b6c8')],
+              bordercolor=[('disabled', '#dde5ef')])
+    style.configure('Tarjeta.TFrame', background=CARD)
     style.configure('TCheckbutton', background=BODY, foreground=TEXT, font=FB)
     style.map('TCheckbutton', background=[('active', BODY)])
     style.configure('TRadiobutton', background=BODY, foreground=TEXT, font=FB)
@@ -2758,6 +2780,10 @@ class PrintQueueClient:
         self._on_status = on_status
 
         self._update_checked = False
+        # Lo que la ventana muestra bajo el número de versión (#2886): si está
+        # al día, si hay una nueva o si no se pudo revisar. (estado, versión, hora)
+        # estado = 'aldia' | 'nueva' | 'error' | '' (todavía no se revisó).
+        self.estado_version = ('', '', '')
 
         self.queue_map = {}
         for p in self.printers:
@@ -2770,6 +2796,9 @@ class PrintQueueClient:
         getattr(log, level)(msg)
         if self._on_log:
             self._on_log(entry)
+
+    def _marcar_version(self, estado, version=''):
+        self.estado_version = (estado, version, datetime.now().strftime('%H:%M'))
 
     def _set_status(self, connected):
         self.connected = connected
@@ -2825,10 +2854,13 @@ class PrintQueueClient:
                 # Solo actualizar si el SERVER reporta una version MAYOR que la del cliente
                 # (nunca downgrade ni "distinta" -> evita el loop si el server quedo atras).
                 if latest and download_url and _version_gt(latest, VERSION):
+                    self._marcar_version('nueva', latest)
                     self._log(f"Nueva versión disponible: {latest} (actual: {VERSION})")
                     threading.Thread(target=self._auto_update, args=(latest, download_url), daemon=True).start()
-                elif latest and latest != VERSION:
-                    self._log(f"Server reporta v{latest} pero el cliente ya está en v{VERSION}; no se actualiza.")
+                elif latest:
+                    self._marcar_version('aldia', latest)
+                    if latest != VERSION:
+                        self._log(f"Server reporta v{latest} pero el cliente ya está en v{VERSION}; no se actualiza.")
         elif action == 'print':
             self._handle_print_job(ws, msg)
         elif action == 'ack_received':
@@ -3115,10 +3147,12 @@ del "%~f0"
                 self._log(f"Check update Linux: falló {url} ({e}); probando siguiente")
                 continue
         if not data:
+            self._marcar_version('error')
             self._log("Check update Linux: no se pudo leer el archivo de versión")
             return
         latest = str(data.get('version', '')).strip()
         if latest and _version_gt(latest, VERSION):
+            self._marcar_version('nueva', latest)
             self._update_checked = True
             self._log(f"Nueva versión Linux disponible: {latest} (actual: {VERSION})")
             self._auto_update_linux(latest)
@@ -3126,12 +3160,15 @@ del "%~f0"
             # Reseteamos para que el chequeo periódico/al-conectar reintente luego.
             self._update_checked = False
         elif latest and latest != VERSION:
+            self._marcar_version('aldia', latest)
             self._log(f"Archivo Linux reporta v{latest}; el cliente ya está en v{VERSION}; no se actualiza.")
         elif latest:
+            self._marcar_version('aldia', latest)
             # Mismo número → al día. SIN este log el botón "Buscar actualización"
             # imprimía "Buscando actualización…" y después nada: parecía colgado.
             self._log(f"Ya tiene la última versión (v{VERSION}).")
         else:
+            self._marcar_version('error')
             self._log("Check update Linux: el archivo de versión no trae campo 'version'")
 
     def _auto_update_linux(self, new_version):
@@ -3863,8 +3900,10 @@ class MainWindow:
 
         # Centrar
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - 440
-        y = (self.root.winfo_screenheight() // 2) - 390
+        # Centrar con el tamaño REAL de la ventana (antes restaba 440/390 fijos,
+        # de cuando medía 880x780: con 1160 de ancho quedaba corrida a la derecha).
+        x = max(0, (self.root.winfo_screenwidth() - ancho) // 2)
+        y = max(0, (self.root.winfo_screenheight() - alto) // 2)
         self.root.geometry(f"+{x}+{y}")
 
         self._build_ui()
@@ -3906,44 +3945,62 @@ class MainWindow:
     def _build_ui(self):
         apply_navy_theme(self.root)
 
-        # --- Header navy con versión en grande ---
-        header = tk.Frame(self.root, bg=NAVY, height=60)
+        # --- Encabezado navy: nombre, equipo y versión en grande ---
+        # Bajo la versión va si está AL DÍA (#2886): «¿cuál es la última
+        # versión?» se contesta mirando la ventana, sin buscar en el registro.
+        header = tk.Frame(self.root, bg=NAVY, height=72)
         header.pack(fill='x')
         header.pack_propagate(False)
 
-        tk.Label(header, text="FactuPOS Print", font=("Segoe UI", 15, "bold"),
-                 fg='white', bg=NAVY).pack(side='left', padx=(14, 6))
+        izq = tk.Frame(header, bg=NAVY)
+        izq.pack(side='left', padx=(16, 6))
+        tk.Label(izq, text="FactuPOS Print", font=("Segoe UI", 16, "bold"),
+                 fg='white', bg=NAVY).pack(anchor='w', pady=(10, 0))
+        tk.Label(izq, text=f"Equipo: {self.config.get('clientId', '?')}",
+                 font=("Segoe UI", 10), fg=HEADTXT, bg=NAVY).pack(anchor='w')
 
-        tk.Label(header, text=f"v{VERSION}", font=("Segoe UI", 22, "bold"),
-                 fg=HEADTXT, bg=NAVY).pack(side='right', padx=(8, 16))
-
-        btn_config = tk.Button(header, text="⚙", font=("Segoe UI", 14), fg='white', bg=NAVY,
+        btn_config = tk.Button(header, text="⚙", font=("Segoe UI", 16), fg='white', bg=NAVY,
                                activebackground=NAVY_DARK, activeforeground='white',
                                bd=0, cursor='hand2', command=self._open_config)
-        btn_config.pack(side='right', padx=4)
 
-        tk.Label(header, text=f"ID: {self.config.get('clientId', '?')}",
-                 font=("Segoe UI", 9), fg=HEADTXT, bg=NAVY).pack(side='right', padx=8)
+        ver = tk.Frame(header, bg=NAVY)
+        ver.pack(side='right', padx=(6, 18))
+        tk.Label(ver, text=f"v{VERSION}", font=("Segoe UI", 22, "bold"),
+                 fg='white', bg=NAVY).pack(anchor='e', pady=(6, 0))
+        self.lbl_version = tk.Label(ver, text="Revisando versión…",
+                                    font=("Segoe UI", 10, "bold"), fg=HEADTXT, bg=NAVY)
+        self.lbl_version.pack(anchor='e')
+        btn_config.pack(side='right', padx=6)
 
-        # --- Barra de estado ---
-        status_bar = tk.Frame(self.root, bg=STRIP, height=26)
+        # --- Barra de conexión ---
+        status_bar = tk.Frame(self.root, bg=STRIP, height=34)
         status_bar.pack(fill='x')
         status_bar.pack_propagate(False)
 
-        self.status_dot = tk.Label(status_bar, text="●", font=("Arial", 16), fg='#dc2626', bg=STRIP)
-        self.status_dot.pack(side='left', padx=(12, 5))
-
-        self.status_label = tk.Label(status_bar, text="Conectando...",
-                                     font=("Segoe UI", 13), fg=NAVY, bg=STRIP)
+        self.status_dot = tk.Label(status_bar, text="●", font=("Arial", 16), fg=ROJO, bg=STRIP)
+        self.status_dot.pack(side='left', padx=(14, 6))
+        self.status_label = tk.Label(status_bar, text="Conectando…",
+                                     font=("Segoe UI", 13, "bold"), fg=NAVY, bg=STRIP)
         self.status_label.pack(side='left')
+        self.lbl_server = tk.Label(status_bar, text="", font=("Segoe UI", 11),
+                                   fg=MUTED, bg=STRIP)
+        self.lbl_server.pack(side='left', padx=(10, 0))
+
+        # --- Contadores (tarjetas) ---
+        cont = tk.Frame(self.root, bg=BODY)
+        cont.pack(fill='x', padx=12, pady=(12, 0))
+        self.lbl_ok = self._tarjeta_contador(cont, "Impresos", VERDE)
+        self.lbl_err = self._tarjeta_contador(cont, "Errores", ROJO)
+        self.lbl_colas = self._tarjeta_contador(cont, "Impresoras", NAVY)
 
         # --- Impresoras ---
-        prn_frame = ttk.LabelFrame(self.root, text="Impresoras Registradas", padding=8)
-        prn_frame.pack(fill='both', expand=True, padx=10, pady=(10, 5))
+        prn_card = tk.Frame(self.root, bg=CARD, highlightthickness=1, highlightbackground=BORDE)
+        prn_card.pack(fill='both', expand=True, padx=12, pady=(12, 6))
+        tk.Label(prn_card, text="Impresoras registradas", font=("Segoe UI", 14, "bold"),
+                 fg=NAVY, bg=CARD).pack(anchor='w', padx=12, pady=(10, 6))
 
-        # Tabla
-        table_frame = ttk.Frame(prn_frame)
-        table_frame.pack(fill='both', expand=True)
+        table_frame = tk.Frame(prn_card, bg=CARD)
+        table_frame.pack(fill='both', expand=True, padx=12)
 
         cols = ('code', 'empresa', 'printer', 'description', 'options')
         self.tree = ttk.Treeview(table_frame, columns=cols, show='headings',
@@ -3964,62 +4021,92 @@ class MainWindow:
         self.tree.column('printer', width=300, minwidth=200, stretch=True)
         self.tree.column('description', width=220, minwidth=140, stretch=False)
         self.tree.column('options', width=350, minwidth=200, stretch=True)
+        self.tree.tag_configure('par', background='#f5f8fc')
         self.tree.pack(side='left', fill='both', expand=True)
 
         scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side='right', fill='y')
 
+        # Tabla vacía = un cuadro blanco que no dice nada. Se explica qué hacer.
+        self.lbl_vacia = tk.Label(
+            self.tree, text="Todavía no hay impresoras en este equipo.\n"
+                            "Toque «+ Agregar impresora» para configurar la primera.",
+            font=("Segoe UI", 13), fg=MUTED, bg='white', justify='center')
+
+        self.tree.bind('<<TreeviewSelect>>', lambda e: self._actualizar_botones())
+        self.tree.bind('<Double-1>', lambda e: self.tree.focus() and self._edit_printer())
+
+        # Botones: «Agregar» es la acción principal; «Quitar» va en rojo y aparte.
+        # Los que actúan sobre UNA impresora quedan grises hasta marcar una fila
+        # (se ven, pero no se pueden usar), en vez de avisar «seleccione…» al tocar.
+        btn_prn = tk.Frame(prn_card, bg=CARD)
+        # Abajo y antes que la tabla: si falta alto, se achica la tabla y los
+        # botones siguen enteros.
+        btn_prn.pack(side='bottom', fill='x', padx=12, pady=12, before=table_frame)
+
+        ttk.Button(btn_prn, text="+ Agregar impresora", style='Primario.TButton',
+                   command=self._add_printer).pack(side='left', padx=(0, 8))
+        self.btn_editar = ttk.Button(btn_prn, text="✎ Editar", style='Claro.TButton',
+                                     command=self._edit_printer)
+        self.btn_editar.pack(side='left', padx=(0, 8))
+        self.btn_probar = ttk.Button(btn_prn, text="Probar (cajón + corte)", style='Claro.TButton',
+                                     command=self._test_printer)
+        self.btn_probar.pack(side='left', padx=(0, 8))
+        self.btn_limpiar = ttk.Button(btn_prn, text="⟲ Limpiar cola", style='Claro.TButton',
+                                      command=self._purge_printer)
+        self.btn_limpiar.pack(side='left')
+        self.btn_quitar = ttk.Button(btn_prn, text="✕ Quitar", style='Peligro.TButton',
+                                     command=self._remove_printer)
+        self.btn_quitar.pack(side='right')
+
         self._reload_printer_table()
-
-        # Botones +/−
-        btn_prn = ttk.Frame(prn_frame)
-        btn_prn.pack(fill='x', pady=(5, 0))
-
-        ttk.Button(btn_prn, text="+ Agregar", command=self._add_printer).pack(side='left', padx=(0, 5))
-        ttk.Button(btn_prn, text="Editar", command=self._edit_printer).pack(side='left', padx=(0, 5))
-        ttk.Button(btn_prn, text="− Quitar", command=self._remove_printer).pack(side='left')
-        ttk.Button(btn_prn, text="Probar (cajón + corte)", command=self._test_printer).pack(side='left', padx=(8, 0))
-        ttk.Button(btn_prn, text="Limpiar cola", command=self._purge_printer).pack(side='left', padx=(8, 0))
 
         # NOTA: el auto-inicio (oculto en la bandeja) lo configura el INSTALADOR de
         # Windows (Inno Setup: HKLM\...\Run con --hidden). Por eso ya no hay
         # checkboxes "Auto-ocultar" / "Iniciar con el sistema" en la interfaz.
 
-        # --- Counters ---
-        counter_frame = ttk.Frame(self.root, padding=(10, 5))
-        counter_frame.pack(fill='x')
-
-        self.lbl_ok = tk.Label(counter_frame, text="Impresos: 0", font=("Segoe UI", 13, "bold"),
-                               fg='#16a34a', bg=BODY)
-        self.lbl_ok.pack(side='left', padx=(0, 20))
-
-        self.lbl_err = tk.Label(counter_frame, text="Errores: 0", font=("Segoe UI", 13, "bold"),
-                                fg='#dc2626', bg=BODY)
-        self.lbl_err.pack(side='left')
-
-        self.lbl_server = tk.Label(counter_frame, text="", font=("Segoe UI", 10), fg='#5b7596', bg=BODY)
-        self.lbl_server.pack(side='right')
-
-        # --- Log ---
-        log_frame = ttk.LabelFrame(self.root, text="Log", padding=8)
-        log_frame.pack(fill='x', padx=10, pady=(5, 10))
+        # --- Actividad (log) ---
+        log_card = tk.Frame(self.root, bg=CARD, highlightthickness=1, highlightbackground=BORDE)
+        # Va abajo y se empaca ANTES que la tarjeta de impresoras: si la pantalla
+        # es chica (1366x768) la que se achica es la tabla, no el registro.
+        log_card.pack(side='bottom', fill='x', padx=12, pady=(6, 12), before=prn_card)
+        log_top = tk.Frame(log_card, bg=CARD)
+        log_top.pack(fill='x', padx=12, pady=(8, 6))
+        tk.Label(log_top, text="Actividad", font=("Segoe UI", 14, "bold"),
+                 fg=NAVY, bg=CARD).pack(side='left')
+        ttk.Button(log_top, text="Copiar log", style='Claro.TButton',
+                   command=self._copy_log).pack(side='right')
+        ttk.Button(log_top, text="⟳ Buscar actualización", style='Claro.TButton',
+                   command=self._check_update).pack(side='right', padx=(0, 8))
 
         self.log_text = scrolledtext.ScrolledText(
-            log_frame, wrap='word', font=("Consolas", 9), state='disabled',
-            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white', height=6,
+            log_card, wrap='word', font=("Consolas", 10), state='disabled',
+            bg='#0f1d33', fg='#d6e2f0', insertbackground='white', height=4,
+            bd=0, padx=8, pady=6,
         )
-        self.log_text.pack(fill='x')
-
-        # Botón copiar log
-        log_btn_frame = ttk.Frame(log_frame)
-        log_btn_frame.pack(fill='x', pady=(5, 0))
-        ttk.Button(log_btn_frame, text="Copiar Log", command=self._copy_log).pack(side='right')
-        ttk.Button(log_btn_frame, text="Buscar actualización", command=self._check_update).pack(side='right', padx=(0, 5))
+        self.log_text.pack(fill='x', padx=12, pady=(0, 12))
 
         # Tags para colores en log
         self.log_text.tag_configure('error', foreground='#fca5a5')
         self.log_text.tag_configure('ok', foreground='#86efac')
+
+    def _tarjeta_contador(self, padre, titulo, color):
+        """Tarjeta blanca con un número grande. Devuelve el Label del número."""
+        t = tk.Frame(padre, bg=CARD, highlightthickness=1, highlightbackground=BORDE)
+        t.pack(side='left', fill='x', expand=True, padx=(0, 12) if titulo != "Impresoras" else 0)
+        tk.Frame(t, bg=color, width=5).pack(side='left', fill='y')
+        # Número y título en la MISMA línea: la tarjeta queda baja y el alto
+        # se lo lleva la tabla, que es lo que importa en una pantalla chica.
+        numero = tk.Label(t, text="0", font=("Segoe UI", 18, "bold"), fg=color, bg=CARD)
+        numero.pack(side='left', padx=(12, 8), pady=2)
+        tk.Label(t, text=titulo, font=("Segoe UI", 12), fg=MUTED, bg=CARD).pack(side='left')
+        return numero
+
+    def _actualizar_botones(self):
+        estado = ['!disabled'] if self.tree.selection() else ['disabled']
+        for b in (self.btn_editar, self.btn_probar, self.btn_limpiar, self.btn_quitar):
+            b.state(estado)
 
     def _append_log(self, msg):
         def _do():
@@ -4047,19 +4134,27 @@ class MainWindow:
     def _update_status(self, connected):
         def _do():
             if connected:
-                self.status_dot.config(fg='#16a34a')
-                self.status_label.config(text=f"Conectado — {self.client.current_server}")
+                self.status_dot.config(fg=VERDE)
+                self.status_label.config(text="Conectado", fg=VERDE)
+                self.lbl_server.config(text=self.client.current_server)
             else:
-                self.status_dot.config(fg='#dc2626')
-                self.status_label.config(text="Desconectado — reintentando...")
+                self.status_dot.config(fg=ROJO)
+                self.status_label.config(text="Sin conexión — reintentando…", fg=ROJO)
+                self.lbl_server.config(text="")
         self.root.after(0, _do)
 
     def _update_counters(self):
         if hasattr(self, 'client'):
-            self.lbl_ok.config(text=f"Impresos: {self.client.jobs_ok}")
-            self.lbl_err.config(text=f"Errores: {self.client.jobs_err}")
-            if self.client.connected:
-                self.lbl_server.config(text=self.client.current_server)
+            self.lbl_ok.config(text=str(self.client.jobs_ok))
+            self.lbl_err.config(text=str(self.client.jobs_err))
+            estado, ultima, hora = getattr(self.client, 'estado_version', ('', '', ''))
+            if estado == 'aldia':
+                self.lbl_version.config(text=f"✓ Última versión · {hora}", fg='#86efac')
+            elif estado == 'nueva':
+                self.lbl_version.config(text=f"⬆ Actualizando a v{ultima}…", fg='#fde68a')
+            elif estado == 'error':
+                self.lbl_version.config(text="No se pudo revisar la versión", fg='#fca5a5')
+        self.lbl_colas.config(text=str(len(self.config.get('printers', []))))
         self.root.after(2000, self._update_counters)
 
     def _reload_printer_table(self):
@@ -4096,13 +4191,18 @@ class MainWindow:
             # los textos de la fila; bastaba con cambiar como se muestra una
             # columna para que dejaran de encontrarlo. Con el indice en el id,
             # lo que se ve y lo que se edita ya no pueden desincronizarse.
-            self.tree.insert('', 'end', iid=str(indice), values=(
+            self.tree.insert('', 'end', iid=str(indice), tags=('par',) if indice % 2 else (), values=(
                 p.get('printerCode', p.get('queueCode', '')),
                 p.get('empresa', ''),
                 f"{rotulo} · {nombre}" if rotulo else nombre,
                 p.get('description', ''),
                 ', '.join(opts),
             ))
+        if self.config.get('printers'):
+            self.lbl_vacia.place_forget()
+        else:
+            self.lbl_vacia.place(relx=0.5, rely=0.6, anchor='center')
+        self._actualizar_botones()
 
     def _perfil_seleccionado(self, accion="continuar"):
         """(indice, perfil) de la fila marcada, o (-1, None) si no hay ninguna."""
