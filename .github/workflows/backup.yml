@@ -72,11 +72,11 @@ jobs:
 
       - name: Compilar instalador (Inno Setup)
         shell: cmd
-        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" backup\installer\factupos-backup.iss'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\factupos-backup\installer\factupos-backup.iss'
 
       - name: Subir instalador
         uses: actions/upload-artifact@v4
         with:
           name: factupos-backup-installer
-          path: backup\installer\Output\Factupos-Backup.exe
+          path: windows\factupos-backup\installer\Output\Factupos-Backup.exe
           if-no-files-found: error
