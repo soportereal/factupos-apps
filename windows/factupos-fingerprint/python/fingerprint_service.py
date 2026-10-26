@@ -59,8 +59,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # ---------------------------------------------------------------------------
 # Configuracion
 # ---------------------------------------------------------------------------
-VERSION              = "1.1.0"
-BUILD_DATE           = "2026-10-11"
+VERSION              = "1.1.1"
+BUILD_DATE           = "2026-10-26"
 PORT                 = 52181
 # Carpeta base: la del .exe si está compilado con PyInstaller, si no la del .py
 BASE_DIR             = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))

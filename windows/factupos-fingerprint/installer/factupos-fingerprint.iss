@@ -24,7 +24,7 @@
 #define MyAppName "FactuPOS Biometria"
 #define MyAppId "factupos-fingerprint"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.5"
+  #define MyAppVersion "1.1.1"
 #endif
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"

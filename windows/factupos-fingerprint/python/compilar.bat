@@ -19,7 +19,7 @@ cd /d "%~dp0"
 REM ============================================================
 REM  >>>  VERSION del paquete  <<<   (bumpear en cada release)
 REM ============================================================
-set "APP_VERSION=1.1.0"
+set "APP_VERSION=1.1.1"
 set "ZIPNAME=factupos-fingerprint-windows_v%APP_VERSION%.zip"
 
 REM --- Buscar python (igual que iniciar_servicio.bat: PATH primero, luego rutas tipicas) ---

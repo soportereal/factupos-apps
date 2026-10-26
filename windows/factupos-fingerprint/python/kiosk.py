@@ -50,8 +50,8 @@ except Exception:
     print("ERROR: este programa necesita Tkinter (viene con el instalador estandar de Python).")
     sys.exit(1)
 
-APP_VERSION    = "1.1.0"
-BUILD_DATE     = "2026-10-13"
+APP_VERSION    = "1.1.1"
+BUILD_DATE     = "2026-10-26"
 BASE_DIR       = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE    = os.path.join(BASE_DIR, "config.json")
 TOKENCONF_FILE = os.path.join(BASE_DIR, "token.conf")
@@ -195,6 +195,19 @@ def http_json_safe(method, url, body=None, timeout=15):
             return e.code, {"_neterr": "HTTP %s" % e.code, "error": "HTTP %s" % e.code}
     except Exception as e:
         return 0, {"_neterr": "red/timeout", "error": str(e)}
+
+# #3226: prueba de conexion. Si ninguna api_base contesta, se pregunta aqui para
+# separar "este equipo no tiene internet" de "hay internet pero no llega al sistema".
+PING_URL = "https://soportereal.com/api/ping.php"
+
+def diagnosticar_conexion(timeout=8):
+    """(hay_internet, texto corto para la pantalla)."""
+    st, data = http_json_safe("GET", PING_URL + "?t=%d" % int(time.time()), None, timeout)
+    if isinstance(data, dict) and data.get("ok") is True:
+        log("Ping OK (ip %s): hay internet, pero no llega al sistema" % data.get("ip", "?"))
+        return True, "Hay internet, pero no llega al sistema"
+    log("Ping FALLO (%s): este equipo no tiene internet" % ((data or {}).get("error") if isinstance(data, dict) else st))
+    return False, "Sin internet en este equipo"
 
 def http_get_safe(url, body=None, timeout=15):
     """GET pasando params como query string."""
@@ -407,6 +420,10 @@ class KioskApp(object):
             # convertimos el fallback en ok:False para que el caller pueda mostrar el error
             last = (st, {"ok": False, "error": (data.get("error") if isinstance(data, dict) else "sin respuesta")})
         log("Ninguna api_base respondio nuestra API: %r" % (self.api_bases,))
+        if bases:
+            hay, texto = diagnosticar_conexion()
+            texto += " — revise el cable o el wifi" if not hay else " — avise a Soporte Real"
+            last = (last[0], {"ok": False, "sin_conexion": True, "error": texto})
         return last
 
     # ---------------- UI ----------------
@@ -779,7 +796,9 @@ class KioskApp(object):
                              {"plataforma": self.cfg.get("plataforma", "windows")}, timeout=20)
         if not data or not data.get("ok"):
             log("Sync plantillas FALLO: %s" % (data.get("error") if data else "sin respuesta"))
-            if initial: self.set_status("Sin conexion a la API — usando cache local del servicio")
+            if initial or (data or {}).get("sin_conexion"):
+                self.set_status((data or {}).get("error") if (data or {}).get("sin_conexion")
+                                else "Sin conexion a la API — usando cache local del servicio")
             return
         if data.get("needs_migration"):
             log("Falta la tabla HuellaUsuario (migracion 20260511104641) en %s" % self.serverdb)
