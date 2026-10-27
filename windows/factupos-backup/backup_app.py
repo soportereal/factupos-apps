@@ -214,14 +214,26 @@ class BackupApp:
     def _build_ui(self):
         self.root = tk.Tk()
         self.root.title(APP_TITLE)
-        self.root.geometry("760x560")
         self.root.minsize(680, 460)
 
         apply_navy_theme(self.root)
         navy_header(self.root, APP_VERSION)
 
+        # Todo el cuerpo va dentro de un área con barra de desplazamiento: en pantallas chicas o con
+        # escala de Windows al 125-150 % el contenido no entra y la parte de abajo quedaba cortada (#3147).
+        body = self._build_scroll_body()
+
+        # Dos pestañas: lo de todos los días (estado, tabla, log) y la configuración. Todo junto medía
+        # ~1150 px de alto y no entraba ni en una pantalla de 1080 (#3147).
+        tabs = ttk.Notebook(body)
+        tabs.pack(fill="both", expand=True, padx=6, pady=(6, 0))
+        tab_run = ttk.Frame(tabs)
+        tab_cfg = ttk.Frame(tabs)
+        tabs.add(tab_run, text="  Respaldo  ")
+        tabs.add(tab_cfg, text="  Configuración  ")
+
         # ---------- Configuración ----------
-        cfgframe = ttk.LabelFrame(self.root, text="Configuración", padding=10)
+        cfgframe = ttk.LabelFrame(tab_cfg, text="Configuración", padding=10)
         cfgframe.pack(fill="x", padx=10, pady=(10, 5))
 
         self.var_server = tk.StringVar(value=self.cfg["server"])
@@ -305,7 +317,7 @@ class BackupApp:
         cfgframe.columnconfigure(1, weight=1)
 
         # ---------- Estado, progreso y botón principal ----------
-        statframe = ttk.LabelFrame(self.root, text="Estado", padding=8)
+        statframe = ttk.LabelFrame(tab_run, text="Estado", padding=8)
         statframe.pack(fill="x", padx=10, pady=5)
 
         # Botones GRANDES: Iniciar respaldo + Restaurar BDs (lado a lado, siempre visibles)
@@ -345,7 +357,7 @@ class BackupApp:
         self.lbl_count.pack(side="right", padx=(8, 0))
 
         # ---------- Tabla de BDs ----------
-        tableframe = ttk.LabelFrame(self.root, text="Bases de datos", padding=4)
+        tableframe = ttk.LabelFrame(tab_run, text="Bases de datos", padding=4)
         tableframe.pack(fill="both", expand=True, padx=10, pady=5)
 
         cols = ("db", "estado", "bak", "zip", "tiempo")
@@ -369,7 +381,7 @@ class BackupApp:
         scroll.pack(side="right", fill="y")
 
         # ---------- Log ----------
-        logframe = ttk.LabelFrame(self.root, text="Log", padding=4)
+        logframe = ttk.LabelFrame(tab_run, text="Log", padding=4)
         logframe.pack(fill="both", expand=True, padx=10, pady=5)
         self.txt_log = tk.Text(logframe, height=4, wrap="none", bg="#0f172a", fg="#cbd5e1", font=("Consolas", 9))
         logscroll = ttk.Scrollbar(logframe, orient="vertical", command=self.txt_log.yview)
@@ -378,7 +390,7 @@ class BackupApp:
         logscroll.pack(side="right", fill="y")
 
         # ---------- Acciones ----------
-        actframe = ttk.Frame(self.root)
+        actframe = ttk.Frame(body)
         actframe.pack(fill="x", padx=10, pady=(0, 10))
         self.btn_run = ttk.Button(actframe, text="▶ Ejecutar respaldo ahora", command=self.run_backup_clicked)
         self.btn_run.pack(side="left")
@@ -388,6 +400,58 @@ class BackupApp:
         ttk.Button(actframe, text="Salir", command=self.quit_app).pack(side="right")
         ttk.Label(actframe, text=f"v{APP_VERSION}", foreground="#64748b",
                   font=("Segoe UI", 9, "bold")).pack(side="right", padx=(0, 12))
+
+        self._fit_window_to_content(body)
+
+    def _build_scroll_body(self):
+        """Canvas + barra vertical. La barra solo aparece si el contenido no entra en la ventana."""
+        outer = ttk.Frame(self.root)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, bg=BODY, highlightthickness=0, borderwidth=0)
+        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        body = ttk.Frame(canvas)
+        item = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        def relayout(_e=None):
+            need = body.winfo_reqheight()
+            # Si sobra alto, el cuerpo lo ocupa (la tabla y el log crecen); si falta, se desplaza.
+            canvas.itemconfigure(item, width=canvas.winfo_width(), height=max(canvas.winfo_height(), need))
+            canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), max(canvas.winfo_height(), need)))
+            if need > canvas.winfo_height():
+                if not vsb.winfo_ismapped():
+                    vsb.pack(side="right", fill="y", before=canvas)
+            elif vsb.winfo_ismapped():
+                vsb.pack_forget()
+                canvas.yview_moveto(0)
+
+        canvas.bind("<Configure>", relayout)
+        body.bind("<Configure>", lambda e: canvas.after_idle(relayout))
+
+        def on_wheel(e):
+            # La tabla y el log tienen su propio desplazamiento; las otras ventanas, también.
+            try:
+                if e.widget.winfo_toplevel() is not self.root or e.widget.winfo_class() in ("Treeview", "Text"):
+                    return
+            except (AttributeError, tk.TclError):
+                return
+            if vsb.winfo_ismapped():
+                canvas.yview_scroll(int(-e.delta / 120) or (-1 if e.delta > 0 else 1), "units")
+
+        self.root.bind_all("<MouseWheel>", on_wheel, add="+")
+        return body
+
+    def _fit_window_to_content(self, body):
+        """Abre la ventana del tamaño que pide el contenido, sin pasarse de la pantalla."""
+        self.root.update_idletasks()
+        w = max(760, body.winfo_reqwidth() + 20)
+        h = self.root.winfo_reqheight() - self.root.nametowidget(body.winfo_parent()).winfo_reqheight() \
+            + body.winfo_reqheight()
+        w = min(w, self.root.winfo_screenwidth() - 40)
+        h = min(h, self.root.winfo_screenheight() - 90)  # barra de tareas + título de la ventana
+        x = max(0, (self.root.winfo_screenwidth() - w) // 2)
+        self.root.geometry(f"{w}x{h}+{x}+10")
 
     def _toggle_pwd(self):
         self.entry_pwd.config(show="" if self.var_show_pwd.get() else "•")
