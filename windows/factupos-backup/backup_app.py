@@ -31,13 +31,14 @@ APP_NAME = "FactuposBackup"
 APP_VERSION = core.APP_VERSION
 APP_TITLE = f"FactuposBackup v{APP_VERSION} — Respaldo SQL Server"
 
-# Niveles de compresión 7z que se ofrecen en pantalla (preset LZMA2, #3147).
-# Tiempo relativo al ZIP de antes, medido con un .bak real.
+# Niveles de compresión 7z que se ofrecen en pantalla (los de 7-Zip, #3147).
+# Comprime con todos los núcleos; tiempos medidos con un .bak real en 4 núcleos vs. el ZIP de antes.
 NIVELES_7Z = [
-    (1, "1 — Rápido (como ZIP)"),
-    (3, "3 — Medio (2,5× más lento)"),
-    (6, "6 — Normal (9× más lento)"),
-    (9, "9 — Máximo (el más lento)"),
+    (1, "1 — Muy rápido"),
+    (3, "3 — Rápido (recomendado)"),
+    (5, "5 — Normal (~3× el ZIP)"),
+    (7, "7 — Máximo (~5× el ZIP)"),
+    (9, "9 — Ultra (el más lento)"),
 ]
 
 # ---------- Tema visual NAVY (look FactuPOS) ----------
@@ -234,8 +235,8 @@ class BackupApp:
         self.var_reboot = tk.BooleanVar(value=self.cfg.get("reboot_enabled", False))
         self.var_reboot_hour = tk.StringVar(value=self.cfg.get("reboot_hour", "03:00"))
         self.var_compress = tk.BooleanVar(value=self.cfg.get("compress", True))
-        nivel = int(self.cfg.get("compression_level_7z", 1))
-        self.var_level = tk.StringVar(value=next((t for n, t in NIVELES_7Z if n == nivel), NIVELES_7Z[0][1]))
+        nivel = int(self.cfg.get("compression_level_7z", 3))
+        self.var_level = tk.StringVar(value=next((t for n, t in NIVELES_7Z if n == nivel), NIVELES_7Z[1][1]))
         self.var_auto_update = tk.BooleanVar(value=self.cfg.get("auto_update_enabled", True))
 
         row = 0

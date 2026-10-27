@@ -1,0 +1,7 @@
+7zr.exe — 7-Zip 26.04 (versión reducida: solo formato .7z), de https://www.7-zip.org/a/7zr.exe
+Licencia GNU LGPL, © Igor Pavlov. Código fuente en https://www.7-zip.org
+sha256 256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282
+
+Va empaquetado dentro de FactuposBackup.exe / FactuposBackupCLI.exe (PyInstaller --add-binary)
+para comprimir los .bak usando TODOS los núcleos (-mmt=on). py7zr comprime con un solo hilo (#3147).
+Se versiona aquí y no se baja en cada build: así cada compilación usa exactamente el mismo binario.

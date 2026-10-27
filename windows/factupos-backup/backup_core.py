@@ -4,7 +4,7 @@ FactuposBackup — Motor del respaldo SQL Server.
 Sin UI ni CLI: lo usan backup_app.py (app gráfica) y backup_cli.py (línea de comandos).
 """
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 import json
 import logging
@@ -26,7 +26,7 @@ CONFIG_DEFAULT = {
     "compress": True,
     "delete_bak_after_zip": True,
     "retention_days": 7,
-    "compression_level_7z": 1,
+    "compression_level_7z": 3,
     "log_file": "FactuposBackup.log",
     "connection_retries": 3,
     "connection_retry_delay": 10,
@@ -81,7 +81,7 @@ def load_config() -> dict:
         except Exception:
             pass
     # "compression_level" era el nivel del ZIP (≤1.2.0, siempre 6): en 7z ese 6 tarda ~9× más
-    # que el ZIP. Se descarta y el nivel 7z arranca en 1 (rápido) — #3147.
+    # que el ZIP. Se descarta y el nivel 7z arranca en el de fábrica — #3147.
     cfg.pop("compression_level", None)
     for k, v in CONFIG_DEFAULT.items():
         cfg.setdefault(k, v)
@@ -183,12 +183,36 @@ def backup_database(conn, dbname, backup_path, ts):
     return bak_file
 
 
+def seven_zip_exe() -> Path | None:
+    """7zr.exe empaquetado en el .exe (PyInstaller lo deja en _MEIPASS) o junto al .py en bin/."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent / "bin"))
+    exe = base / "7zr.exe"
+    return exe if exe.exists() else None
+
+
 def compress_to_7z(bak_file, level):
-    """Comprime el .bak a un archivo .7z (LZMA2). level = preset 0-9.
-    Medido con un .bak real (400 MB): ZIP 7,7 s · nivel 1 10,3 s (-19 % vs ZIP) ·
-    nivel 3 19,9 s (-25 %) · nivel 6 68,6 s (-33 %). Por eso el default es 1."""
+    """Comprime el .bak a un archivo .7z (LZMA2). level = 1/3/5/7/9 (niveles de 7-Zip).
+    Con 7zr.exe usa TODOS los núcleos (-mmt=on). Medido con un .bak real (400 MB, 4 núcleos):
+    ZIP de antes 7,7 s/87 MB · nivel 1 1,9 s/73 MB · nivel 3 4,1 s/67 MB · nivel 5 22,6 s/58 MB ·
+    nivel 9 46 s/52 MB. py7zr queda de respaldo si falta 7zr.exe: comprime con UN solo hilo (#3147)."""
     archive = bak_file.with_suffix(".7z")
     preset = max(0, min(9, int(level)))
+    if archive.exists():
+        archive.unlink()  # 7z "a" agrega a un archivo existente: siempre se arma de cero
+    exe = seven_zip_exe()
+    if exe:
+        import subprocess
+        r = subprocess.run(
+            [str(exe), "a", "-t7z", "-m0=lzma2", f"-mx={preset}", "-mmt=on", "-bd", "-y",
+             str(archive), str(bak_file)],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if r.returncode != 0:
+            if archive.exists():
+                archive.unlink()
+            raise RuntimeError(f"7-Zip falló ({r.returncode}): {(r.stderr or r.stdout).strip()[-300:]}")
+        return archive
     filters = [{"id": py7zr.FILTER_LZMA2, "preset": preset}]
     with py7zr.SevenZipFile(archive, "w", filters=filters) as z:
         z.write(bak_file, bak_file.name)
@@ -738,7 +762,7 @@ def run_backup(cfg=None, log=None, on_progress=None):
 
     do_compress = cfg.get("compress", True)
     delete_bak = cfg.get("delete_bak_after_zip", True)
-    level = cfg.get("compression_level_7z", 1)
+    level = cfg.get("compression_level_7z", 3)
     backup_retries = max(1, int(cfg.get("backup_retries", 2)))
     backup_retry_delay = max(1, int(cfg.get("backup_retry_delay", 15)))
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

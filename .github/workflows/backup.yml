@@ -34,6 +34,7 @@ jobs:
           --hidden-import PIL._tkinter_finder
           --collect-submodules pyodbc
           --collect-all py7zr
+          --add-binary "windows/factupos-backup/bin/7zr.exe;."
           windows/factupos-backup/backup_app.py
 
       - name: Build CLI (FactuposBackupCLI.exe)
@@ -43,6 +44,7 @@ jobs:
           --version-file windows/factupos-backup/version_info.txt
           --collect-submodules pyodbc
           --collect-all py7zr
+          --add-binary "windows/factupos-backup/bin/7zr.exe;."
           windows/factupos-backup/backup_cli.py
 
       - name: Upload artifacts
