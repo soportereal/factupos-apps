@@ -9,7 +9,7 @@
   "compress": true,
   "delete_bak_after_zip": true,
   "retention_days": 7,
-  "compression_level": 6,
+  "compression_level_7z": 1,
   "reboot_enabled": false,
   "reboot_hour": "03:00",
   "auto_update_enabled": true,

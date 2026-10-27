@@ -4,7 +4,7 @@ FactuposBackup — Motor del respaldo SQL Server.
 Sin UI ni CLI: lo usan backup_app.py (app gráfica) y backup_cli.py (línea de comandos).
 """
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 import json
 import logging
@@ -26,7 +26,7 @@ CONFIG_DEFAULT = {
     "compress": True,
     "delete_bak_after_zip": True,
     "retention_days": 7,
-    "compression_level": 6,
+    "compression_level_7z": 1,
     "log_file": "FactuposBackup.log",
     "connection_retries": 3,
     "connection_retry_delay": 10,
@@ -80,6 +80,9 @@ def load_config() -> dict:
             save_config(cfg)
         except Exception:
             pass
+    # "compression_level" era el nivel del ZIP (≤1.2.0, siempre 6): en 7z ese 6 tarda ~9× más
+    # que el ZIP. Se descarta y el nivel 7z arranca en 1 (rápido) — #3147.
+    cfg.pop("compression_level", None)
     for k, v in CONFIG_DEFAULT.items():
         cfg.setdefault(k, v)
     return cfg
@@ -181,7 +184,9 @@ def backup_database(conn, dbname, backup_path, ts):
 
 
 def compress_to_7z(bak_file, level):
-    """Comprime el .bak a un archivo .7z (LZMA2). level = preset 0-9 (6 ≈ 'Normal')."""
+    """Comprime el .bak a un archivo .7z (LZMA2). level = preset 0-9.
+    Medido con un .bak real (400 MB): ZIP 7,7 s · nivel 1 10,3 s (-19 % vs ZIP) ·
+    nivel 3 19,9 s (-25 %) · nivel 6 68,6 s (-33 %). Por eso el default es 1."""
     archive = bak_file.with_suffix(".7z")
     preset = max(0, min(9, int(level)))
     filters = [{"id": py7zr.FILTER_LZMA2, "preset": preset}]
@@ -733,7 +738,7 @@ def run_backup(cfg=None, log=None, on_progress=None):
 
     do_compress = cfg.get("compress", True)
     delete_bak = cfg.get("delete_bak_after_zip", True)
-    level = cfg.get("compression_level", 6)
+    level = cfg.get("compression_level_7z", 1)
     backup_retries = max(1, int(cfg.get("backup_retries", 2)))
     backup_retry_delay = max(1, int(cfg.get("backup_retry_delay", 15)))
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
