@@ -50,8 +50,8 @@ except Exception:
     print("ERROR: este programa necesita Tkinter (viene con el instalador estandar de Python).")
     sys.exit(1)
 
-APP_VERSION    = "1.1.1"
-BUILD_DATE     = "2026-10-26"
+APP_VERSION    = "1.1.2"
+BUILD_DATE     = "2026-10-28"
 BASE_DIR       = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE    = os.path.join(BASE_DIR, "config.json")
 TOKENCONF_FILE = os.path.join(BASE_DIR, "token.conf")
@@ -356,6 +356,8 @@ class KioskApp(object):
         self.last_sync_ts = 0.0
         self.fp_connected = False
         self.fp_device = ""
+        self.fp_detalle = ""
+        self.fp_listo = False
         self.users_loaded = 0
 
         self._build_ui()
@@ -739,8 +741,10 @@ class KioskApp(object):
                     self._sync_templates(initial=False)
                 self._refresh_fp_connection()
                 if not self.fp_connected:
-                    self.set_led("#64748b"); self.set_status("Lector no detectado"); self.set_fp_color("#64748b")
-                    self.set_msg("Verifique el lector USB / el servicio de huella")
+                    # 1.1.2: el servicio dice por que (arrancando, esperando el controlador, cable USB)
+                    self.set_led("#64748b"); self.set_fp_color("#64748b")
+                    self.set_status("Lector no detectado" if self.fp_listo else "Preparando el lector...")
+                    self.set_msg(self.fp_detalle or "Verifique el lector USB / el servicio de huella")
                     time.sleep(3); continue
                 st, data = http_json_safe("POST", self.fp + "/fingerprint/identify", {"timeout": 10000}, timeout=15)
                 if st == 503:
@@ -771,18 +775,27 @@ class KioskApp(object):
                 log("Worker:\n" + traceback.format_exc()); time.sleep(2.0)
 
     def _wait_fp_service(self):
+        # 1.1.2: se espera sin rendirse. Antes eran ~60 s y despues seguia con el servicio sin
+        # levantar: no cargaba las huellas y quedaba en «Lector no detectado».
         self.set_status("Conectando al servicio de huella...")
-        for _ in range(60):
+        t0 = time.monotonic()
+        while self.running:
             st, data = http_json_safe("GET", self.fp + "/status", timeout=3)
-            if data and data.get("ok"): return
+            if data and data.get("ok"):
+                return
+            seg = int(time.monotonic() - t0)
+            self.set_status("Conectando al servicio de huella... (%d s)" % seg)
+            if seg >= 90:
+                self.set_msg("El servicio de huella esta tardando en arrancar. Si sigue asi, reinicie la computadora.")
             time.sleep(1.0)
-        self.set_status("No se pudo contactar el servicio local de huella")
 
     def _refresh_fp_connection(self):
         st, data = http_json_safe("GET", self.fp + "/get_connection", timeout=4)
         if data and data.get("ok"):
             self.fp_connected = bool(data.get("connected"))
             self.fp_device = data.get("device") or ""
+            self.fp_listo = bool(data.get("listo", True))       # servicio < 1.1.2 no lo manda
+            self.fp_detalle = data.get("detalle") or ""
             if self.fp_connected:
                 self.set_led("#22c55e")
                 # #2698: el nombre largo del lector no cabia en la pastilla
@@ -790,6 +803,8 @@ class KioskApp(object):
                 self.set_fp_color("#22c55e")
         else:
             self.fp_connected = False
+            self.fp_listo = True
+            self.fp_detalle = "El servicio de huella no responde: reinicie la computadora si sigue asi"
 
     def _sync_templates(self, initial=False):
         st, data = self._api("GET", "/apis/biometria/kiosko/huellas_listar.php",

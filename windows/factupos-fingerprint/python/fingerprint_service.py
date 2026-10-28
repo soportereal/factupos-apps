@@ -59,8 +59,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # ---------------------------------------------------------------------------
 # Configuracion
 # ---------------------------------------------------------------------------
-VERSION              = "1.1.1"
-BUILD_DATE           = "2026-10-26"
+VERSION              = "1.1.2"
+BUILD_DATE           = "2026-10-28"
 PORT                 = 52181
 # Carpeta base: la del .exe si está compilado con PyInstaller, si no la del .py
 BASE_DIR             = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
@@ -105,6 +105,10 @@ FT_GOOD_FTR          = 0
 # Mensaje de ventana usado para las notificaciones de la adquisicion
 WM_APP               = 0x8000
 WM_FP_NOTIFY         = WM_APP + 7
+# 1.1.2: timer que vuelve a buscar el lector mientras no aparezca (antes se buscaba UNA vez al arrancar)
+WM_TIMER             = 0x0113
+TIMER_LECTOR         = 1
+LECTOR_REVISAR_MS    = 5000
 
 S_OK                 = 0
 
@@ -324,6 +328,10 @@ user32.TranslateMessage.argtypes = [ctypes.POINTER(MSG)]
 user32.DispatchMessageW.restype = LRESULT
 user32.DispatchMessageW.argtypes = [ctypes.POINTER(MSG)]
 user32.PostQuitMessage.argtypes = [ctypes.c_int]
+user32.SetTimer.restype = ctypes.c_size_t
+user32.SetTimer.argtypes = [wintypes.HWND, ctypes.c_size_t, ctypes.c_uint, ctypes.c_void_p]
+user32.DestroyWindow.restype = wintypes.BOOL
+user32.DestroyWindow.argtypes = [wintypes.HWND]
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 
@@ -357,6 +365,14 @@ class DeviceState(object):
         self.enroll_feature_sets  = ENROLL_TOUCHES
 
 DEV = DeviceState()
+
+# 1.1.2: el HTTP arranca ANTES que el SDK; esto le dice al kiosko en que va el arranque
+SDK_ESTADO = {"listo": False, "detalle": "Iniciando el servicio de huella...", "intentos": 0}
+
+def _detalle_lector(conn):
+    if not SDK_ESTADO["listo"]:
+        return SDK_ESTADO["detalle"]
+    return "" if conn else "No se detecta el lector: revise que el cable USB este bien conectado"
 
 # Contextos de FtrEx / Match + lock que serializa su uso
 SDK_LOCK = threading.Lock()
@@ -432,6 +448,9 @@ def _wndproc(hwnd, msg, wparam, lparam):
                 log("Lector RECONECTADO")
             elif ev == WN_OPERATION_STOPPED:
                 log("Adquisicion detenida")
+            return 0
+        if msg == WM_TIMER and int(wparam) == TIMER_LECTOR:
+            _revisar_lector()
             return 0
     except Exception:
         log("Excepcion en WNDPROC:\n" + traceback.format_exc())
@@ -515,25 +534,29 @@ def init_sdk():
     create_acquisition_window_and_start()
 
 
-def refresh_device_info():
+def refresh_device_info(callado=False):
+    """Busca el lector. callado=True (el timer cada 5 s): solo deja log si cambia el estado."""
+    antes = DEV.device_connected
     count = ctypes.c_ulong(0)
     arr   = ctypes.POINTER(GUID)()
     hr = dpfp_dll.DPFPEnumerateDevices(ctypes.byref(count), ctypes.byref(arr))
     if not hr_ok(hr):
         with DEV.lock:
             DEV.device_connected = False
-        log("DPFPEnumerateDevices fallo: 0x%08X" % (hr & 0xFFFFFFFF))
-        return
+        if not callado or antes:
+            log("DPFPEnumerateDevices fallo: 0x%08X" % (hr & 0xFFFFFFFF))
+        return False
     n = count.value
     if n == 0:
         with DEV.lock:
             DEV.device_connected = False
             DEV.device_serial = ""
             DEV.device_product = ""
-        log("No hay lectores conectados")
+        if not callado or antes:
+            log("No hay lectores conectados")
         if arr:
             dpfp_dll.DPFPBufferFree(arr)
-        return
+        return False
     first = arr[0]
     info = DP_DEVICE_INFO()
     serial = ""
@@ -552,6 +575,21 @@ def refresh_device_info():
         DEV.device_product = product
     log("Lector detectado: %s  serial=%s  (%d lector/es)" % (product, serial, n))
     dpfp_dll.DPFPBufferFree(arr)
+    return True
+
+
+def _revisar_lector():
+    """Timer del message loop (1.1.2). Si el lector no estaba al arrancar (DpHostW recien levantado,
+       USB que tarda en enumerar) se quedaba 'no detectado' hasta reiniciar la PC. Ahora se vuelve a
+       buscar cada 5 s y, cuando aparece, se reinicia la adquisicion para que le lleguen los eventos."""
+    if DEV.device_connected:
+        return
+    if refresh_device_info(callado=True):
+        log("El lector aparecio: se reinicia la adquisicion")
+        try:
+            _reiniciar_adquisicion()
+        except Exception:
+            log("No se pudo reiniciar la adquisicion:\n" + traceback.format_exc())
 
 
 def create_acquisition_window_and_start():
@@ -581,8 +619,11 @@ def create_acquisition_window_and_start():
         raise SdkUnavailable("CreateWindowExW fallo: %d" % ctypes.get_last_error())
     DEV.hwnd = hwnd
     log("Ventana msg-only creada: 0x%X" % (hwnd & 0xFFFFFFFFFFFFFFFF))
+    _iniciar_adquisicion()
 
-    # 2) crear adquisicion. Orden de preferencia: HIGH (recibe eventos SIEMPRE, sin importar el foco)
+
+def _iniciar_adquisicion():
+    # Crear adquisicion. Orden de preferencia: HIGH (recibe eventos SIEMPRE, sin importar el foco)
     #    -> LOW (tampoco depende del foco; sólo cede ante un suscriptor de mayor prioridad)
     #    -> NORMAL (ULTIMO recurso: SOLO recibe eventos en primer plano = vuelve el bug del foco).
     #    HIGH suele requerir ejecutar como Administrador, o que no haya otro agente DigitalPersona usando
@@ -591,7 +632,7 @@ def create_acquisition_window_and_start():
     chosen = None
     for prio_val, prio_name in ((DP_PRIORITY_HIGH, "HIGH"), (DP_PRIORITY_LOW, "LOW"), (DP_PRIORITY_NORMAL, "NORMAL")):
         hr = dpfp_dll.DPFPCreateAcquisition(prio_val, ctypes.byref(GUID_NULL), DP_SAMPLE_TYPE_IMAGE,
-                                            hwnd, WM_FP_NOTIFY, ctypes.byref(hop))
+                                            DEV.hwnd, WM_FP_NOTIFY, ctypes.byref(hop))
         if hr_ok(hr):
             chosen = prio_name
             break
@@ -609,6 +650,17 @@ def create_acquisition_window_and_start():
     log("Adquisicion iniciada (prioridad %s, hOp=%d)%s" % (
         chosen, hop.value,
         "  ⚠ NORMAL = sólo funciona con la ventana del kiosko en primer plano (bug de foco)." if chosen == "NORMAL" else ""))
+
+
+def _reiniciar_adquisicion():
+    if DEV.hop:
+        try:
+            dpfp_dll.DPFPStopAcquisition(DEV.hop)
+            dpfp_dll.DPFPDestroyAcquisition(DEV.hop)
+        except Exception:
+            pass
+        DEV.hop = None
+    _iniciar_adquisicion()
 
 
 def shutdown_sdk():
@@ -632,6 +684,23 @@ def shutdown_sdk():
         dpfp_dll.DPFPTerm()
     except Exception:
         pass
+
+
+def _sdk_reset():
+    """Deja el SDK como antes de init_sdk() para poder reintentar (1.1.2)."""
+    shutdown_sdk()
+    try:
+        if DEV.hwnd:
+            user32.DestroyWindow(DEV.hwnd)
+    except Exception:
+        pass
+    DEV.hwnd = None
+    DEV.hop = None
+    DEV.acq_priority = None
+    FX_CTX.value = None
+    MC_CTX.value = None
+    with DEV.lock:
+        DEV.device_connected = False
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +1028,9 @@ class Handler(BaseHTTPRequestHandler):
                     "acq_priority": DEV.acq_priority,
                     "sdk_loaded": dpfp_dll is not None,
                     "ev_counts": {(_EV_NAMES.get(k, str(k))): v for k, v in DEV.ev_counts.items()},
+                    "listo": SDK_ESTADO["listo"],
+                    "detalle": _detalle_lector(conn),
+                    "intentos_sdk": SDK_ESTADO["intentos"],
                 })
             elif path == "/get_connection":
                 with DEV.lock:
@@ -972,6 +1044,8 @@ class Handler(BaseHTTPRequestHandler):
                     "device_id": serial,
                     "enroll_stages": DEV.enroll_feature_sets,
                     "matching": "minutiae",
+                    "listo": SDK_ESTADO["listo"],
+                    "detalle": _detalle_lector(conn),
                 })
             elif path == "/prints":
                 self._send_json({"ok": True, "users": prints_summary()})
@@ -1185,46 +1259,60 @@ def main():
     except Exception:
         pass
 
-    args = set(a.lower() for a in sys.argv[1:])
-    if "--no-cleanup" not in args:
-        _liberar_lector()
-    if "--no-kiosk" not in args:
-        _lanzar_kiosko()
-
-    load_all_templates()
-
-    try:
-        init_sdk()
-    except SdkUnavailable as e:
-        log("ERROR inicializando el SDK DigitalPersona: %s" % e)
-        log("Verifica: (1) el RTE del 'DigitalPersona One Touch SDK' instalado, "
-            "(2) el servicio 'DigitalPersona ... (DpHostW)' corriendo, "
-            "(3) el lector U.are.U 4500 conectado, "
-            "(4) que Python y el RTE sean de la misma arquitectura (32/64 bits).")
-        # seguimos levantando el HTTP igual para que /status reporte el error
-    except Exception:
-        log("ERROR inesperado en init_sdk:\n" + traceback.format_exc())
-
-    # HTTP en hilo daemon
+    # 1.1.2: el HTTP va PRIMERO. Antes arrancaba al final (despues de la limpieza y del SDK, que pueden
+    # tardar mas de un minuto) y el kiosko se quedaba en «Conectando al servicio de huella...».
     t = threading.Thread(target=run_http_server, name="http", daemon=True)
     t.start()
 
+    args = set(a.lower() for a in sys.argv[1:])
+    if "--no-kiosk" not in args:
+        _lanzar_kiosko()
+    if "--no-cleanup" not in args:
+        SDK_ESTADO["detalle"] = "Preparando el lector..."
+        _liberar_lector()
+
+    load_all_templates()
+
+    # 1.1.2: el SDK se reintenta hasta que levante. Antes, si DPFPInit fallaba (DpHostW recien
+    # arrancado, Windows todavia iniciando) el lector quedaba «no detectado» hasta reiniciar la PC.
+    while True:
+        SDK_ESTADO["intentos"] += 1
+        try:
+            init_sdk()
+            break
+        except SdkUnavailable as e:
+            if SDK_ESTADO["intentos"] == 1:
+                log("ERROR inicializando el SDK DigitalPersona: %s" % e)
+                log("Verifica: (1) el RTE del 'DigitalPersona One Touch SDK' instalado, "
+                    "(2) el servicio 'DigitalPersona ... (DpHostW)' corriendo, "
+                    "(3) el lector U.are.U 4500 conectado, "
+                    "(4) que Python y el RTE sean de la misma arquitectura (32/64 bits).")
+            else:
+                log("SDK sigue sin levantar (intento %d): %s" % (SDK_ESTADO["intentos"], str(e).splitlines()[0]))
+            SDK_ESTADO["detalle"] = ("Falta el controlador del lector (DigitalPersona): avise a Soporte Real"
+                                     if dpfp_dll is None else "Esperando el controlador del lector (DigitalPersona)...")
+        except Exception:
+            log("ERROR inesperado en init_sdk (intento %d):\n%s" % (SDK_ESTADO["intentos"], traceback.format_exc()))
+            SDK_ESTADO["detalle"] = "Esperando el controlador del lector (DigitalPersona)..."
+        _sdk_reset()
+        time.sleep(5 if SDK_ESTADO["intentos"] < 12 else 30)
+
+    SDK_ESTADO["listo"] = True
+    if SDK_ESTADO["intentos"] > 1:
+        log("SDK levantado en el intento %d" % SDK_ESTADO["intentos"])
+    if not user32.SetTimer(DEV.hwnd, TIMER_LECTOR, LECTOR_REVISAR_MS, None):
+        log("SetTimer fallo: %d (no se volvera a buscar el lector solo)" % ctypes.get_last_error())
+
     # message loop en el hilo principal (necesario para recibir las notificaciones)
-    if DEV.hwnd:
-        log("Entrando al message loop. Cierra la ventana/proceso para detener.")
-        msg = MSG()
-        while True:
-            r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-            if r == 0 or r == -1:
-                break
-            user32.TranslateMessage(ctypes.byref(msg))
-            user32.DispatchMessageW(ctypes.byref(msg))
-        log("Message loop terminado.")
-    else:
-        # sin ventana (SDK no disponible): solo mantener el HTTP vivo
-        log("Sin ventana de adquisicion (SDK no disponible). El HTTP sigue activo para /status.")
-        while True:
-            time.sleep(3600)
+    log("Entrando al message loop. Cierra la ventana/proceso para detener.")
+    msg = MSG()
+    while True:
+        r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+        if r == 0 or r == -1:
+            break
+        user32.TranslateMessage(ctypes.byref(msg))
+        user32.DispatchMessageW(ctypes.byref(msg))
+    log("Message loop terminado.")
 
     shutdown_sdk()
 
