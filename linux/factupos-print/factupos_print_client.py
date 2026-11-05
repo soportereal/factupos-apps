@@ -187,7 +187,7 @@ except Exception as _e:
 
 # VERSION por plataforma (canales independientes): en Linux la app consulta su propio
 # archivo (print_client_version_linux.json en invefacon); en Windows lo anuncia el WS.
-VERSION = ("4.72" if IS_LINUX else "4.65")  # 4.72(linux)/4.65(win): #3226 sin conexion al servidor de impresion, la app consulta soportereal.com/api/ping.php (una vez por minuto como mucho) y la ventana dice "Sin internet en este equipo" o "Hay internet, pero no llega al servidor de impresion" en lugar de solo "Sin conexion". 4.71(linux)/4.64(win): #2886 AL ABRIR avisa su version a soportereal.com/api/apps/version.php (equipo_id = machine-id / MachineGuid, nombre = clientId, empresa con mas impresoras). Lo guarda dbcontrol.app_instalada por el API del .10 y se ve en el panel: Monitoreo > Control de versiones de apps (AD-VAP-001). Solo al abrir, en segundo plano; si falla no pasa nada. 4.70(linux)/4.63(win): #2886 encabezado NEGRO (el fondo del logo de FactuPOS IA) con texto blanco/gris claro y una linea verde agua (color del cubo) debajo. 4.69(linux)/4.62(win): #2886 ICONOS (y se quita el boton "Asistente IA" de la 4.68/4.61, que no era lo pedido). 4.68(linux)/4.61(win) = boton Asistente IA (publicada y reemplazada el mismo dia). La barra de tareas, la bandeja, el titulo, el .exe y el menu usan un icono de IMPRESORA (antes el cuadro verde con la F); arriba a la izquierda de la ventana va el logo de FactuPOS IA (el de la app web, pwa-icons). Las imagenes van EMBEBIDAS en el .py (LOGO_48_B64 / ICONO_32_B64 / ICONO_128_B64) porque el auto-update de Linux solo cambia el .py. 4.67(linux)/4.60(win): #2886 VENTANA PRINCIPAL REDISEÑADA (solo interfaz, la impresion no cambia). Bajo la version dice si esta AL DIA ("✓ Ultima version · hh:mm" / "Actualizando a vX" / "No se pudo revisar"), con el estado que el chequeo deja en PrintQueueClient.estado_version. Contadores en tarjetas (Impresos / Errores / Impresoras), tabla en tarjeta con filas alternas y mensaje cuando no hay impresoras, "+ Agregar impresora" en verde y "Quitar" en rojo aparte; Editar/Probar/Limpiar/Quitar grises hasta marcar una fila (doble clic = Editar). Registro abajo empacado ANTES que la tabla: en pantallas chicas se achica la tabla, no los botones. Centrado con el tamaño real (restaba 440 fijos y quedaba corrida). Sin emojis fuera del BMP (Tk viejo de Windows se cae). 4.66(linux)/4.59(win): #2768 DISEÑO del PDF de la empresa (Configuracion > Preferencias > Diseño de factura / de cotizacion). En el JSON del 005 el servidor manda ademas `pdf_b64` = el PDF ya armado con el diseño escogido (con ORIGINAL/COPIA adentro): la app lo imprime por el MISMO camino silencioso del 005 (SumatraPDF / lp), sacado a _imprimir_pdf_silencioso(). Si no viene o no es un PDF, sigue con el 005 de siempre. Una app vieja ignora el campo: nunca imprime basura. 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
+VERSION = ("4.73" if IS_LINUX else "4.66")  # 4.73(linux)/4.66(win): #1995 BASCULA / ROMANA por puerto serie (Rice Lake 480 Legend Plus en modo stream, trama <STX><signo><peso7><L|K><G|N><estado>; parser generico de respaldo). Hilo propio que lee el COM sin parar y guarda la ultima lectura; se reintenta cada 5 s y NUNCA tumba la impresion. Lectura con mas de vigenciaMs (2000) no es valida. Modo SIMULADOR. Ultimas 50 tramas crudas. Boton "Bascula" en el encabezado: puerto/baudios/bits/paridad/parada/formato/vigencia, Guardar en caliente, Probar sin guardar, peso grande en vivo. Puerto local 9302: GET /bascula (una lectura) · GET /bascula/vivo (text/event-stream: al cambiar, max 5/s, latido 1 s) · GET /bascula/diag. Windows: pyserial en requirements-build. 4.72(linux)/4.65(win): #3226 sin conexion al servidor de impresion, la app consulta soportereal.com/api/ping.php (una vez por minuto como mucho) y la ventana dice "Sin internet en este equipo" o "Hay internet, pero no llega al servidor de impresion" en lugar de solo "Sin conexion". 4.71(linux)/4.64(win): #2886 AL ABRIR avisa su version a soportereal.com/api/apps/version.php (equipo_id = machine-id / MachineGuid, nombre = clientId, empresa con mas impresoras). Lo guarda dbcontrol.app_instalada por el API del .10 y se ve en el panel: Monitoreo > Control de versiones de apps (AD-VAP-001). Solo al abrir, en segundo plano; si falla no pasa nada. 4.70(linux)/4.63(win): #2886 encabezado NEGRO (el fondo del logo de FactuPOS IA) con texto blanco/gris claro y una linea verde agua (color del cubo) debajo. 4.69(linux)/4.62(win): #2886 ICONOS (y se quita el boton "Asistente IA" de la 4.68/4.61, que no era lo pedido). 4.68(linux)/4.61(win) = boton Asistente IA (publicada y reemplazada el mismo dia). La barra de tareas, la bandeja, el titulo, el .exe y el menu usan un icono de IMPRESORA (antes el cuadro verde con la F); arriba a la izquierda de la ventana va el logo de FactuPOS IA (el de la app web, pwa-icons). Las imagenes van EMBEBIDAS en el .py (LOGO_48_B64 / ICONO_32_B64 / ICONO_128_B64) porque el auto-update de Linux solo cambia el .py. 4.67(linux)/4.60(win): #2886 VENTANA PRINCIPAL REDISEÑADA (solo interfaz, la impresion no cambia). Bajo la version dice si esta AL DIA ("✓ Ultima version · hh:mm" / "Actualizando a vX" / "No se pudo revisar"), con el estado que el chequeo deja en PrintQueueClient.estado_version. Contadores en tarjetas (Impresos / Errores / Impresoras), tabla en tarjeta con filas alternas y mensaje cuando no hay impresoras, "+ Agregar impresora" en verde y "Quitar" en rojo aparte; Editar/Probar/Limpiar/Quitar grises hasta marcar una fila (doble clic = Editar). Registro abajo empacado ANTES que la tabla: en pantallas chicas se achica la tabla, no los botones. Centrado con el tamaño real (restaba 440 fijos y quedaba corrida). Sin emojis fuera del BMP (Tk viejo de Windows se cae). 4.66(linux)/4.59(win): #2768 DISEÑO del PDF de la empresa (Configuracion > Preferencias > Diseño de factura / de cotizacion). En el JSON del 005 el servidor manda ademas `pdf_b64` = el PDF ya armado con el diseño escogido (con ORIGINAL/COPIA adentro): la app lo imprime por el MISMO camino silencioso del 005 (SumatraPDF / lp), sacado a _imprimir_pdf_silencioso(). Si no viene o no es un PDF, sigue con el 005 de siempre. Una app vieja ignora el campo: nunca imprime basura. 4.65(linux)/4.58(win): #1995 GET /peso?url=http://<IP privada>/ruta en el puerto local 9302 = PUENTE para «Leer peso»: la pagina no puede leer una romana de la red (sin CORS, y no hay clave para ponerselo) y la app si. Solo http, solo IPv4 privada (ni internet ni 127.x), solo GET, sin redirecciones, 5 s, 64 KB, mismo control de origen que /print. /ping anuncia peso:true. 4.57(win): #1986 el auto-update bajaba SIEMPRE el .exe de 64 bits (un solo downloadUrl) y en una PC de 32 bits el programa quedaba reemplazado por uno que no arranca ("se actualiza y se cierra"). Ahora elige el .exe segun la arquitectura de WINDOWS y revisa el ejecutable descargado antes de reemplazarse. Linux sin cambios. 4.64(linux)/4.56(win): #1905 tambien en Windows: el formulario frena una ruta de Linux (/dev/...) en un puerto directo y deja LPTx/COMx en mayuscula sin ":"; el error de puerto inexistente (errno 2 o 22 en Windows) dice que hacer. Linux sin cambio de comportamiento. 4.63(linux): #1905 dispositivo directo escrito en MAYUSCULAS (/DEV/USB/LP0) no existe en Linux: por la nube salia igual porque tomaba otro perfil de la cola, por el puerto local sin internet fallaba. normalizar_dispositivo() usa la minuscula si la ruta tal cual no existe; el formulario la guarda en minuscula y avisa si el dispositivo no existe; el error ahora dice que hacer. Windows sin cambios (LPT/COM no distinguen mayusculas). 4.62(linux)/4.55(win): el puerto local 9302 no aceptaba paginas de invefacon.net (dominio de entrada por Kolbi, ver guardian_enlace.js): un cliente que entraba por ahi no podia imprimir sin internet. Se agrega a PUERTO_LOCAL_DOMINIOS; Android 3.9.6 usa la misma lista y el mismo puerto (dueño: «que los 3 escuchen el mismo puerto»). 4.61(linux)/4.54(win): PUERTO LOCAL 127.0.0.1:9302 (#1778, FactuSuper). Regla del dueño: la unica parte que necesita internet es mandar la venta a procesar; imprimir tiene que salir igual sin internet. La web arma el documento en el equipo y lo entrega a la app por 127.0.0.1:9302 (GET /ping, POST /print {queue, data base64|text, empresa?, jobId?}); sale por el MISMO imprimir_trabajo() que los trabajos de la nube (separado de _handle_print_job, que ahora solo hace el ACK), con la impresora, corte, cajon y letra de esa cola. Solo 127.0.0.1 (desde la red no se alcanza) y solo paginas de factupos.com/soportereal.com/invefacon.com/factupos.local (CORS + Private-Network); jobId repetido no reimprime; un trabajo a la vez (IMPRESION_LOCK) entre nube y puerto local. 9302 y no 8765: el 8765 es del Bridge. Si el puerto esta ocupado la app sigue por la nube. 4.60(linux)/4.53(win): #760 (Francisco Aguero, ferrebribri) IMPRESION QUE SE CORTA SOLA. Una matricial Epson tiene el buffer de entrada chico: si se le entrega un documento largo de un solo write, imprime hasta donde le alcanzo y el resto SE PIERDE. No da error — el trabajo sale como "impreso" y el papel termina a mitad. Se vio con una proforma de 19 lineas (~90 renglones): salieron TODAS las lineas y se corto justo antes de los totales. El envio en trozos con pausa ya existia pero SOLO para termicas (print_raw_thermal); las matriciales seguian yendo de un tiro. Ahora el troceo es UNO SOLO (_escribir_en_trozos) y lo usan print_raw (RAW de Windows) y print_raw_virtual_port (LPTx / /dev/usb/lpX), que es el camino sin spooler y por lo tanto el que de verdad pierde bytes. 🔑 El flush va DENTRO del bucle: sin el, Python junta los trozos en su propio buffer y la pausa no sirve de nada. Se puede afinar POR IMPRESORA con chunkSize/chunkDelay en el perfil, sin tocar el programa. Linux por CUPS (lp) no cambia: ahi el control de flujo lo hace el spooler. 4.59(linux): ventana mas ancha. La tabla de impresoras cortaba "Impresora" y "Modo/Opciones" — justo las dos que uno mira para saber por donde sale cada cola, y peor desde 4.58 que la columna de impresora lleva el transporte adelante ("Red · 192.168.1.50:9100"). Ancho 880->1160 y columnas con minwidth+stretch. El alto se limita al de la PANTALLA (min(800, alto-120)): en cajas de 1366x768 una ventana de 800 dejaba los botones fuera del monitor, sin forma de llegarles. Mismo cuidado en el formulario de impresora. 4.58(linux): PARIDAD DE TRANSPORTES CON ANDROID. Cada impresora ahora tiene `transport` y el formulario cambia los campos segun cual se elija, igual que el FactuPOS Print de Android. NUEVOS: **ip** (socket 9100, con tope duro de 20s en hilo aparte porque una impresora de red puede aceptar la conexion y colgarse -> congelaria toda la cola; boton "Probar conexion" antes de guardar), **serial** de verdad con pyserial fijando baudios 8N1 (antes se abria /dev/ttyUSB0 como archivo y se heredaba la velocidad del puerto = simbolos raros), **bluetooth** por RFCOMM con el socket NATIVO de Python (AF_BLUETOOTH, sin pybluez; envio en chunks de 256 como en Android). USB ya funcionaba via CUPS o /dev/usb/lp0. `despachar_raw()` es el UNICO punto de salida (equivale a PrinterManager.printBytes de Android) y "Probar" usa ese mismo camino. Migracion automatica: los perfiles de campo deducen su transport y **siguen imprimiendo igual** (un serial migrado sin baudios usa el metodo viejo a proposito). Agregar y Editar eran 354 lineas calcadas -> un solo `_dialogo_impresora`. Las filas de la tabla ahora se identifican por INDICE y no comparando textos (Quitar borraba TODOS los perfiles que coincidieran en cola+empresa+impresora). 4.57(linux): INSTALACION a prueba de balas. (1) config.json y el log ya no matan el arranque: si la carpeta de la app no es escribible se cae a ~/.config/factupos-print (antes el FileHandler del log reventaba a nivel de modulo, ANTES de la ventana -> "instale y no abre / solo con sudo", sin proceso ni mensaje porque el .desktop va con Terminal=false). (2) --hidden por fin SE LEE: oculta solo desde el autostart; abierta del menu se VE (antes se ocultaba siempre y en GNOME sin AppIndicator quedaba inalcanzable). (3) el .deb trae /opt/factupos-print ya en 0777 y con icono de escritorio, asi no depende de que el postinst corra. 4.56(linux)/4.52(win): boton "Limpiar cola" en MainWindow — cancela los trabajos pegados en el spooler del equipo (win32print JOB_CONTROL_DELETE / CUPS `cancel -a`) Y borra del servidor los jobs 'queued' de esa cola (POST /job-delete con {empresa,queue}, rama NUEVA en server.js de la .17). Hay que vaciar las DOS: si solo se limpia el spooler, el server re-entrega los pendientes al reconectar (flushPendingJobs); si solo se limpia el server, lo ya spooleado igual sale por la impresora. Las impresoras por puerto virtual (/dev/usb*, COM*) no pasan por el spooler → solo se limpia la del server. 4.55(linux): PRUEBA de auto-update (sin cambios funcionales). 4.54(linux)/4.51(win): factura FIPVIVI005 — linea "Detalle:" (instrucciones de entrega) ahora 12pt y TODA en negrita (estilo DetalleGrande; antes N8=8pt con solo el rotulo en negrita). Pedido reporte #111 (Cpinto). 4.53(linux)/4.50(win): auto-update SOLO si el server reporta version MAYOR (antes era '!=', que hacia downgrade/loop si el manifest quedaba atras). Nuevo helper _version_gt compara por componentes numericos. 4.49: auto-update en LINUX — el .deb instala el .py crudo (no frozen) asi que el flujo Windows (.exe+updater.bat) no aplicaba; ahora en Linux se baja el .py de factupos.com/downloads, se valida version+integridad, se reemplaza en sitio (/opt es 777, sin sudo) y el proceso se re-lanza desacoplado. El server WS no cambia (anuncia latestVersion del manifest); en Linux se ignora el downloadUrl del .exe. AL PUBLICAR: subir el .py a downloads/ en la MISMA version del manifest. 4.48: factura FIPVIVI005 — la etiqueta ORIGINAL/COPIA la decide el SERVIDOR (PHP) y manda un trabajo por hoja con json 'copia_etiqueta' (vacio = sin etiqueta; respeta el parametro 394). La app ya no itera copias ni rotula: imprime lo que le llega. Compat con web vieja (json 'copias' -> itera/rotula). 4.47: formato factura FIPVIVI005 — numeracion "Pagina X de Y", Codigo antes de Cabys, letra mas grande en detalle, "Recibido Conforme"/legal/ORIGINAL no se parte entre hojas (KeepTogether). 4.46: instalador Windows (Inno Setup) — autostart oculto + auto-update sin UAC (icacls Modify); se quitaron los checkboxes Auto-ocultar/Iniciar con el sistema (los maneja el instalador); arranque oculto con flag --hidden. 4.45: paridad con Linux — boton Probar (ticket A/B + cajon + corte), tipo de letra Epson A/B por impresora, look navy + version grande, letra grande. Conserva fix hashlib + barcode128 GDI propios de Windows.
 def _version_gt(remote, local):
     """True solo si la version 'remote' (la que reporta el server) es ESTRICTAMENTE
     MAYOR que 'local' (la del cliente). Compara por componentes numericos
@@ -3413,6 +3413,283 @@ del "%~f0"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Báscula / romana por puerto serie (#1995, Rice Lake 480 Legend Plus)
+# ═══════════════════════════════════════════════════════════════════════════
+# Un hilo lee el puerto COM SIN PARAR (el indicador en modo stream manda varias tramas por
+# segundo) y deja la ÚLTIMA lectura en memoria. La web la pide por el puerto local 9302:
+#   GET /bascula        → una lectura {tipo:"peso", ok, peso, unidad, modo, estable, valido, ...}
+#   GET /bascula/vivo   → peso EN VIVO (text/event-stream): solo cuando cambia, máx. 5/s,
+#                         y un latido cada 1 s aunque no cambie.
+#   GET /bascula/diag   → estado, configuración y las últimas 50 tramas crudas.
+# 🔑 La báscula NUNCA tumba la impresión: todo corre en su propio hilo, cualquier error
+# queda en estado='error' y se reintenta cada 5 s.
+BASCULA_SIMULADOR = 'SIMULADOR'
+BASCULA_DEFAULT = {
+    'habilitada': False,
+    'puerto': BASCULA_SIMULADOR,
+    'baudios': 9600,
+    'bits': 8,
+    'paridad': 'none',      # none | even | odd
+    'parada': 1,            # 1 | 2
+    'formato': 'auto',      # auto | ricelake
+    'vigenciaMs': 2000,
+}
+BASCULA_BAUDIOS = (1200, 2400, 4800, 9600, 19200, 38400)
+BASCULA_REINTENTO = 5          # s entre intentos de abrir el puerto
+BASCULA_MAX_POR_SEG = 5        # envíos en vivo por segundo, como mucho
+BASCULA_LATIDO = 1.0           # s
+
+# Trama estándar Rice Lake: <STX><signo><peso 7><L|K><G|N><estado><CR><LF>
+#   estado: espacio = estable · M = movimiento · O = sobrecarga · I = inválido
+_RE_RICELAKE = re.compile(r'^([ \-])([ 0-9.\-]{7})([LK])([GN])([ MOI]?)')
+# Respaldo: primer número + unidad (kg / lb)
+_RE_GENERICO = re.compile(r'(-?\s*\d+(?:[.,]\d+)?)\s*(kg|lb|k|l)?', re.IGNORECASE)
+
+
+def bascula_config(config):
+    """La sección 'bascula' del config.json con los valores por defecto completados."""
+    cfg = dict(BASCULA_DEFAULT)
+    cfg.update((config or {}).get('bascula') or {})
+    try:
+        cfg['vigenciaMs'] = max(200, int(cfg.get('vigenciaMs') or 2000))
+    except (TypeError, ValueError):
+        cfg['vigenciaMs'] = 2000
+    return cfg
+
+
+def parsear_trama(texto, formato='auto'):
+    """Una línea del indicador → dict de lectura (sin ts/cruda) o None si no se entiende."""
+    s = str(texto or '').replace('\r', '').replace('\n', '')
+    s = s.lstrip('\x02')
+    m = _RE_RICELAKE.match(s)
+    if m:
+        signo, num, uni, modo, est = m.groups()
+        try:
+            peso = float(num.replace(' ', '') or '0')
+        except ValueError:
+            m = None
+        else:
+            if signo == '-':
+                peso = -abs(peso)
+            est = est or ' '
+            return {
+                'peso': peso,
+                'unidad': 'kg' if uni == 'K' else 'lb',
+                'modo': 'bruto' if modo == 'G' else 'neto',
+                'estable': est == ' ',
+                'valido': est not in ('O', 'I'),
+                'sobrecarga': est == 'O',
+                'formato': 'ricelake',
+            }
+    if formato == 'ricelake':
+        return None
+    g = _RE_GENERICO.search(s)
+    if not g:
+        return None
+    try:
+        peso = float(g.group(1).replace(' ', '').replace(',', '.'))
+    except ValueError:
+        return None
+    uni = (g.group(2) or 'kg').lower()
+    resto = s.upper()
+    movimiento = 'M' in resto          # «M» o «MOT» en cualquier parte de la trama
+    return {
+        'peso': peso,
+        'unidad': 'lb' if uni.startswith('l') else 'kg',
+        'modo': 'neto' if re.search(r'\bN(ET)?\b', resto) else 'bruto',
+        'estable': not movimiento,
+        'valido': True,
+        'sobrecarga': False,
+        'formato': 'generico',
+    }
+
+
+def trama_ricelake(peso, unidad='K', modo='G', estado=' '):
+    """Arma una trama Rice Lake (la usa el simulador y las pruebas)."""
+    signo = '-' if peso < 0 else ' '
+    num = str(int(round(abs(peso)))).rjust(7)
+    return f"\x02{signo}{num}{unidad}{modo}{estado}\r\n"
+
+
+class Bascula:
+    """Lee la báscula en un hilo propio y guarda la última lectura."""
+
+    def __init__(self, config, on_log=None):
+        self._cfg = bascula_config(config)
+        self._on_log = on_log
+        self._lock = threading.Lock()
+        self._lectura = None                  # última lectura entendida
+        self._crudas = deque(maxlen=50)       # (ts_ms, texto) para diagnóstico
+        self._gen = 0                         # sube con cada cambio de config
+        self._cambio = threading.Event()
+        self._parar = threading.Event()
+        self._hilo = None
+        self.estado = 'detenido'              # detenido | conectando | conectado | error
+        self.error = ''
+        self._ultimo_error = ''
+
+    def _log(self, msg, level='info'):
+        getattr(log, level)(msg)
+        if self._on_log:
+            self._on_log(f"{datetime.now().strftime('%H:%M:%S')} {msg}")
+
+    # --- ciclo de vida -----------------------------------------------------
+    def iniciar(self):
+        if self._hilo and self._hilo.is_alive():
+            return
+        self._hilo = threading.Thread(target=self._bucle, name='bascula', daemon=True)
+        self._hilo.start()
+
+    def detener(self):
+        self._parar.set()
+        self._cambio.set()
+
+    def aplicar(self, config):
+        """Nueva configuración EN CALIENTE: cierra y reabre el puerto."""
+        with self._lock:
+            self._cfg = bascula_config(config)
+            self._gen += 1
+            self._lectura = None
+        self._cambio.set()
+
+    def config(self):
+        with self._lock:
+            return dict(self._cfg)
+
+    # --- lectura -----------------------------------------------------------
+    def procesar_linea(self, texto):
+        """Una trama recibida (del puerto o del simulador)."""
+        ts = int(time.time() * 1000)
+        cruda = str(texto).replace('\r', '').replace('\n', '')
+        with self._lock:
+            self._crudas.append((ts, cruda))
+            formato = self._cfg.get('formato', 'auto')
+        lec = parsear_trama(cruda, formato)
+        if lec is None:
+            return None
+        lec['ts'] = ts
+        lec['cruda'] = cruda
+        with self._lock:
+            self._lectura = lec
+        return lec
+
+    def lectura(self):
+        """→ mensaje para la web: la lectura vigente o el aviso de que no hay."""
+        with self._lock:
+            lec = dict(self._lectura) if self._lectura else None
+            vigencia = self._cfg['vigenciaMs']
+            habilitada = self._cfg.get('habilitada')
+        if not habilitada:
+            return {'tipo': 'peso', 'ok': False, 'error': 'sin_lectura', 'estado': 'detenido'}
+        if not lec:
+            return {'tipo': 'peso', 'ok': False, 'error': 'sin_lectura', 'estado': self.estado}
+        edad = int(time.time() * 1000) - lec['ts']
+        if edad > vigencia:
+            return {'tipo': 'peso', 'ok': False, 'error': 'sin_lectura', 'estado': self.estado,
+                    'vencida': True, 'edad': edad}
+        lec.pop('formato', None)
+        return dict({'tipo': 'peso', 'ok': True}, **lec, edad=edad)
+
+    def diagnostico(self):
+        with self._lock:
+            crudas = [{'ts': t, 'cruda': c} for t, c in self._crudas]
+            cfg = dict(self._cfg)
+        return {'ok': True, 'estado': self.estado, 'error': self.error, 'config': cfg,
+                'lectura': self.lectura(), 'crudas': crudas}
+
+    # --- hilo --------------------------------------------------------------
+    def _esperar(self, seg):
+        """Duerme, pero despierta si cambió la configuración. → True si hay que reabrir."""
+        hubo = self._cambio.wait(seg)
+        if hubo:
+            self._cambio.clear()
+        return hubo or self._parar.is_set()
+
+    def _bucle(self):
+        while not self._parar.is_set():
+            cfg = self.config()
+            with self._lock:
+                gen = self._gen
+            if not cfg.get('habilitada'):
+                self.estado, self.error = 'detenido', ''
+                self._esperar(3600)
+                continue
+            try:
+                if str(cfg.get('puerto', '')).upper() == BASCULA_SIMULADOR:
+                    self._simulador(gen)
+                else:
+                    self._leer_serial(cfg, gen)
+            except Exception as e:     # nada de acá puede llegar a la impresión
+                if str(e) != self._ultimo_error:   # el mismo error no se repite cada 5 s en Actividad
+                    self._log(f"Báscula: {e} — se reintenta cada {BASCULA_REINTENTO} s", 'warning')
+                self._ultimo_error = str(e)
+                self.estado, self.error = 'error', str(e)
+                self._esperar(BASCULA_REINTENTO)
+            else:
+                self._ultimo_error = ''
+
+    def _vigente(self, gen):
+        with self._lock:
+            return gen == self._gen and not self._parar.is_set()
+
+    def _leer_serial(self, cfg, gen):
+        import serial as _pyserial
+        puerto = str(cfg.get('puerto', '')).split()[0]   # «COM3  (USB-Serial)» → COM3
+        paridad = {'none': _pyserial.PARITY_NONE, 'even': _pyserial.PARITY_EVEN,
+                   'odd': _pyserial.PARITY_ODD}.get(str(cfg.get('paridad', 'none')).lower(),
+                                                     _pyserial.PARITY_NONE)
+        self.estado, self.error = 'conectando', ''
+        sp = _pyserial.Serial(
+            port=puerto, baudrate=int(cfg.get('baudios') or 9600),
+            bytesize=_pyserial.SEVENBITS if int(cfg.get('bits') or 8) == 7 else _pyserial.EIGHTBITS,
+            parity=paridad,
+            stopbits=_pyserial.STOPBITS_TWO if int(cfg.get('parada') or 1) == 2 else _pyserial.STOPBITS_ONE,
+            timeout=0.3)
+        self.estado = 'conectado'
+        self._log(f"Báscula: puerto {puerto} abierto ({cfg.get('baudios')} "
+                  f"{cfg.get('bits')}-{str(cfg.get('paridad'))[0].upper()}-{cfg.get('parada')})", 'info')
+        buf = b''
+        try:
+            while self._vigente(gen):
+                trozo = sp.read(256)
+                if not trozo:
+                    continue
+                buf += trozo
+                partes = re.split(rb'[\r\n]+', buf)
+                buf = partes.pop()          # lo que quedó sin fin de línea
+                if len(buf) > 512:          # basura sin fin de línea: se descarta
+                    buf = b''
+                for p in partes:
+                    if p.strip(b'\x02 '):
+                        self.procesar_linea(p.decode('latin-1'))
+        finally:
+            try:
+                sp.close()
+            except Exception:
+                pass
+
+    def _simulador(self, gen):
+        """Tramas Rice Lake falsas: 0 → sube en movimiento → 1250 kg estable → baja a 0."""
+        self.estado, self.error = 'conectado', ''
+        self._log("Báscula: modo SIMULADOR", 'info')
+        ciclo = [(0, ' ', 2.0), ('sube', 'M', 3.0), (1250, ' ', 4.0), ('baja', 'M', 2.0)]
+        while self._vigente(gen):
+            for objetivo, est, dur in ciclo:
+                pasos = int(dur * 10)
+                for i in range(pasos):
+                    if not self._vigente(gen):
+                        return
+                    if objetivo == 'sube':
+                        peso = 1250 * (i + 1) / pasos
+                    elif objetivo == 'baja':
+                        peso = 1250 * (1 - (i + 1) / pasos)
+                    else:
+                        peso = objetivo
+                    self.procesar_linea(trama_ricelake(peso, 'K', 'G', est))
+                    time.sleep(0.1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Puerto local 127.0.0.1:9302 — imprimir SIN internet (#1778, FactuSuper)
 # ═══════════════════════════════════════════════════════════════════════════
 # La web arma el documento en el equipo y lo entrega acá con la MISMA forma que un trabajo
@@ -3492,13 +3769,15 @@ def leer_equipo_local(url):
 
 
 class PuertoLocal:
-    def __init__(self, obtener_cliente, config, on_log=None):
+    def __init__(self, obtener_cliente, config, on_log=None, bascula=None):
         self._cliente = obtener_cliente          # el cliente se recrea al reconectar
+        self._bascula = bascula                  # #1995 lectura de la romana (puede ser None)
         self._config = config
         self._on_log = on_log
         self._servidor = None
         self._hechos = deque(maxlen=500)         # jobId ya impresos
         self._hechos_lock = threading.Lock()
+        self._detenido = threading.Event()       # corta los /bascula/vivo abiertos al salir
 
     def _log(self, msg, level='info'):
         getattr(log, level)(msg)
@@ -3554,9 +3833,50 @@ class PuertoLocal:
                 self.send_header('Content-Length', '0')
                 self.end_headers()
 
+            def _vivo(self, bas):
+                """#1995 Peso EN VIVO (text/event-stream): manda cuando cambia peso/estable/modo
+                (máx. BASCULA_MAX_POR_SEG por segundo) y un latido cada BASCULA_LATIDO s."""
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache')
+                self._cors()
+                self.end_headers()
+                ultimo_envio, ultima_clave = 0.0, None
+                minimo = 1.0 / BASCULA_MAX_POR_SEG
+                try:
+                    while not dueno._detenido.is_set():
+                        lec = bas.lectura()
+                        clave = (lec.get('ok'), lec.get('peso'), lec.get('estable'), lec.get('modo'),
+                                 lec.get('estado'))
+                        ahora = time.time()
+                        if (clave != ultima_clave and ahora - ultimo_envio >= minimo) or \
+                                ahora - ultimo_envio >= BASCULA_LATIDO:
+                            datos = json.dumps(lec, ensure_ascii=False)
+                            self.wfile.write(f"data: {datos}\n\n".encode('utf-8'))
+                            self.wfile.flush()
+                            ultimo_envio, ultima_clave = ahora, clave
+                        time.sleep(0.05)
+                except Exception:
+                    pass        # la página se cerró: termina este hilo, nada más
+
+            def _rutas_bascula(self, ruta):
+                bas = dueno._bascula
+                if bas is None:
+                    return self._json({'tipo': 'peso', 'ok': False, 'error': 'sin_lectura',
+                                       'estado': 'detenido'}, 503)
+                if ruta == '/bascula':
+                    return self._json(bas.lectura())
+                if ruta == '/bascula/vivo':
+                    return self._vivo(bas)
+                if ruta == '/bascula/diag':
+                    return self._json(bas.diagnostico())
+                return self._json({'ok': False, 'mensaje': 'Ruta no encontrada'}, 404)
+
             def do_GET(self):
                 if self._rechazar_origen():
                     return
+                if self.path.split('?')[0].startswith('/bascula'):
+                    return self._rutas_bascula(self.path.split('?')[0].rstrip('/'))
                 if self.path.split('?')[0] == '/peso':
                     from urllib.parse import parse_qs
                     url = (parse_qs(urlparse(self.path).query).get('url') or [''])[0]
@@ -3567,7 +3887,9 @@ class PuertoLocal:
                 colas = [{'queue': p.get('queueCode', ''), 'empresa': p.get('empresa', ''),
                           'impresora': p.get('windowsPrinter', p.get('printer', ''))}
                          for p in (c.printers if c else [])]
+                bas = dueno._bascula
                 self._json({'ok': True, 'app': 'FactuPOS Print', 'version': VERSION, 'peso': True,
+                            'bascula': bas.estado if bas else 'detenido',
                             'puerto': PUERTO_LOCAL, 'nube': bool(c and c.connected), 'colas': colas})
 
             def do_POST(self):
@@ -3632,6 +3954,7 @@ class PuertoLocal:
         return {'ok': bool(ok), 'mensaje': msg}, (200 if ok else 500)
 
     def detener(self):
+        self._detenido.set()
         if self._servidor:
             try:
                 self._servidor.shutdown()
@@ -4021,7 +4344,11 @@ class MainWindow:
 
         # Puerto local 127.0.0.1:9302: la web imprime directo cuando no hay internet (#1778).
         # Se le pasa CÓMO obtener el cliente, no el cliente: al reconectar se crea otro.
-        self.puerto_local = PuertoLocal(lambda: self.client, config, on_log=self._append_log)
+        # #1995 Báscula: hilo propio, lee el puerto serie sin parar. Si falla, la impresión sigue.
+        self.bascula = Bascula(config, on_log=self._append_log)
+        self.bascula.iniciar()
+        self.puerto_local = PuertoLocal(lambda: self.client, config, on_log=self._append_log,
+                                        bascula=self.bascula)
         self.puerto_local.iniciar()
 
         # Avisar qué versión tiene este equipo (#2886). Solo al abrir, en segundo plano.
@@ -4079,6 +4406,10 @@ class MainWindow:
                                     font=("Segoe UI", 10, "bold"), fg=GRIS_HEAD, bg=NEGRO)
         self.lbl_version.pack(anchor='e')
         btn_config.pack(side='right', padx=6)
+        # #1995 Báscula / romana: configuración y peso en vivo.
+        tk.Button(header, text="Báscula", font=("Segoe UI", 11, "bold"), fg='white', bg=NEGRO,
+                  activebackground=NEGRO_HOVER, activeforeground='white',
+                  bd=0, cursor='hand2', command=self._open_bascula).pack(side='right', padx=6)
         # Línea verde agua (el color del cubo del logo): separa el encabezado
         # negro de la barra clara de abajo.
         tk.Frame(self.root, bg=VERDE_LOGO, height=3).pack(fill='x')
@@ -4919,6 +5250,149 @@ class MainWindow:
         ttk.Button(btn_frame, text="Guardar y Reconectar", command=do_save).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Cancelar", command=dlg.destroy).pack(side='left')
 
+    def _open_bascula(self):
+        """#1995 Configuración de la báscula + peso en vivo + tramas crudas.
+        Guardar = se escribe en config.json y se aplica EN CALIENTE (cierra y reabre el puerto).
+        Probar  = aplica lo del formulario SIN guardar; al cerrar sin guardar vuelve lo guardado."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Báscula / romana")
+        dlg.transient(self.root)
+        dlg.configure(bg=BODY)
+        dlg.geometry(f"+{self.root.winfo_x() + 60}+{self.root.winfo_y() + 40}")
+        cfg = bascula_config(self.config)
+        estado = {'probando': False, 'abierto': True}
+
+        frame = ttk.Frame(dlg, padding=15)
+        frame.pack(fill='both', expand=True)
+
+        v_hab = tk.BooleanVar(value=bool(cfg['habilitada']))
+        ttk.Checkbutton(frame, text="Báscula habilitada en este equipo", variable=v_hab)\
+            .grid(row=0, column=0, columnspan=4, sticky='w', pady=(0, 8))
+
+        def _combo(fila, col, texto, valores, actual, ancho=12, editable=False):
+            ttk.Label(frame, text=texto).grid(row=fila, column=col, sticky='w', pady=3, padx=(0, 6))
+            var = tk.StringVar(value=str(actual))
+            cb = ttk.Combobox(frame, textvariable=var, values=[str(v) for v in valores],
+                              width=ancho, state=('normal' if editable else 'readonly'))
+            cb.grid(row=fila, column=col + 1, sticky='w', pady=3, padx=(0, 14))
+            return var, cb
+
+        puertos = [BASCULA_SIMULADOR] + listar_seriales()
+        v_puerto, cb_puerto = _combo(1, 0, "Puerto:", puertos, cfg['puerto'], 28, editable=True)
+        v_baud, _ = _combo(1, 2, "Baudios:", BASCULA_BAUDIOS, cfg['baudios'])
+        v_bits, _ = _combo(2, 0, "Bits de datos:", (7, 8), cfg['bits'])
+        v_par, _ = _combo(2, 2, "Paridad:", ('none', 'even', 'odd'), cfg['paridad'])
+        v_stop, _ = _combo(3, 0, "Bits de parada:", (1, 2), cfg['parada'])
+        v_fmt, _ = _combo(3, 2, "Formato:", ('auto', 'ricelake'), cfg['formato'])
+        ttk.Label(frame, text="Vigencia (ms):").grid(row=4, column=0, sticky='w', pady=3)
+        v_vig = tk.StringVar(value=str(cfg['vigenciaMs']))
+        ttk.Entry(frame, textvariable=v_vig, width=10).grid(row=4, column=1, sticky='w', pady=3)
+
+        def _refrescar_puertos():
+            cb_puerto['values'] = [BASCULA_SIMULADOR] + listar_seriales()
+        ttk.Button(frame, text="⟳ Buscar puertos", command=_refrescar_puertos)\
+            .grid(row=4, column=2, columnspan=2, sticky='w')
+
+        # Peso grande + estado
+        lbl_peso = tk.Label(frame, text="—", font=("Consolas", 40, "bold"), fg=NAVY, bg=BODY)
+        lbl_peso.grid(row=5, column=0, columnspan=4, pady=(14, 0))
+        lbl_est = tk.Label(frame, text="", font=("Segoe UI", 11, "bold"), bg=BODY)
+        lbl_est.grid(row=6, column=0, columnspan=4)
+        ttk.Label(frame, text="Últimas tramas recibidas (crudas):").grid(
+            row=7, column=0, columnspan=4, sticky='w', pady=(10, 2))
+        txt = scrolledtext.ScrolledText(frame, height=8, width=70, font=("Consolas", 9),
+                                        state='disabled', bg='#0f1d33', fg='#d6e2f0', bd=0)
+        txt.grid(row=8, column=0, columnspan=4, sticky='ew')
+
+        def _leer_form():
+            try:
+                vig = int(v_vig.get().strip())
+            except ValueError:
+                raise ValueError("La vigencia tiene que ser un número de milisegundos.")
+            puerto = v_puerto.get().strip()
+            if not puerto:
+                raise ValueError("Elija el puerto (COMx) o SIMULADOR.")
+            if IS_WINDOWS and puerto.split()[0].startswith('/dev/'):
+                raise ValueError("En Windows el puerto es COM1, COM2… (no /dev/...).")
+            return {'habilitada': bool(v_hab.get()), 'puerto': puerto.split()[0].upper()
+                    if IS_WINDOWS else puerto.split()[0],
+                    'baudios': int(v_baud.get()), 'bits': int(v_bits.get()),
+                    'paridad': v_par.get(), 'parada': int(v_stop.get()),
+                    'formato': v_fmt.get(), 'vigenciaMs': max(200, vig)}
+
+        def _probar():
+            try:
+                nueva = _leer_form()
+            except ValueError as e:
+                return messagebox.showwarning("Báscula", str(e), parent=dlg)
+            nueva['habilitada'] = True
+            estado['probando'] = True
+            self.bascula.aplicar(dict(self.config, bascula=nueva))
+            self._append_log(f"Báscula: probando {nueva['puerto']} (sin guardar)")
+
+        def _guardar():
+            try:
+                nueva = _leer_form()
+            except ValueError as e:
+                return messagebox.showwarning("Báscula", str(e), parent=dlg)
+            self.config['bascula'] = nueva
+            save_config(self.config)
+            estado['probando'] = False
+            self.bascula.aplicar(self.config)
+            self._append_log(f"Báscula: configuración guardada ({nueva['puerto']}"
+                             f"{'' if nueva['habilitada'] else ', deshabilitada'})")
+
+        def _cerrar():
+            estado['abierto'] = False
+            if estado['probando']:           # se probó sin guardar: vuelve lo guardado
+                self.bascula.aplicar(self.config)
+            dlg.destroy()
+
+        botones = ttk.Frame(frame)
+        botones.grid(row=9, column=0, columnspan=4, pady=(12, 0))
+        ttk.Button(botones, text="Guardar", style='Primario.TButton', command=_guardar)\
+            .pack(side='left', padx=5)
+        ttk.Button(botones, text="Probar", command=_probar).pack(side='left', padx=5)
+        ttk.Button(botones, text="Cerrar", command=_cerrar).pack(side='left', padx=5)
+        dlg.protocol("WM_DELETE_WINDOW", _cerrar)
+
+        colores = {'conectado': '#15803d', 'conectando': '#b45309', 'error': '#b91c1c',
+                   'detenido': '#6b7280'}
+        ultimas = {'n': None}
+
+        def _tic():
+            if not estado['abierto']:
+                return
+            d = self.bascula.diagnostico()
+            lec = d['lectura']
+            if lec.get('ok'):
+                lbl_peso.config(text=f"{lec['peso']:g} {lec['unidad']}",
+                                fg=(NAVY if lec['estable'] else '#b45309'))
+                extra = ('ESTABLE' if lec['estable'] else 'EN MOVIMIENTO') + f" · {lec['modo']}"
+                if lec.get('sobrecarga'):
+                    extra = 'SOBRECARGA'
+                elif not lec.get('valido'):
+                    extra = 'LECTURA INVÁLIDA'
+            else:
+                lbl_peso.config(text="—", fg='#6b7280')
+                extra = 'sin lectura' + (' (vencida)' if lec.get('vencida') else '')
+            txt_est = f"Estado: {d['estado']}" + (f" — {d['error']}" if d.get('error') else '')
+            lbl_est.config(text=f"{txt_est}   ·   {extra}", fg=colores.get(d['estado'], '#111'))
+            crudas = d['crudas']
+            clave = (len(crudas), crudas[-1]['ts'] if crudas else 0)
+            if clave != ultimas['n']:
+                ultimas['n'] = clave
+                lineas = [f"{datetime.fromtimestamp(c['ts'] / 1000).strftime('%H:%M:%S.%f')[:-3]}  "
+                          f"{c['cruda'].encode('unicode_escape').decode('ascii')}" for c in crudas]
+                txt.config(state='normal')
+                txt.delete('1.0', 'end')
+                txt.insert('end', '\n'.join(lineas))
+                txt.see('end')
+                txt.config(state='disabled')
+            dlg.after(200, _tic)
+
+        _tic()
+
     # --- System Tray ---
     def _create_tray_icon(self):
         """Crear ícono de bandeja del sistema."""
@@ -4991,6 +5465,8 @@ class MainWindow:
     def _quit_app(self):
         """Cerrar todo: cliente WS, bandeja e interfaz."""
         self.client.stop()
+        if getattr(self, 'bascula', None):
+            self.bascula.detener()
         if getattr(self, 'puerto_local', None):
             self.puerto_local.detener()
         if self.tray_icon:

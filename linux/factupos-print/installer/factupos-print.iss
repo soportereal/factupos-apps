@@ -26,7 +26,7 @@
 
 #define MyAppName "FactuPOS Print"
 #define MyAppId "factupos-print"
-#define MyAppVersion "4.64"
+#define MyAppVersion "4.66"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "factupos-print.exe"
