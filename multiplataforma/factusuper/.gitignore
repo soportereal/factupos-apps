@@ -49,3 +49,5 @@ app.*.map.json
 
 # Casos A/B: se generan con tool/ab_js.js desde el JS del servidor (no van al repo público)
 test/ab_casos.json
+installer/app/
+installer/Output/
