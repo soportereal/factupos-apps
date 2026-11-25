@@ -1,0 +1,8 @@
+[Unit]
+Description=FactuPOS Apps - %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=1800
+ExecStart=/usr/lib/factupos-apps/op.sh %i

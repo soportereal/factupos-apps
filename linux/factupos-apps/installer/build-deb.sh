@@ -30,8 +30,20 @@ install -d "$STAGE/etc/polkit-1/rules.d"
 install -m644 "$HERE/installer/debian/50-factupos-apps.rules" \
     "$STAGE/etc/polkit-1/rules.d/50-factupos-apps.rules"
 
+# Lo que la Tienda hace como root (#3037): instalar/quitar apps y navegadores sin clave
+install -m755 "$HERE/op.sh" "$STAGE/usr/lib/$PKG/op.sh"
+install -d "$STAGE/lib/systemd/system"
+install -m644 "$HERE/$PKG-op@.service" "$STAGE/lib/systemd/system/$PKG-op@.service"
+install -m644 "$HERE/installer/debian/51-factupos-apps-op.rules" \
+    "$STAGE/etc/polkit-1/rules.d/51-factupos-apps-op.rules"
+
 install -d "$STAGE/DEBIAN"
 sed "s/__VERSION__/$VERSION/" "$HERE/installer/debian/control" > "$STAGE/DEBIAN/control"
+
+# Actualización propia: revisor + temporizador de ESTA app (#2698). No depende de
+# FactuPOS Apps ni del Actualizador.
+source "$HERE/../_comun/autoupdate.sh"
+agregar_autoupdate "$STAGE" "$PKG"
 
 chmod 755 "$STAGE"
 mkdir -p "$OUT"

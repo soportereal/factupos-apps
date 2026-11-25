@@ -1,0 +1,11 @@
+// FactuPOS OS (#3037): la Tienda FactuPOS Apps instala, actualiza y quita apps FactuPOS y
+// navegadores (Chrome/Brave) SIN contraseña, por su servicio factupos-apps-op@<acción>.
+// Solo arrancar ESAS unidades; qué paquete se acepta lo decide /usr/lib/factupos-apps/op.sh.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("verb") === "start" &&
+        /^factupos-apps-op@(todo|(instalar|quitar)-[a-z0-9][a-z0-9.-]*)\.service$/.test(action.lookup("unit") || "") &&
+        (subject.local || subject.isInGroup("sudo"))) {
+        return polkit.Result.YES;
+    }
+});
