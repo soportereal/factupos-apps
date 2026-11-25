@@ -59,6 +59,7 @@ const escenarios = [];
         if (azar() < 0.3) params[57] = '1';
         for (const n of [153, 154, 155, 156, 157, 158]) if (azar() < 0.2) params[n] = '1';
         if (azar() < 0.3) params[16] = String(elegir([5, 15, 40]));
+        if (azar() < 0.4) params[395] = elegir(['5,10,15', ' 2.5 , 10,10, 99.999,abc', '', '0,100,50', '1,2,3,4,5,6,7,8,9,10,11,12,13', '-5,7.125']);
         const cliente = elegir([
             null,
             { codigo: 'C1', nombre: 'Juan', tipo_precio: elegir([0, 2, 3, 5]), descuento: elegir([0, 0, 8, 25]), exento: elegir([0, 0, 1]), cedula: '101110111', tipo_cedula: '01' },
@@ -66,7 +67,7 @@ const escenarios = [];
         E = {
             params, articulos, precios: articulos.flatMap(preciosDe), tc: { USD: elegir([0, 512.33, 498.1]) },
             permisos: [elegir(['', '023']), elegir(['', '006'])].filter(Boolean),
-            estacion: { id: 7, nombre: 'CAJA 3', tipo_precio: elegir([1, 2, 6]), oficina: '002', caja: '3', bodega: '01', impresion: { contado: { ruta: elegir([2, 4]), impresora: 'EPSON', formato: 'FIPVIVI002', ancho: 80 } } },
+            estacion: { id: 7, nombre: 'CAJA 3', tipo_precio: elegir([1, 2, 6]), oficina: '002', caja: '3', bodega: '01', impresion: { contado: { ruta: elegir([2, 4]), impresora: 'EPSON', formato: 'FIPVIVI002', ancho: 80 }, credito: { ruta: elegir([3, 4]), impresora: '302', formato: 'FIPVCRE001', ancho: 32 } } },
             clientes: cliente ? [cliente] : [],
         };
         ctx.window.FS_USUARIO = '00006';
@@ -79,11 +80,28 @@ const escenarios = [];
             const r = await FSDoc.agregar(a, cant);
             pasos.push({ articulo: a.codigo, cantidad: cant, ok: !!r.ok, motivo: r.motivo || '', avisos: r.avisos || [] });
         }
+        // Barra: nivel de precio y tarifa de IVA sobre líneas al azar (FSDoc.cambiarNivel / cambiarTarifa).
+        const barra = [];
+        for (let j = 0; j < Math.floor(azar() * 3); j++) {
+            if (!FSDoc.doc.lineas.length) break;
+            const i = Math.floor(azar() * FSDoc.doc.lineas.length);
+            if (azar() < 0.6) {
+                const nivel = elegir([1, 2, 3, 5, 6]);
+                const r = await FSDoc.cambiarNivel(i, nivel);
+                barra.push({ tipo: 'nivel', i, nivel, ok: !!r.ok, motivo: r.motivo || '', avisos: r.avisos || [] });
+            } else {
+                const t = elegir([{ codigo: '08', porcentaje: 13 }, { codigo: '01', porcentaje: 0 }, { codigo: '04', porcentaje: 4 }, { codigo: '02', porcentaje: 1 }]);
+                FSDoc.cambiarTarifa(i, t);
+                barra.push({ tipo: 'tarifa', i, codigo: t.codigo, porcentaje: t.porcentaje });
+            }
+        }
+        const escala = await FSDoc.escalaDescuentos();
         const medio = elegir(['01', '02']);
         FSDoc.medioPago(medio);
         const t = FSDoc.totales();
-        const pq = await FSDoc.paquete({ tipoPago: 'contado', pagos: [{ medio, cuenta: '', monto: t.total, comprobante: '' }], vuelto: 0 });
-        escenarios.push({ ...E, cliente, pasos, medio, paquete: JSON.parse(JSON.stringify(pq)) });
+        const tipoPago = azar() < 0.3 ? 'credito' : 'contado', diasCredito = elegir([0, 8, 30]);
+        const pq = await FSDoc.paquete({ tipoPago, diasCredito, pagos: tipoPago === 'credito' ? [] : [{ medio, cuenta: '', monto: t.total, comprobante: '' }], vuelto: 0 });
+        escenarios.push({ ...E, cliente, pasos, barra, escala, medio, tipoPago, diasCredito, paquete: JSON.parse(JSON.stringify(pq)) });
     }
     fs.writeFileSync(salida, JSON.stringify(escenarios));
     console.log(`A/B caja: ${escenarios.length} escenarios → ${salida}`);

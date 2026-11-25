@@ -19,7 +19,10 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-const List<String> servidoresFactuPOS = ['https://invefacon.com', 'https://invefacon.net'];
+const List<String> servidoresFactuPOS = [
+  'https://invefacon.com',
+  'https://invefacon.net',
+];
 const String _api = '/apis/shared/venta/factusuper/';
 
 /// Por cuál dominio se entró la última vez (compartido por toda la app): el próximo pedido arranca por ahí.
@@ -53,37 +56,60 @@ class Conexion {
   String cajero;
   final List<String> servidores;
   final http.Client _cliente;
-  Conexion({required this.llave, this.cajero = '', this.servidores = servidoresFactuPOS, http.Client? cliente})
-      : _cliente = cliente ?? http.Client();
+  Conexion({
+    required this.llave,
+    this.cajero = '',
+    this.servidores = servidoresFactuPOS,
+    http.Client? cliente,
+  }) : _cliente = cliente ?? http.Client();
 
   /// La sesión del servidor (cookie FSSID), una por dominio: así no se arma una nueva en cada pedido.
   final Map<String, String> _cookies = {};
 
   Map<String, String> _cabeceras(String base) => {
-        'Authorization': 'Bearer $llave',
-        if (cajero.isNotEmpty) 'X-FS-Cajero': cajero,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Accept': 'application/json',
-        'User-Agent': 'FactuSuper-App/1.0',
-        if (_cookies[base] != null) 'Cookie': _cookies[base]!,
-      };
+    'Authorization': 'Bearer $llave',
+    if (cajero.isNotEmpty) 'X-FS-Cajero': cajero,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept': 'application/json',
+    'User-Agent': 'FactuSuper-App/1.0',
+    if (_cookies[base] != null) 'Cookie': _cookies[base]!,
+  };
 
   Uri _uri(String base, String ruta, [Map<String, String>? q]) =>
-      Uri.parse(base + (ruta.startsWith('/') ? ruta : _api + ruta)).replace(queryParameters: q);
+      Uri.parse(base + (ruta.startsWith('/') ? ruta : _api + ruta))
+          .replace(queryParameters: q);
 
-  Future<Map<String, dynamic>> get(String ruta, {Map<String, String>? query, Duration espera = const Duration(seconds: 60)}) =>
-      _porDominios((b) => _cliente.get(_uri(b, ruta, query), headers: _cabeceras(b)).timeout(espera));
+  Future<Map<String, dynamic>> get(
+    String ruta, {
+    Map<String, String>? query,
+    Duration espera = const Duration(seconds: 60),
+  }) => _porDominios(
+    (b) => _cliente
+        .get(_uri(b, ruta, query), headers: _cabeceras(b))
+        .timeout(espera),
+  );
 
   /// 🔑 Un POST solo se reintenta por el otro dominio si NO llegó al servidor (conexión rechazada / nombre que no
   ///    resuelve). Si se cortó a media espera, puede haber llegado: lo resuelve el transaccionId de la venta, no esto.
-  Future<Map<String, dynamic>> post(String ruta, Object cuerpo, {Duration espera = const Duration(seconds: 90)}) =>
-      _porDominios(
-          (b) => _cliente
-              .post(_uri(b, ruta), headers: {..._cabeceras(b), 'Content-Type': 'application/json'}, body: jsonEncode(cuerpo))
-              .timeout(espera),
-          esPost: true);
+  Future<Map<String, dynamic>> post(
+    String ruta,
+    Object cuerpo, {
+    Duration espera = const Duration(seconds: 90),
+  }) => _porDominios(
+    (b) => _cliente
+        .post(
+          _uri(b, ruta),
+          headers: {..._cabeceras(b), 'Content-Type': 'application/json'},
+          body: jsonEncode(cuerpo),
+        )
+        .timeout(espera),
+    esPost: true,
+  );
 
-  Future<Map<String, dynamic>> _porDominios(Future<http.Response> Function(String base) hacer, {bool esPost = false}) async {
+  Future<Map<String, dynamic>> _porDominios(
+    Future<http.Response> Function(String base) hacer, {
+    bool esPost = false,
+  }) async {
     final n = servidores.length;
     final inicio = _preferido % n;
     String ultimo = '';
@@ -98,26 +124,41 @@ class Conexion {
         ultimo = e.porque;
       }
     }
-    throw ErrorConexion(ultimo.isEmpty ? 'Sin conexión con el servidor' : ultimo, sinInternet: true);
+    throw ErrorConexion(
+      ultimo.isEmpty ? 'Sin conexión con el servidor' : ultimo,
+      sinInternet: true,
+    );
   }
 
-  Future<Map<String, dynamic>> _pedir(String base, Future<http.Response> Function() hacer, {required bool esPost}) async {
+  Future<Map<String, dynamic>> _pedir(
+    String base,
+    Future<http.Response> Function() hacer, {
+    required bool esPost,
+  }) async {
     http.Response r;
     try {
       r = await hacer();
     } on SocketException {
       throw const _DominioCaido('Sin conexión con el servidor');
     } on TimeoutException {
-      if (esPost) throw const ErrorConexion('El servidor no contestó a tiempo', sinInternet: true);
+      if (esPost)
+        throw const ErrorConexion(
+          'El servidor no contestó a tiempo',
+          sinInternet: true,
+        );
       throw const _DominioCaido('El servidor no contestó a tiempo');
     } on http.ClientException {
       throw const _DominioCaido('Sin conexión con el servidor');
     } on HandshakeException {
-      throw const _DominioCaido('No se pudo abrir la conexión segura con el servidor');
+      throw const _DominioCaido(
+        'No se pudo abrir la conexión segura con el servidor',
+      );
     }
     // La entrada de ese internet está caída (el balanceador no tiene a quién pasarle el pedido): por el otro.
     if (r.statusCode == 502 || r.statusCode == 503 || r.statusCode == 504) {
-      throw _DominioCaido('El servidor no está disponible (HTTP ${r.statusCode})');
+      throw _DominioCaido(
+        'El servidor no está disponible (HTTP ${r.statusCode})',
+      );
     }
     final galleta = r.headers['set-cookie'];
     if (galleta != null) {
@@ -131,13 +172,22 @@ class Conexion {
     } catch (_) {}
     if (r.statusCode == 401 || r.statusCode == 403) {
       throw ErrorConexion(
-        (j?['mensaje'] ?? j?['error'] ?? 'La llave no es válida o fue anulada').toString(),
+        (j?['mensaje'] ?? j?['error'] ?? 'La llave no es válida o fue anulada')
+            .toString(),
         motivo: (j?['reason'] ?? 'http${r.statusCode}').toString(),
       );
     }
-    if (j == null) throw ErrorConexion('Respuesta no válida del servidor (HTTP ${r.statusCode})');
+    if (j == null)
+      throw ErrorConexion(
+        'Respuesta no válida del servidor (HTTP ${r.statusCode})',
+      );
     if (r.statusCode >= 500 && j['estado'] == null) {
-      throw ErrorConexion((j['mensaje'] ?? j['error'] ?? 'Error del servidor (HTTP ${r.statusCode})').toString());
+      throw ErrorConexion(
+        (j['mensaje'] ??
+                j['error'] ??
+                'Error del servidor (HTTP ${r.statusCode})')
+            .toString(),
+      );
     }
     return j;
   }
@@ -147,13 +197,32 @@ class Conexion {
 
 /// A qué conecta la llave (`token_info.php`): empresa, nombre, estación y cajero.
 class InfoLlave {
-  final String empresa, empresaNombre, estacionId, estacionNombre, cajeroCodigo, cajeroNombre;
-  const InfoLlave(this.empresa, this.empresaNombre, this.estacionId, this.estacionNombre, this.cajeroCodigo, this.cajeroNombre);
+  final String empresa,
+      empresaNombre,
+      estacionId,
+      estacionNombre,
+      cajeroCodigo,
+      cajeroNombre;
+  const InfoLlave(
+    this.empresa,
+    this.empresaNombre,
+    this.estacionId,
+    this.estacionNombre,
+    this.cajeroCodigo,
+    this.cajeroNombre,
+  );
 
   factory InfoLlave.desde(Map<String, dynamic> j) {
-    final e = (j['estacion'] as Map?) ?? const {}, c = (j['cajero'] as Map?) ?? const {};
-    return InfoLlave('${j['empresa'] ?? ''}', '${j['empresaNombre'] ?? ''}', '${e['id'] ?? ''}', '${e['nombre'] ?? ''}',
-        '${c['codigo'] ?? ''}', '${c['nombre'] ?? ''}');
+    final e = (j['estacion'] as Map?) ?? const {},
+        c = (j['cajero'] as Map?) ?? const {};
+    return InfoLlave(
+      '${j['empresa'] ?? ''}',
+      '${j['empresaNombre'] ?? ''}',
+      '${e['id'] ?? ''}',
+      '${e['nombre'] ?? ''}',
+      '${c['codigo'] ?? ''}',
+      '${c['nombre'] ?? ''}',
+    );
   }
 }
 
@@ -162,17 +231,24 @@ class InfoLlave {
 Future<InfoLlave> revisarLlave(String llave, {http.Client? cliente}) async {
   llave = llave.trim();
   if (!formatoLlave.hasMatch(llave)) {
-    throw const ErrorConexion('La llave no tiene el formato correcto: empieza con «fs1.» y sigue con 64 letras y números');
+    throw const ErrorConexion(
+      'La llave no tiene el formato correcto: empieza con «fs1.» y sigue con 64 letras y números',
+    );
   }
   final c = Conexion(llave: llave, cliente: cliente);
   try {
     final j = await c.get('token_info.php');
-    if (j['ok'] != true) throw ErrorConexion((j['mensaje'] ?? 'La llave no es válida o fue anulada').toString());
+    if (j['ok'] != true)
+      throw ErrorConexion(
+        (j['mensaje'] ?? 'La llave no es válida o fue anulada').toString(),
+      );
     return InfoLlave.desde(j);
   } on ErrorConexion catch (e) {
     if (e.motivo == 'cajero_invalido') {
-      throw const ErrorConexion('La llave no tiene un usuario activo con permiso de facturar para abrirla. '
-          'Entre una vez a FactuSuper web con un cajero, o regenere la llave en Configuración › Tokens.');
+      throw const ErrorConexion(
+        'La llave no tiene un usuario activo con permiso de facturar para abrirla. '
+        'Entre una vez a FactuSuper web con un cajero, o regenere la llave en Configuración › Tokens.',
+      );
     }
     rethrow;
   } finally {

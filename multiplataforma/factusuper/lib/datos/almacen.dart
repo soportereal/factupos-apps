@@ -14,23 +14,30 @@ import 'package:path_provider/path_provider.dart';
 class ConfigCaja {
   final String llave, empresa, empresaNombre;
   final DateTime guardada;
-  const ConfigCaja({required this.llave, required this.empresa, required this.empresaNombre, required this.guardada});
+  const ConfigCaja({
+    required this.llave,
+    required this.empresa,
+    required this.empresaNombre,
+    required this.guardada,
+  });
 
   Map<String, Object?> aMapa() => {
-        'llave': llave,
-        'empresa': empresa,
-        'empresaNombre': empresaNombre,
-        'guardada': guardada.toIso8601String(),
-      };
+    'llave': llave,
+    'empresa': empresa,
+    'empresaNombre': empresaNombre,
+    'guardada': guardada.toIso8601String(),
+  };
   factory ConfigCaja.desde(Map<String, dynamic> m) => ConfigCaja(
-        llave: '${m['llave'] ?? ''}',
-        empresa: '${m['empresa'] ?? ''}',
-        empresaNombre: '${m['empresaNombre'] ?? ''}',
-        guardada: DateTime.tryParse('${m['guardada']}') ?? DateTime.now(),
-      );
+    llave: '${m['llave'] ?? ''}',
+    empresa: '${m['empresa'] ?? ''}',
+    empresaNombre: '${m['empresaNombre'] ?? ''}',
+    guardada: DateTime.tryParse('${m['guardada']}') ?? DateTime.now(),
+  );
 
   /// La llave a medias, para mostrarla sin exponerla entera.
-  String get llaveVisible => llave.length > 12 ? '${llave.substring(0, 8)}…${llave.substring(llave.length - 4)}' : llave;
+  String get llaveVisible => llave.length > 12
+      ? '${llave.substring(0, 8)}…${llave.substring(llave.length - 4)}'
+      : llave;
 }
 
 class Almacen {
@@ -38,7 +45,9 @@ class Almacen {
   Almacen(this.raiz);
 
   static Future<Almacen> abrir() async {
-    final d = Directory('${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}factusuper');
+    final d = Directory(
+      '${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}factusuper',
+    );
     await d.create(recursive: true);
     return Almacen(d);
   }
@@ -48,7 +57,9 @@ class Almacen {
   Future<ConfigCaja?> leerConfig() async {
     try {
       if (!await _config.exists()) return null;
-      return ConfigCaja.desde(jsonDecode(await _config.readAsString()) as Map<String, dynamic>);
+      return ConfigCaja.desde(
+        jsonDecode(await _config.readAsString()) as Map<String, dynamic>,
+      );
     } catch (_) {
       return null;
     }
@@ -68,24 +79,43 @@ class Almacen {
     if (await _config.exists()) await _config.delete();
   }
 
-  Directory _empresa(String empresa) => Directory('${raiz.path}${Platform.pathSeparator}${empresa.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}');
+  Directory _empresa(String empresa) => Directory(
+    '${raiz.path}${Platform.pathSeparator}${empresa.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}',
+  );
 
   Future<void> guardarTabla(String empresa, String tabla, Object datos) async {
     final d = _empresa(empresa);
     await d.create(recursive: true);
-    await _escribir(File('${d.path}${Platform.pathSeparator}$tabla.json'), jsonEncode(datos));
+    await _escribir(
+      File('${d.path}${Platform.pathSeparator}$tabla.json'),
+      jsonEncode(datos),
+    );
   }
 
   Future<dynamic> leerTabla(String empresa, String tabla) async {
-    final f = File('${_empresa(empresa).path}${Platform.pathSeparator}$tabla.json');
+    final f = File(
+      '${_empresa(empresa).path}${Platform.pathSeparator}$tabla.json',
+    );
     if (!await f.exists()) return null;
     return jsonDecode(await f.readAsString());
   }
 
   /// Escribir a un temporal y renombrar: si se va la luz a media escritura, queda el archivo anterior entero.
-  Future<void> _escribir(File f, String texto) async {
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(texto, flush: true);
-    await tmp.rename(f.path);
+  /// 🔑 Las escrituras de un MISMO archivo van en FILA (el lector de barras dispara varias seguidas: en paralelo
+  ///    chocaban en el temporal — «Cannot rename file»). Gana siempre la última.
+  final Map<String, Future<void>> _fila = {};
+
+  Future<void> _escribir(File f, String texto) {
+    final anterior = _fila[f.path] ?? Future<void>.value();
+    final esta = anterior.catchError((_) {}).then((_) async {
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(texto, flush: true);
+      await tmp.rename(f.path);
+    });
+    _fila[f.path] = esta;
+    esta.whenComplete(() {
+      if (identical(_fila[f.path], esta)) _fila.remove(f.path);
+    }).catchError((_) {});
+    return esta;
   }
 }

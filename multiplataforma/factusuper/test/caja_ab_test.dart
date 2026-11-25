@@ -66,15 +66,30 @@ void main() {
         final r = doc.agregar(a, '${p['cantidad']}');
         pasos.add({'articulo': p['articulo'], 'cantidad': p['cantidad'], 'ok': r.ok, 'motivo': r.motivo, 'avisos': r.avisos});
       }
+      final barra = <Map<String, dynamic>>[];
+      for (final b in (e['barra'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+        final i = (b['i'] as num).toInt();
+        if (b['tipo'] == 'nivel') {
+          final (ok, motivo, avisos) = doc.cambiarNivel(i, (b['nivel'] as num).toInt());
+          barra.add({...b, 'ok': ok, 'motivo': motivo, 'avisos': avisos});
+        } else {
+          doc.cambiarTarifa(i, '${b['codigo']}', (b['porcentaje'] as num).toDouble());
+          barra.add(b);
+        }
+      }
       doc.medioPago = '${e['medio']}';
       for (final l in doc.lineas) {
         doc.agregarRecalculo(l);
       }
+      final credito = e['tipoPago'] == 'credito';
       final pq = doc.paquete(
-        pagos: [{'medio': e['medio'], 'cuenta': '', 'monto': doc.totales.total, 'comprobante': ''}],
-        vuelto: 0, transaccionId: 'x', cuando: DateTime(2026, 11, 25, 10, 0, 0));
+        pagos: credito ? [] : [{'medio': e['medio'], 'cuenta': '', 'monto': doc.totales.total, 'comprobante': ''}],
+        vuelto: 0, transaccionId: 'x', cuando: DateTime(2026, 11, 25, 10, 0, 0),
+        tipoPago: '${e['tipoPago'] ?? 'contado'}', diasCredito: ((e['diasCredito'] as num?) ?? 0).toInt());
       final dif = <String>[];
       comparar(e['pasos'], pasos, 'pasos', dif);
+      comparar(e['barra'] ?? const [], barra, 'barra', dif);
+      comparar(e['escala'], doc.escalaDescuentos(), 'escala', dif);
       comparar(e['paquete'], jsonDecode(jsonEncode(pq)), 'paquete', dif);
       if (dif.isNotEmpty) {
         malos++;

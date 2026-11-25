@@ -18,7 +18,10 @@ class Descarga {
   Future<Map<String, int>> todo({Avance? avance}) async {
     final firmas = await con.get('firmas_obtener.php');
     final cat = await con.get('catalogos_descargar.php');
-    if (cat['success'] != true) throw ErrorConexion('No se pudieron bajar los catálogos: ${cat['error'] ?? ''}');
+    if (cat['success'] != true)
+      throw ErrorConexion(
+        'No se pudieron bajar los catálogos: ${cat['error'] ?? ''}',
+      );
     await almacen.guardarTabla(empresa, 'catalogos', cat['tablas'] ?? {});
     final n = <String, int>{'catalogos': (cat['tablas'] as Map?)?.length ?? 0};
     for (final g in const ['articulos', 'precios', 'clientes']) {
@@ -37,7 +40,10 @@ class Descarga {
   /// precio), como la web que se vuelve a armar al cambiar de cajero. Sin internet sigue la copia anterior.
   Future<void> catalogos() async {
     final cat = await con.get('catalogos_descargar.php');
-    if (cat['success'] != true) throw ErrorConexion('No se pudieron bajar los catálogos: ${cat['error'] ?? ''}');
+    if (cat['success'] != true)
+      throw ErrorConexion(
+        'No se pudieron bajar los catálogos: ${cat['error'] ?? ''}',
+      );
     await almacen.guardarTabla(empresa, 'catalogos', cat['tablas'] ?? {});
   }
 
@@ -45,9 +51,13 @@ class Descarga {
     const tanda = 2000;
     final filas = <dynamic>[];
     var total = 0;
-    for (var offset = 0;; offset += tanda) {
-      final j = await con.get('${grupo}_descargar.php', query: {'offset': '$offset', 'limite': '$tanda'});
-      if (j['success'] != true) throw ErrorConexion('No se pudo bajar $grupo: ${j['error'] ?? ''}');
+    for (var offset = 0; ; offset += tanda) {
+      final j = await con.get(
+        '${grupo}_descargar.php',
+        query: {'offset': '$offset', 'limite': '$tanda'},
+      );
+      if (j['success'] != true)
+        throw ErrorConexion('No se pudo bajar $grupo: ${j['error'] ?? ''}');
       if (offset == 0) total = (j['total'] as num?)?.toInt() ?? 0;
       final f = (j['filas'] as List?) ?? const [];
       filas.addAll(f);
@@ -56,7 +66,9 @@ class Descarga {
     }
     // 🔑 Se verifica que quedó entero antes de reemplazar la copia buena (como la web: compara con el total).
     if (total > 0 && filas.length < total) {
-      throw ErrorConexion('La descarga de $grupo quedó incompleta (${filas.length} de $total). Se conserva la copia anterior.');
+      throw ErrorConexion(
+        'La descarga de $grupo quedó incompleta (${filas.length} de $total). Se conserva la copia anterior.',
+      );
     }
     await almacen.guardarTabla(empresa, grupo, filas);
     return filas.length;

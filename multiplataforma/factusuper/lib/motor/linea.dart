@@ -50,7 +50,14 @@ class Decimales {
 /// Exoneración aplicada a una línea (fila del equipo: exoneraciones del cliente).
 class Exoneracion {
   final double porcentaje;
-  final String tipoDocumento, documento, articulo, inciso, institucion, institucionCodigo, fechaEmision, vencimiento;
+  final String tipoDocumento,
+      documento,
+      articulo,
+      inciso,
+      institucion,
+      institucionCodigo,
+      fechaEmision,
+      vencimiento;
   const Exoneracion({
     required this.porcentaje,
     this.tipoDocumento = '',
@@ -66,8 +73,24 @@ class Exoneracion {
 
 /// Una línea de la venta. Los nombres siguen a los del JS para poder compararlos.
 class Linea {
-  String codigo, nombre, barra, codigoTarifa, cabys, unidad, naturaleza, actividad;
-  double cantidad, precio, precioLista, tarifa, costo, descFijo, descMax, utilMin, descCaja, uxm;
+  String codigo,
+      nombre,
+      barra,
+      codigoTarifa,
+      cabys,
+      unidad,
+      naturaleza,
+      actividad;
+  double cantidad,
+      precio,
+      precioLista,
+      tarifa,
+      costo,
+      descFijo,
+      descMax,
+      utilMin,
+      descCaja,
+      uxm;
   int nivel, fraccionable;
   int? cabysOk;
   bool nivelBloqueado, descManual, bonificacion;
@@ -79,9 +102,22 @@ class Linea {
   double? descMonto;
   Exoneracion? exo;
 
+  /// Quién autorizó cada permiso en esta línea (permiso → usuario), como `l.autorizaciones` de la web.
+  final Map<String, String> autorizaciones = {};
+
   // ── Lo que deja calcular() (con los redondeos del UPDATE de ProformaHija) ──
-  double ivaExonerado = 0, ivaExoneradoMonto = 0, subtotal1 = 0, descuentoMonto = 0, subtotal2 = 0,
-      subtotal3 = 0, exonerado = 0, gravado = 0, exento = 0, iva = 0, ivaDevuelto = 0, total = 0;
+  double ivaExonerado = 0,
+      ivaExoneradoMonto = 0,
+      subtotal1 = 0,
+      descuentoMonto = 0,
+      subtotal2 = 0,
+      subtotal3 = 0,
+      exonerado = 0,
+      gravado = 0,
+      exento = 0,
+      iva = 0,
+      ivaDevuelto = 0,
+      total = 0;
 
   Linea({
     required this.codigo,
@@ -114,29 +150,33 @@ class Linea {
   }) : precioLista = precioLista ?? precio;
 
   Map<String, Object?> calculado() => {
-        'ivaExonerado': ivaExonerado,
-        'ivaExoneradoMonto': ivaExoneradoMonto,
-        'subtotal1': subtotal1,
-        'descuento': descuento,
-        'descuentoMonto': descuentoMonto,
-        'subtotal2': subtotal2,
-        'subtotal3': subtotal3,
-        'exonerado': exonerado,
-        'gravado': gravado,
-        'exento': exento,
-        'iva': iva,
-        'ivaDevuelto': ivaDevuelto,
-        'total': total,
-      };
+    'ivaExonerado': ivaExonerado,
+    'ivaExoneradoMonto': ivaExoneradoMonto,
+    'subtotal1': subtotal1,
+    'descuento': descuento,
+    'descuentoMonto': descuentoMonto,
+    'subtotal2': subtotal2,
+    'subtotal3': subtotal3,
+    'exonerado': exonerado,
+    'gravado': gravado,
+    'exento': exento,
+    'iva': iva,
+    'ivaDevuelto': ivaDevuelto,
+    'total': total,
+  };
 }
 
 /// `calcular(l)`. [medioPago] = el medio principal del documento ('02' = tarjeta → IVA devuelto en servicios de salud 4 %).
 Linea calcular(Linea l, Decimales dec, String medioPago) {
   final ivaPct = l.tarifa;
-  final ivaExo = l.exo != null && ivaPct > 0 ? math.min(l.exo!.porcentaje, ivaPct) : 0.0;
+  final ivaExo = l.exo != null && ivaPct > 0
+      ? math.min(l.exo!.porcentaje, ivaPct)
+      : 0.0;
   final crudo = dec.sinRedondeo;
 
-  final sub1 = crudo ? redondear(l.cantidad, 3) * l.precio : redondear(redondear(l.cantidad, 3) * l.precio, dec.subDesc);
+  final sub1 = crudo
+      ? redondear(l.cantidad, 3) * l.precio
+      : redondear(redondear(l.cantidad, 3) * l.precio, dec.subDesc);
   double descM;
   if (l.descMonto != null) {
     final m = math.max(0.0, math.min(l.descMonto!, sub1));
@@ -154,8 +194,15 @@ Linea calcular(Linea l, Decimales dec, String medioPago) {
   final gravado = ivaPct > 0 ? sub3r2 - exonerado : 0.0;
   final exento = sub3r2 - gravado - exonerado;
   final iva = base * ((ivaPct - ivaExo) / 100);
-  final ivaDev = medioPago == '02' && ivaPct == 4 && l.naturaleza == '2' ? iva : 0.0;
-  final total = r2(gravado) + r2(exonerado) + r2(exento) + redondear(iva, dec.iva) - redondear(ivaDev, dec.iva);
+  final ivaDev = medioPago == '02' && ivaPct == 4 && l.naturaleza == '2'
+      ? iva
+      : 0.0;
+  final total =
+      r2(gravado) +
+      r2(exonerado) +
+      r2(exento) +
+      redondear(iva, dec.iva) -
+      redondear(ivaDev, dec.iva);
 
   l.ivaExonerado = ivaExo;
   l.ivaExoneradoMonto = redondear(base * (ivaExo / 100), dec.iva);
@@ -174,19 +221,34 @@ Linea calcular(Linea l, Decimales dec, String medioPago) {
 
 /// Los totales de la pantalla — `totales()`.
 class Totales {
-  final double subtotal, descuento, subtotal2, iva, ivaDevuelto, total, articulos;
+  final double subtotal,
+      descuento,
+      subtotal2,
+      iva,
+      ivaDevuelto,
+      total,
+      articulos;
   final int lineas;
-  const Totales(this.subtotal, this.descuento, this.subtotal2, this.iva, this.ivaDevuelto, this.total, this.articulos, this.lineas);
+  const Totales(
+    this.subtotal,
+    this.descuento,
+    this.subtotal2,
+    this.iva,
+    this.ivaDevuelto,
+    this.total,
+    this.articulos,
+    this.lineas,
+  );
   Map<String, Object?> aMapa() => {
-        'subtotal': subtotal,
-        'descuento': descuento,
-        'subtotal2': subtotal2,
-        'iva': iva,
-        'ivaDevuelto': ivaDevuelto,
-        'total': total,
-        'lineas': lineas,
-        'articulos': articulos,
-      };
+    'subtotal': subtotal,
+    'descuento': descuento,
+    'subtotal2': subtotal2,
+    'iva': iva,
+    'ivaDevuelto': ivaDevuelto,
+    'total': total,
+    'lineas': lineas,
+    'articulos': articulos,
+  };
 }
 
 Totales totales(List<Linea> lineas, Decimales dec) {
@@ -200,15 +262,36 @@ Totales totales(List<Linea> lineas, Decimales dec) {
     tot += l.total;
     art += l.cantidad;
   }
-  return Totales(redondear(sub, dec.subDesc), redondear(desc, dec.subDesc), redondear(sub2, dec.sub2), redondear(iva, dec.iva),
-      redondear(dev, dec.iva), redondear(tot, dec.total), redondear(art, 3), lineas.length);
+  return Totales(
+    redondear(sub, dec.subDesc),
+    redondear(desc, dec.subDesc),
+    redondear(sub2, dec.sub2),
+    redondear(iva, dec.iva),
+    redondear(dev, dec.iva),
+    redondear(tot, dec.total),
+    redondear(art, 3),
+    lineas.length,
+  );
 }
 
 /// Totales de ProformaMadre (mercancía y servicio aparte) — `totalesDocumento()`.
 Map<String, double> totalesDocumento(List<Linea> lineas) {
   final t = <String, double>{
-    for (final k in const ['costo', 'venta', 'descuento', 'mercGravado', 'mercExonerado', 'mercExento', 'servGravado',
-      'servExonerado', 'servExento', 'iva', 'ivaExonerado', 'ivaDevuelto', 'total'])
+    for (final k in const [
+      'costo',
+      'venta',
+      'descuento',
+      'mercGravado',
+      'mercExonerado',
+      'mercExento',
+      'servGravado',
+      'servExonerado',
+      'servExento',
+      'iva',
+      'ivaExonerado',
+      'ivaDevuelto',
+      'total',
+    ])
       k: 0,
   };
   for (final l in lineas) {
@@ -229,8 +312,9 @@ Map<String, double> totalesDocumento(List<Linea> lineas) {
 }
 
 /// Utilidad % de un precio neto sobre el costo. Sin costo = infinita (no frena descuentos).
-double utilidad(double precio, double descPct, double costo) =>
-    costo > 0 ? ((precio * (1 - descPct / 100)) - costo) / costo * 100 : double.infinity;
+double utilidad(double precio, double descPct, double costo) => costo > 0
+    ? ((precio * (1 - descPct / 100)) - costo) / costo * 100
+    : double.infinity;
 
 /// % equivalente del descuento POR CAJA (solo las cajas enteras).
 double descuentoCajaPct(Linea l) {
@@ -241,17 +325,29 @@ double descuentoCajaPct(Linea l) {
 
 /// Cantidad válida para el artículo: entera si no se fracciona (0 = no válida).
 /// [dec] = decimales a respetar (el peso de la romana pasa 3); sin él, los de CF-020.
-double cantidadValida(String texto, {required bool fraccionable, required Decimales decimales, int? dec}) {
+double cantidadValida(
+  String texto, {
+  required bool fraccionable,
+  required Decimales decimales,
+  int? dec,
+}) {
   final n = double.tryParse(texto.trim().replaceFirst(',', '.')) ?? double.nan;
   if (!(n > 0)) return 0;
-  return fraccionable ? redondear(n, math.min(3, dec ?? decimales.cantidad)) : (n + 0.5).floorToDouble();
+  return fraccionable
+      ? redondear(n, math.min(3, dec ?? decimales.cantidad))
+      : (n + 0.5).floorToDouble();
 }
 
 /// Tipo de documento — misma regla que el servidor (vtx_tipo_documento): 01 factura · 04 tiquete · 09 exportación.
-String tipoDocumento({required String codigo, String cedula = '', String tipoCedula = ''}) {
+String tipoDocumento({
+  required String codigo,
+  String cedula = '',
+  String tipoCedula = '',
+}) {
   final ced = cedula.trim(), ident = tipoCedula.trim();
   if (codigo.isEmpty || codigo.toUpperCase() == 'SN') return '04';
-  if (ced.isEmpty || ced.length < 9 || ident == '00' || ident == '06') return '04';
+  if (ced.isEmpty || ced.length < 9 || ident == '00' || ident == '06')
+    return '04';
   if (ident == '05') return '09';
   return '01';
 }

@@ -28,17 +28,23 @@ class Cola {
     ventas = v is List ? v.whereType<Map<String, dynamic>>().toList() : [];
     // Se guarda una semana lo terminado.
     final limite = DateTime.now().subtract(const Duration(days: 7));
-    ventas.removeWhere((x) =>
-        (x['estado'] == 'procesada' || x['estado'] == 'rechazada') && (DateTime.tryParse('${x['fecha']}')?.isBefore(limite) ?? false));
+    ventas.removeWhere(
+      (x) =>
+          (x['estado'] == 'procesada' || x['estado'] == 'rechazada') &&
+          (DateTime.tryParse('${x['fecha']}')?.isBefore(limite) ?? false),
+    );
   }
 
   Future<void> _guardar() => almacen.guardarTabla(empresa, 'ventas', ventas);
 
-  List<Map<String, dynamic>> get pendientes => ventas.where((v) => v['estado'] != 'procesada' && v['estado'] != 'rechazada').toList();
+  List<Map<String, dynamic>> get pendientes => ventas
+      .where((v) => v['estado'] != 'procesada' && v['estado'] != 'rechazada')
+      .toList();
 
   /// Se guarda ANTES de enviar: si no hay internet, la venta no se pierde.
   Future<void> agregar(Map<String, dynamic> paquete) async {
-    if (ventas.any((v) => v['transaccionId'] == paquete['transaccionId'])) throw StateError('La venta ya estaba guardada');
+    if (ventas.any((v) => v['transaccionId'] == paquete['transaccionId']))
+      throw StateError('La venta ya estaba guardada');
     ventas.add({
       'transaccionId': paquete['transaccionId'],
       'idProceso': (paquete['documento'] as Map)['idProceso'],
@@ -59,15 +65,25 @@ class Cola {
     if (_enCurso) return r;
     _enCurso = true;
     try {
-      final cola = pendientes..sort((a, b) => '${a['fecha']}'.compareTo('${b['fecha']}'));
+      final cola = pendientes
+        ..sort((a, b) => '${a['fecha']}'.compareTo('${b['fecha']}'));
       for (final v in cola) {
         final paquete = v['paquete'] as Map<String, dynamic>;
-        final con = Conexion(llave: llave, cajero: '${paquete['usuario'] ?? ''}');
+        final con = Conexion(
+          llave: llave,
+          cajero: '${paquete['usuario'] ?? ''}',
+        );
         Map<String, dynamic> d;
         try {
-          d = await con.post('venta_procesar.php', paquete, espera: const Duration(seconds: 90));
+          d = await con.post(
+            'venta_procesar.php',
+            paquete,
+            espera: const Duration(seconds: 90),
+          );
         } on ErrorConexion catch (e) {
-          r.detenida = e.sinInternet ? 'Sin internet: las ventas quedan guardadas y salen solas cuando vuelva' : e.mensaje;
+          r.detenida = e.sinInternet
+              ? 'Sin internet: las ventas quedan guardadas y salen solas cuando vuelva'
+              : e.mensaje;
           break;
         } finally {
           con.cerrar();
@@ -87,12 +103,19 @@ class Cola {
           v.remove('error');
           r.procesadas++;
         } else if (estado == 'rechazada') {
-          v['error'] = {'codigo': d['codigo'] ?? '', 'mensaje': d['motivo'] ?? d['mensaje'] ?? 'Rechazada'};
+          v['error'] = {
+            'codigo': d['codigo'] ?? '',
+            'mensaje': d['motivo'] ?? d['mensaje'] ?? 'Rechazada',
+          };
           r.rechazadas++;
         } else {
-          v['error'] = {'codigo': d['codigo'] ?? '', 'mensaje': d['mensaje'] ?? estado};
+          v['error'] = {
+            'codigo': d['codigo'] ?? '',
+            'mensaje': d['mensaje'] ?? estado,
+          };
           await _guardar();
-          r.detenida = 'El servidor no terminó la venta ${v['idProceso']}: ${(v['error'] as Map)['mensaje']}';
+          r.detenida =
+              'El servidor no terminó la venta ${v['idProceso']}: ${(v['error'] as Map)['mensaje']}';
           break;
         }
         await _guardar();

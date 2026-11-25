@@ -14,7 +14,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
-const String _jsonVersion = 'https://soportereal.com/software/factupos-app/windows/FactuSuper_version.json';
+const String _jsonVersion =
+    'https://soportereal.com/software/factupos-app/windows/FactuSuper_version.json';
 
 class VersionNueva {
   final String actual, nueva, url;
@@ -23,7 +24,8 @@ class VersionNueva {
 
 /// -1 / 0 / 1 comparando «1.0.10» con «1.0.9» como números.
 int compararVersion(String a, String b) {
-  List<int> p(String v) => v.split(RegExp(r'[.+-]')).map((x) => int.tryParse(x) ?? 0).toList();
+  List<int> p(String v) =>
+      v.split(RegExp(r'[.+-]')).map((x) => int.tryParse(x) ?? 0).toList();
   final x = p(a), y = p(b);
   for (var i = 0; i < 3; i++) {
     final d = (i < x.length ? x[i] : 0) - (i < y.length ? y[i] : 0);
@@ -38,12 +40,20 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
   final c = cliente ?? http.Client();
   try {
     final actual = (await PackageInfo.fromPlatform()).version;
-    final r = await c.get(Uri.parse(_jsonVersion), headers: {'User-Agent': 'FactuSuper-App/$actual'}).timeout(const Duration(seconds: 15));
+    final r = await c
+        .get(
+          Uri.parse(_jsonVersion),
+          headers: {'User-Agent': 'FactuSuper-App/$actual'},
+        )
+        .timeout(const Duration(seconds: 15));
     if (r.statusCode != 200) return null;
     final j = jsonDecode(utf8.decode(r.bodyBytes));
     final nueva = '${j['version'] ?? ''}', url = '${j['downloadUrl'] ?? ''}';
-    if (nueva.isEmpty || !url.startsWith('https://soportereal.com/')) return null;
-    return compararVersion(nueva, actual) > 0 ? VersionNueva(actual, nueva, url) : null;
+    if (nueva.isEmpty || !url.startsWith('https://soportereal.com/'))
+      return null;
+    return compararVersion(nueva, actual) > 0
+        ? VersionNueva(actual, nueva, url)
+        : null;
   } catch (_) {
     return null;
   } finally {
@@ -53,14 +63,23 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
 
 /// Baja el instalador y lo arranca en silencio; la app se cierra para que se pueda reemplazar.
 /// El instalador (factusuper.iss, [Run] con WizardSilent) la vuelve a abrir solo.
-Future<void> instalarVersion(VersionNueva v, {void Function(int bajado, int total)? avance}) async {
+Future<void> instalarVersion(
+  VersionNueva v, {
+  void Function(int bajado, int total)? avance,
+}) async {
   final c = http.Client();
   try {
-    final req = http.Request('GET', Uri.parse(v.url))..headers['User-Agent'] = 'FactuSuper-App/${v.actual}';
+    final req = http.Request('GET', Uri.parse(v.url))
+      ..headers['User-Agent'] = 'FactuSuper-App/${v.actual}';
     final r = await c.send(req);
-    if (r.statusCode != 200) throw Exception('No se pudo bajar la versión nueva (HTTP ${r.statusCode})');
+    if (r.statusCode != 200)
+      throw Exception(
+        'No se pudo bajar la versión nueva (HTTP ${r.statusCode})',
+      );
     final total = r.contentLength ?? 0;
-    final f = File('${Directory.systemTemp.path}${Platform.pathSeparator}FactuSuper-Setup-${v.nueva}.exe');
+    final f = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}FactuSuper-Setup-${v.nueva}.exe',
+    );
     final s = f.openWrite();
     var bajado = 0;
     await for (final trozo in r.stream) {
@@ -69,8 +88,14 @@ Future<void> instalarVersion(VersionNueva v, {void Function(int bajado, int tota
       avance?.call(bajado, total);
     }
     await s.close();
-    if (total > 0 && await f.length() != total) throw Exception('La descarga quedó incompleta: intente de nuevo');
-    await Process.start(f.path, ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'], mode: ProcessStartMode.detached);
+    if (total > 0 && await f.length() != total)
+      throw Exception('La descarga quedó incompleta: intente de nuevo');
+    await Process.start(f.path, [
+      '/SILENT',
+      '/SUPPRESSMSGBOXES',
+      '/NORESTART',
+      '/CLOSEAPPLICATIONS',
+    ], mode: ProcessStartMode.detached);
     exit(0);
   } finally {
     c.close();

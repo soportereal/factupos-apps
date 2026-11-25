@@ -17,6 +17,7 @@ import 'datos/almacen.dart';
 import 'pantallas/caja.dart';
 import 'pantallas/configuracion.dart';
 import 'pantallas/entrada.dart';
+import 'ui/tema.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +62,9 @@ class _EstadoApp extends State<FactuSuperApp> {
     if (!mounted) return;
     setState(() {
       _datos = datos;
+      _cajeros = Cajeros(
+        datos.catalogos,
+      ); // la copia recién bajada (supervisores al día)
       _cola = cola;
       _cajero = c;
       _abriendo = false;
@@ -78,8 +82,39 @@ class _EstadoApp extends State<FactuSuperApp> {
     final cfg = _cfg;
     if (cfg == null) return;
     final cat = await widget.almacen.leerTabla(cfg.empresa, 'catalogos');
-    if (mounted) setState(() => _cajeros = Cajeros(cat is Map<String, dynamic> ? cat : null));
+    if (mounted)
+      setState(
+        () => _cajeros = Cajeros(cat is Map<String, dynamic> ? cat : null),
+      );
   }
+
+  /// «Actualizar datos» desde la caja: baja todo de nuevo con el cajero que está adentro y rearma los datos.
+  Future<String> _actualizarDatos() async {
+    final cfg = _cfg!, c = _cajero!;
+    final con = Conexion(llave: cfg.llave, cajero: c.usuario);
+    try {
+      final n = await Descarga(con, widget.almacen, cfg.empresa).todo();
+      final datos = await DatosCaja.cargar(widget.almacen, cfg.empresa);
+      if (mounted) {
+        setState(() {
+          _datos = datos;
+          _cajeros = Cajeros(datos.catalogos);
+          _cajero = Cajero(
+            c.usuario,
+            c.nombre,
+          ); // nueva clave de pantalla → la caja se rearma con los datos nuevos
+          _version++;
+        });
+      }
+      return 'Datos al día: ${n['articulos']} artículos, ${n['precios']} precios, ${n['clientes']} clientes';
+    } on ErrorConexion catch (e) {
+      return 'No se pudieron actualizar los datos: ${e.mensaje}';
+    } finally {
+      con.cerrar();
+    }
+  }
+
+  int _version = 0;
 
   Widget _inicio() {
     final cfg = _cfg;
@@ -99,8 +134,10 @@ class _EstadoApp extends State<FactuSuperApp> {
       );
     }
     final cajeros = _cajeros;
-    if (cajeros == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (_abriendo) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (cajeros == null)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_abriendo)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final cajero = _cajero;
     if (cajero == null) {
       return PantallaEntrada(
@@ -111,21 +148,23 @@ class _EstadoApp extends State<FactuSuperApp> {
       );
     }
     return PantallaCaja(
-      key: ValueKey(cajero.usuario),
+      key: ValueKey('${cajero.usuario}#$_version'),
       config: cfg,
+      almacen: widget.almacen,
+      cajeros: _cajeros!,
       datos: _datos!,
       cola: _cola!,
       cajero: cajero,
       alSalir: () => setState(() => _cajero = null),
+      alActualizar: _actualizarDatos,
     );
   }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'FactuSuper',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: const Color(0xFF1E3A8A), useMaterial3: true),
-        darkTheme: ThemeData(colorSchemeSeed: const Color(0xFF1E3A8A), brightness: Brightness.dark, useMaterial3: true),
-        home: _inicio(),
-      );
+    title: 'FactuSuper',
+    debugShowCheckedModeBanner: false,
+    theme: temaFactuSuper(),
+    home: _inicio(),
+  );
 }

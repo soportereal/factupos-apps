@@ -52,3 +52,5 @@ test/ab_casos.json
 installer/app/
 installer/Output/
 test/ab_caja.json
+test/ab_linea.json
+test/ab_romana.json
