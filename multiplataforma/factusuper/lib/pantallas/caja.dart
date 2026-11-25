@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../caja/cajeros.dart';
 import '../caja/cajon.dart';
 import '../caja/cola.dart';
+import '../impresion/sin_internet.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
 import '../datos/almacen.dart';
@@ -194,6 +195,25 @@ class _EstadoCaja extends State<PantallaCaja> {
     setState(() => _enviando = true);
     await _cajonObj.subirPendientes(widget.cajero.usuario);
     final r = await widget.cola.enviar();
+    // Sin red: el comprobante PROVISIONAL directo a FactuPOS Print de esta computadora (una vez por venta, últimos 15 min).
+    if (r.sinRed) {
+      final impresas = await imprimirPendientesSinRed(
+        widget.cola.pendientes,
+        widget.datos,
+        widget.config.empresa,
+      );
+      if (impresas.isNotEmpty) {
+        await widget.cola.guardar();
+        for (final (id, ok, error) in impresas) {
+          _aviso(
+            ok
+                ? 'Sin internet: comprobante PROVISIONAL $id impreso'
+                : 'Sin internet: no se pudo imprimir el provisional $id — $error',
+            error: !ok,
+          );
+        }
+      }
+    }
     if (!mounted) return;
     setState(() {
       _enviando = false;
@@ -1828,7 +1848,12 @@ class _EstadoCaja extends State<PantallaCaja> {
               message: 'Abrir el cajón (F9)',
               child: OutlinedButton(
                 onPressed: _cajon,
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 16,
+                  ),
+                ),
                 child: const Icon(Icons.inbox_outlined, size: 20),
               ),
             ),

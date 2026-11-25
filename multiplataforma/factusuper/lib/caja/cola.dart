@@ -14,6 +14,10 @@ import '../datos/conexion.dart';
 class ResumenEnvio {
   int procesadas = 0, rechazadas = 0;
   String detenida = '';
+
+  /// La cola se detuvo porque NO HAY RED (no llegó al servidor). Solo esto habilita el comprobante provisional
+  /// (el corte por tiempo NO: el servidor puede estar facturando e imprimiendo esa venta).
+  bool sinRed = false;
 }
 
 class Cola {
@@ -34,6 +38,9 @@ class Cola {
           (DateTime.tryParse('${x['fecha']}')?.isBefore(limite) ?? false),
     );
   }
+
+  /// Guardar la cola (tras marcar impresiones hechas fuera de aquí).
+  Future<void> guardar() => _guardar();
 
   Future<void> _guardar() => almacen.guardarTabla(empresa, 'ventas', ventas);
 
@@ -84,6 +91,7 @@ class Cola {
           r.detenida = e.sinInternet
               ? 'Sin internet: las ventas quedan guardadas y salen solas cuando vuelva'
               : e.mensaje;
+          r.sinRed = e.sinInternet && e.motivo != 'tiempo';
           break;
         } finally {
           con.cerrar();

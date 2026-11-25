@@ -141,11 +141,14 @@ class Conexion {
     } on SocketException {
       throw const _DominioCaido('Sin conexión con el servidor');
     } on TimeoutException {
-      if (esPost)
+      // motivo 'tiempo': pudo LLEGAR (el servidor puede estar facturando): no cuenta como «sin red» para el provisional.
+      if (esPost) {
         throw const ErrorConexion(
           'El servidor no contestó a tiempo',
           sinInternet: true,
+          motivo: 'tiempo',
         );
+      }
       throw const _DominioCaido('El servidor no contestó a tiempo');
     } on http.ClientException {
       throw const _DominioCaido('Sin conexión con el servidor');

@@ -15,7 +15,8 @@ import '../datos/almacen.dart';
 import '../datos/conexion.dart';
 import 'datos_caja.dart';
 
-const String puertoPrint = 'http://127.0.0.1:9302';
+/// FactuPOS Print de esta computadora (las pruebas lo cambian por un servidor de mentira).
+String puertoPrint = 'http://127.0.0.1:9302';
 
 String _dos(int n) => n.toString().padLeft(2, '0');
 
