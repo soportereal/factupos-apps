@@ -31,7 +31,7 @@ from ctypes import wintypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 CATALOGO_URL = "https://soportereal.com/descarga/catalogo.php"
 AGENTE = "FactuPOS-Aplicaciones/" + VERSION   # sin «Mozilla»: el servidor deja pasar a las apps
 CARPETA = os.path.join(tempfile.gettempdir(), "FactuPOS-Aplicaciones")
@@ -412,20 +412,38 @@ class App:
 
         threading.Thread(target=trabajo, daemon=True).start()
 
+    def salir(self):
+        self.raiz.destroy()
+        os._exit(0)   # que no quede nada abierto mientras el instalador reemplaza el .exe
+
     def ofrecer_autoactualizar(self, tool):
         if not messagebox.askyesno("Aplicaciones FactuPOS",
                                    "Hay una versión nueva de esta aplicación (v%s).\n¿Actualizar ahora?" % tool["version"]):
             return
 
         def instalar_y_salir(ruta):
-            # El instalador reabre la app solo (ver [Run] del .iss) y esta se cierra.
-            ejecutar(ruta, "/SILENT /SUPPRESSMSGBOXES /NORESTART", esperar=False)
-            self.en_ventana(self.raiz.destroy)
+            # 1.0.3: en la 1.0.0 el instalador arrancaba mientras esta app todavía no había terminado de
+            # cerrarse, no podía reemplazar el .exe y quedaba la versión vieja (visto el 25-nov en los registros).
+            # Ahora la app tiene un «candado» con nombre (MUTEX) mientras está abierta, y el instalador
+            # ESPERA a que se suelte antes de copiar (InitializeSetup del .iss). Al terminar la reabre ([Run]).
+            # Registro: %TEMP%\FactuPOS-Aplicaciones\actualizar.log
+            log = os.path.join(CARPETA, "actualizar.log")
+            ejecutar(ruta, '/SILENT /SUPPRESSMSGBOXES /NORESTART /LOG="%s"' % log, esperar=False)
+            self.en_ventana(self.salir)
 
         self.instalar(tool, al_terminar=instalar_y_salir)
 
 
+MUTEX = "FactuPOS-Aplicaciones-Abierta"   # el instalador espera a que se suelte (ver aplicaciones.iss)
+_candado = None
+
+
 def main():
+    global _candado
+    try:
+        _candado = ctypes.windll.kernel32.CreateMutexW(None, False, MUTEX)
+    except Exception:
+        pass
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)   # letra nítida en pantallas con zoom
     except Exception:

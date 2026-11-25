@@ -14,7 +14,7 @@
 ; ============================================================================
 
 #define MyAppName "Aplicaciones FactuPOS"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "Aplicaciones-FactuPOS.exe"
@@ -56,3 +56,39 @@ Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent
 ; Actualización silenciosa (la lanza la propia app): se reabre sola.
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent
+
+[Code]
+// 1.0.3: la app se actualiza sola lanzando este instalador y cerrándose. Antes el instalador
+// arrancaba mientras la app todavía no había terminado de cerrarse y no podía reemplazar el .exe.
+// La app tiene abierto el candado "FactuPOS-Aplicaciones-Abierta" (MUTEX) mientras corre:
+// acá se espera hasta 20 s a que lo suelte antes de copiar nada.
+// Las versiones 1.0.0-1.0.2 no tienen ese candado: para ellas se espera a que el .exe se pueda
+// RENOMBRAR (si está en uso, Windows no deja). Se renombra y se devuelve a su nombre enseguida.
+function ExeLibre(): Boolean;
+var
+  exe, tmp: String;
+begin
+  exe := ExpandConstant('{localappdata}\Programs\{#MyAppName}\{#MyAppExeName}');
+  tmp := exe + '.prueba';
+  if not FileExists(exe) then
+  begin
+    Result := True;
+    exit;
+  end;
+  Result := RenameFile(exe, tmp);
+  if Result then
+    RenameFile(tmp, exe);
+end;
+
+function InitializeSetup(): Boolean;
+var
+  i: Integer;
+begin
+  i := 0;
+  while (CheckForMutexes('FactuPOS-Aplicaciones-Abierta') or not ExeLibre()) and (i < 40) do
+  begin
+    Sleep(500);
+    i := i + 1;
+  end;
+  Result := True;
+end;
