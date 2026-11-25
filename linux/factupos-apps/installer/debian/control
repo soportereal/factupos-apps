@@ -6,7 +6,7 @@ Architecture: all
 Depends: python3, python3-gi, gir1.2-gtk-3.0, pkexec
 Maintainer: Soporte Real <soporte@soportereal.com>
 Homepage: https://soportereal.com
-Description: FactuPOS - Tienda de Aplicaciones
+Description: FactuPOS Apps - instalar y actualizar aplicaciones FactuPOS
  Lista las aplicaciones disponibles en el repositorio APT de FactuPOS
  (https://soportereal.com/apt) y permite instalarlas, actualizarlas o
  quitarlas con un clic. Por debajo usa apt.

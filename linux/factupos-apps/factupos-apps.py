@@ -7,6 +7,8 @@ Tienda de aplicaciones de FactuPOS OS: lista las apps disponibles en el
 repositorio APT propio (https://soportereal.com/apt) y permite instalar,
 actualizar o quitar cada una con un clic.
 
+1.4.1 (#3957): sale «FactuSuper (caja)» con su nombre y la app se llama a sí misma «FactuPOS Apps».
+
 1.4.0 (#3037): la Tienda hace TODO lo que antes hacía la ventana «FactuPOS Update» de la
 barra (que se quitó). A la izquierda, dos grupos de color como los submenús de FactuPOS:
 «FactuPOS» (las apps propias) y «Otras apps» (Telegram, Winbox… y los navegadores Chrome y
@@ -28,7 +30,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
-VERSION = "1.4.0"                                 # fuente única de versión
+VERSION = "1.4.1"                                 # fuente única de versión
 
 REPO_HOST = "soportereal.com"                     # identifica los índices del repo
 LISTS_GLOB = "/var/lib/apt/lists/*%s*_Packages" % REPO_HOST.replace(".", "*")
@@ -53,7 +55,8 @@ NOMBRES = {
     # La tienda tambien se lista a si misma: asi se puede actualizar sola, sin
     # tener que abrir una terminal. Antes salia como "factupos-apps" al final de
     # la lista (sin nombre amigable no se entendia que era ella misma).
-    "factupos-apps":                "Tienda de Aplicaciones",
+    "factupos-apps":                "FactuPOS Apps",
+    "factupos-factusuper":          "FactuSuper (caja)",   # #3957
     "rustdesk":                     "Soporte Remoto FactuPOS",
     "telegram-desktop-bin":         "Telegram",
     "winbox":                       "Winbox (MikroTik)",
@@ -644,7 +647,7 @@ class TiendaApps(Gtk.Window):
     # nuevas en silencio; sin la barra el equipo se queda sin escritorio. La barrera de
     # verdad está en op.sh (root): esto es para avisar.
     INTOCABLES = {
-        "factupos-apps": ("la Tienda de Aplicaciones",
+        "factupos-apps": ("FactuPOS Apps",
                           "se quedaría sin forma de instalar o actualizar las demás"),
         "factupos-actualizador": ("el Actualizador",
                                   "el equipo dejaría de recibir versiones nuevas"),
@@ -790,7 +793,7 @@ class TiendaApps(Gtk.Window):
             transient_for=self, modal=True,
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.NONE,
-            text="La Tienda de Aplicaciones se actualizó")
+            text="FactuPOS Apps se actualizó")
         d.format_secondary_text(
             "Para ver la versión nueva hay que volver a abrirla.\n"
             "¿La reabro ahora?")
