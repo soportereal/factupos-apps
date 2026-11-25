@@ -13,8 +13,11 @@
 ;  Se COMPILA solo en GitHub Actions — .github/workflows/aplicaciones.yml.
 ; ============================================================================
 
-#define MyAppName "Aplicaciones FactuPOS"
-#define MyAppVersion "1.0.4"
+#define MyAppName "FactuPOS Apps"
+; 1.0.5: se llama «FactuPOS Apps», igual que la de Linux (dueño). La CARPETA, el .exe, el AppId
+; y el candado siguen con el nombre viejo: así la actualización cae encima de la instalación de siempre.
+#define MyAppDir "Aplicaciones FactuPOS"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "Aplicaciones-FactuPOS.exe"
@@ -25,7 +28,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={localappdata}\Programs\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppDir}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=yes
@@ -45,6 +48,13 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
 Source: "{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+
+[InstallDelete]
+; Los accesos con el nombre viejo (hasta la 1.0.4): si no, quedarían dos en el Escritorio.
+Type: files; Name: "{autodesktop}\Aplicaciones FactuPOS.lnk"
+Type: files; Name: "{autoprograms}\Aplicaciones FactuPOS\Aplicaciones FactuPOS.lnk"
+Type: files; Name: "{autoprograms}\Aplicaciones FactuPOS\Desinstalar Aplicaciones FactuPOS.lnk"
+Type: dirifempty; Name: "{autoprograms}\Aplicaciones FactuPOS"
 
 [Icons]
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -68,7 +78,7 @@ function ExeLibre(): Boolean;
 var
   exe, tmp: String;
 begin
-  exe := ExpandConstant('{localappdata}\Programs\{#MyAppName}\{#MyAppExeName}');
+  exe := ExpandConstant('{localappdata}\Programs\{#MyAppDir}\{#MyAppExeName}');
   tmp := exe + '.prueba';
   if not FileExists(exe) then
   begin

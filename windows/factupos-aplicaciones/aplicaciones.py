@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Aplicaciones FactuPOS (Windows) — una aplicación para descargar e instalar las demás.
+FactuPOS Apps (Windows; hasta la 1.0.4 «Aplicaciones FactuPOS») — una aplicación para descargar e instalar las demás.
 Idea del dueño, 25-nov-2026 (sale del caso #3907).
 
 Por qué existe: Google marcó como peligrosa la carpeta pública de instaladores y el
@@ -31,7 +31,7 @@ from ctypes import wintypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 CATALOGO_URL = "https://soportereal.com/descarga/catalogo.php"
 AGENTE = "FactuPOS-Aplicaciones/" + VERSION   # sin «Mozilla»: el servidor deja pasar a las apps
 CARPETA = os.path.join(tempfile.gettempdir(), "FactuPOS-Aplicaciones")
@@ -218,7 +218,7 @@ class App:
         self.raiz = raiz
         self.ocupado = False
         self.apps = []
-        raiz.title("Aplicaciones FactuPOS para Windows")
+        raiz.title("FactuPOS Apps")
         # 1.0.1: con el zoom de Windows (125-200 %) la ventana fija de 760x600 píxeles salía chica y cortada.
         # Se mide el zoom real (píxeles por pulgada / 96) y la ventana ocupa ~80 % de la pantalla, centrada.
         self.zoom = max(1.0, raiz.winfo_fpixels("1i") / 96.0)
@@ -231,7 +231,7 @@ class App:
 
         cab = tk.Frame(raiz, bg=AZUL)
         cab.pack(fill="x")
-        tk.Label(cab, text="Aplicaciones FactuPOS para Windows", bg=AZUL, fg="white",
+        tk.Label(cab, text="FactuPOS Apps", bg=AZUL, fg="white",
                  font=("Segoe UI", 15, "bold")).pack(side="left", padx=16, pady=12)
         tk.Label(cab, text="v" + VERSION, bg=AZUL, fg="#cbd5e1",
                  font=("Segoe UI", 9)).pack(side="left", pady=(18, 12))
@@ -353,7 +353,7 @@ class App:
 
     def instalar(self, a, al_terminar=None):
         if self.ocupado:
-            messagebox.showinfo("Aplicaciones FactuPOS", "Esperá a que termine lo que se está instalando.")
+            messagebox.showinfo("FactuPOS Apps", "Esperá a que termine lo que se está instalando.")
             return
         self.ocupado = True
         nombre = a.get("nombre", "")
@@ -385,10 +385,10 @@ class App:
 
     def desinstalar(self, a):
         if self.ocupado:
-            messagebox.showinfo("Aplicaciones FactuPOS", "Esperá a que termine lo que se está haciendo.")
+            messagebox.showinfo("FactuPOS Apps", "Esperá a que termine lo que se está haciendo.")
             return
         nombre = a.get("nombre", "")
-        if not messagebox.askyesno("Aplicaciones FactuPOS", "¿Desinstalar %s de esta computadora?" % nombre):
+        if not messagebox.askyesno("FactuPOS Apps", "¿Desinstalar %s de esta computadora?" % nombre):
             return
         self.ocupado = True
 
@@ -413,7 +413,7 @@ class App:
         threading.Thread(target=trabajo, daemon=True).start()
 
     def avisar_y_salir(self):
-        messagebox.showinfo("Aplicaciones FactuPOS",
+        messagebox.showinfo("FactuPOS Apps",
                             "Se va a actualizar: esta ventana se cierra y la aplicación se vuelve a abrir sola "
                             "en unos segundos, ya con la versión nueva.")
         self.salir()
@@ -423,7 +423,7 @@ class App:
         os._exit(0)   # que no quede nada abierto mientras el instalador reemplaza el .exe
 
     def ofrecer_autoactualizar(self, tool):
-        if not messagebox.askyesno("Aplicaciones FactuPOS",
+        if not messagebox.askyesno("FactuPOS Apps",
                                    "Hay una versión nueva de esta aplicación (v%s).\n¿Actualizar ahora?" % tool["version"]):
             return
 

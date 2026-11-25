@@ -22,6 +22,11 @@ exec python3 /usr/lib/factupos-apps/factupos-apps.py "$@"
 LAUNCH
 chmod 755 "$STAGE/usr/bin/$PKG"
 
+# 1.4.2: el MISMO ícono que FactuPOS Apps de Windows (cuadrícula azul con flecha; dueño, 25-nov-2026).
+# Sale de windows/factupos-aplicaciones/icono/aplicaciones.png, reducido a 256 px.
+install -d "$STAGE/usr/share/icons/hicolor/256x256/apps"
+install -m644 "$HERE/$PKG.png" "$STAGE/usr/share/icons/hicolor/256x256/apps/$PKG.png"
+
 install -d "$STAGE/usr/share/applications"
 install -m644 "$HERE/$PKG.desktop" "$STAGE/usr/share/applications/$PKG.desktop"
 

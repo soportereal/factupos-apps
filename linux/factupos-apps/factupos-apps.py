@@ -7,6 +7,8 @@ Tienda de aplicaciones de FactuPOS OS: lista las apps disponibles en el
 repositorio APT propio (https://soportereal.com/apt) y permite instalar,
 actualizar o quitar cada una con un clic.
 
+1.4.2: el mismo ícono que FactuPOS Apps de Windows.
+
 1.4.1 (#3957): sale «FactuSuper (caja)» con su nombre y la app se llama a sí misma «FactuPOS Apps».
 
 1.4.0 (#3037): la Tienda hace TODO lo que antes hacía la ventana «FactuPOS Update» de la
@@ -30,7 +32,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
-VERSION = "1.4.1"                                 # fuente única de versión
+VERSION = "1.4.2"                                 # fuente única de versión
 
 REPO_HOST = "soportereal.com"                     # identifica los índices del repo
 LISTS_GLOB = "/var/lib/apt/lists/*%s*_Packages" % REPO_HOST.replace(".", "*")
@@ -356,6 +358,7 @@ class TiendaApps(Gtk.Window):
 
     def __init__(self):
         super().__init__(title="FactuPOS Apps")
+        self.set_icon_name("factupos-apps")   # 1.4.2: mismo ícono que la de Windows
         self.set_default_size(*self._tamano_ventana())
         hb = Gtk.HeaderBar()
         hb.set_show_close_button(True)
