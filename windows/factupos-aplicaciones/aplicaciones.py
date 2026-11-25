@@ -31,7 +31,7 @@ from ctypes import wintypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 CATALOGO_URL = "https://soportereal.com/descarga/catalogo.php"
 AGENTE = "FactuPOS-Aplicaciones/" + VERSION   # sin «Mozilla»: el servidor deja pasar a las apps
 CARPETA = os.path.join(tempfile.gettempdir(), "FactuPOS-Aplicaciones")
@@ -412,6 +412,12 @@ class App:
 
         threading.Thread(target=trabajo, daemon=True).start()
 
+    def avisar_y_salir(self):
+        messagebox.showinfo("Aplicaciones FactuPOS",
+                            "Se va a actualizar: esta ventana se cierra y la aplicación se vuelve a abrir sola "
+                            "en unos segundos, ya con la versión nueva.")
+        self.salir()
+
     def salir(self):
         self.raiz.destroy()
         os._exit(0)   # que no quede nada abierto mientras el instalador reemplaza el .exe
@@ -429,7 +435,8 @@ class App:
             # Registro: %TEMP%\FactuPOS-Aplicaciones\actualizar.log
             log = os.path.join(CARPETA, "actualizar.log")
             ejecutar(ruta, '/SILENT /SUPPRESSMSGBOXES /NORESTART /LOG="%s"' % log, esperar=False)
-            self.en_ventana(self.salir)
+            # 1.0.4: avisar antes de cerrar; si no, parece que «no hizo nada» (prueba del dueño, 25-nov).
+            self.en_ventana(self.avisar_y_salir)
 
         self.instalar(tool, al_terminar=instalar_y_salir)
 
