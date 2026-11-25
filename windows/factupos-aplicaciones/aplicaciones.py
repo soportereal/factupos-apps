@@ -31,7 +31,7 @@ from ctypes import wintypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 CATALOGO_URL = "https://soportereal.com/descarga/catalogo.php"
 AGENTE = "FactuPOS-Aplicaciones/" + VERSION   # sin «Mozilla»: el servidor deja pasar a las apps
 CARPETA = os.path.join(tempfile.gettempdir(), "FactuPOS-Aplicaciones")
@@ -54,7 +54,7 @@ def es_mayor(nueva, actual):
 
 
 def programas_instalados():
-    """[(nombre, versión)] de «Agregar o quitar programas» (máquina y usuario, 64 y 32 bits)."""
+    """[(nombre, versión, comando para desinstalar)] de «Agregar o quitar programas» (máquina y usuario, 64 y 32 bits)."""
     import winreg
     salida = []
     ruta = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
@@ -78,20 +78,39 @@ def programas_instalados():
                         ver = winreg.QueryValueEx(k, "DisplayVersion")[0]
                     except OSError:
                         ver = ""
-                    salida.append((str(nombre), str(ver)))
+                    try:
+                        desinst = winreg.QueryValueEx(k, "UninstallString")[0]
+                    except OSError:
+                        desinst = ""
+                    salida.append((str(nombre), str(ver), str(desinst)))
                 except OSError:
                     pass
     return salida
 
 
-def version_instalada(app, instalados):
-    """'' si no está instalada; la versión (o '?') si está."""
+def buscar_instalada(app, instalados):
+    """(versión o '?', comando para desinstalar) si está instalada; ('', '') si no.
+    Compara el nombre EXACTO (sin mayúsculas): «FactuPOS Print Bridge» contiene «FactuPOS Print», y con
+    «Desinstalar» confundirlos quitaría el programa equivocado."""
     for texto in app.get("detectar") or []:
-        t = texto.lower()
-        for nombre, ver in instalados:
-            if t in nombre.lower():
-                return ver or "?"
-    return ""
+        t = texto.strip().lower()
+        for nombre, ver, desinst in instalados:
+            if nombre.strip().lower() == t:
+                return (ver or "?"), desinst
+    return "", ""
+
+
+def partir_comando(cmd):
+    """'"C:\\x\\unins000.exe" /X' -> ('C:\\x\\unins000.exe', '/X') · 'MsiExec.exe /X{..}' -> ('MsiExec.exe', '/X{..}')."""
+    cmd = (cmd or "").strip()
+    if cmd.startswith('"'):
+        fin = cmd.find('"', 1)
+        if fin > 0:
+            return cmd[1:fin], cmd[fin + 1:].strip()
+    m = re.match(r"(?i)^(.+?\.exe)\b(.*)$", cmd)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return cmd, ""
 
 
 def windows_64():
@@ -261,7 +280,7 @@ class App:
                 apps = bajar_json(CATALOGO_URL).get("apps", [])
                 instalados = programas_instalados()
                 for a in apps:
-                    a["_instalada"] = version_instalada(a, instalados)
+                    a["_instalada"], a["_desinstalar"] = buscar_instalada(a, instalados)
                 self.en_ventana(self.mostrar, apps)
             except Exception as e:
                 self.en_ventana(self.poner_estado, "No se pudo leer la lista (¿hay internet?): %s" % e, 0)
@@ -318,6 +337,12 @@ class App:
                       activebackground=color, activeforeground="white", font=("Segoe UI", 9, "bold"),
                       command=lambda: self.instalar(a))
         b.pack(side="right", padx=12)
+        # 1.0.2 (pedido del dueño): si está instalada y Windows sabe cómo quitarla, botón Desinstalar.
+        if inst and a.get("_desinstalar"):
+            tk.Button(f, text="Desinstalar", bg="white", fg="#b91c1c", relief="flat", width=12,
+                      activebackground="#fee2e2", activeforeground="#b91c1c", font=("Segoe UI", 9),
+                      highlightbackground="#fecaca", highlightthickness=1,
+                      command=lambda: self.desinstalar(a)).pack(side="right", padx=(0, 4))
         if inst and texto == "Reinstalar":
             tk.Label(f, text="✓ Al día", bg="white", fg=VERDE, font=("Segoe UI", 9, "bold")).pack(side="right")
 
@@ -355,6 +380,35 @@ class App:
                 self.ocupado = False
                 if not al_terminar:
                     self.en_ventana(self.cargar)
+
+        threading.Thread(target=trabajo, daemon=True).start()
+
+    def desinstalar(self, a):
+        if self.ocupado:
+            messagebox.showinfo("Aplicaciones FactuPOS", "Esperá a que termine lo que se está haciendo.")
+            return
+        nombre = a.get("nombre", "")
+        if not messagebox.askyesno("Aplicaciones FactuPOS", "¿Desinstalar %s de esta computadora?" % nombre):
+            return
+        self.ocupado = True
+
+        def trabajo():
+            try:
+                self.en_ventana(self.poner_estado, "Desinstalando %s… (Windows puede pedir permiso)" % nombre, 0)
+                exe, args = partir_comando(a["_desinstalar"])
+                c = ejecutar(exe, args)
+                if c in (0, 3010):
+                    self.en_ventana(self.poner_estado, "%s se desinstaló" % nombre, 0)
+                else:
+                    self.en_ventana(self.poner_estado, "El desinstalador de %s terminó con código %d" % (nombre, c), 0)
+            except OSError as e:
+                if getattr(e, "winerror", None) == 1223:
+                    self.en_ventana(self.poner_estado, "Se canceló la desinstalación de %s" % nombre, 0)
+                else:
+                    self.en_ventana(self.poner_estado, "No se pudo desinstalar %s: %s" % (nombre, e), 0)
+            finally:
+                self.ocupado = False
+                self.en_ventana(self.cargar)
 
         threading.Thread(target=trabajo, daemon=True).start()
 

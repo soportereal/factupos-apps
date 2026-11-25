@@ -14,7 +14,7 @@
 ; ============================================================================
 
 #define MyAppName "Aplicaciones FactuPOS"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "Aplicaciones-FactuPOS.exe"
