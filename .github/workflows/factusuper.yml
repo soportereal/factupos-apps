@@ -1,0 +1,102 @@
+name: Build FactuSuper (Windows · Linux · Android)
+
+# FactuSuper como aplicación nativa (no web) que consume las APIs de FactuPOS — caso #3957 (25-nov-2026).
+# Un solo código Flutter en multiplataforma/factusuper/. En el servidor no hay Flutter: se compila acá.
+# F1: binarios de PRUEBA (Android firmado en debug, sin instalador). La distribución (Inno, .deb, firma oficial) es la F4.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'multiplataforma/factusuper/**'
+      - '.github/workflows/factusuper.yml'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.50.1'
+  APP: multiplataforma/factusuper
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Analizar y probar
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test   # la A/B del motor se salta acá: sus casos salen del JS del servidor
+
+  linux:
+    needs: pruebas
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Dependencias de escritorio
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+      - name: Compilar
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter build linux --release
+          tar -C build/linux/x64/release/bundle -czf FactuSuper-Linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factusuper-linux
+          path: ${{ env.APP }}/FactuSuper-Linux-x64.tar.gz
+          if-no-files-found: error
+
+  windows:
+    needs: pruebas
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Compilar
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter build windows --release
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath FactuSuper-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factusuper-windows
+          path: ${{ env.APP }}/FactuSuper-Windows-x64.zip
+          if-no-files-found: error
+
+  android:
+    needs: pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Compilar
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk FactuSuper-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factusuper-android
+          path: ${{ env.APP }}/FactuSuper-Android.apk
+          if-no-files-found: error
