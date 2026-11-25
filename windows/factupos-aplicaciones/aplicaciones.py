@@ -31,7 +31,7 @@ from ctypes import wintypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 CATALOGO_URL = "https://soportereal.com/descarga/catalogo.php"
 AGENTE = "FactuPOS-Aplicaciones/" + VERSION   # sin «Mozilla»: el servidor deja pasar a las apps
 CARPETA = os.path.join(tempfile.gettempdir(), "FactuPOS-Aplicaciones")
@@ -199,15 +199,21 @@ class App:
         self.raiz = raiz
         self.ocupado = False
         self.apps = []
-        raiz.title("Aplicaciones FactuPOS")
-        raiz.geometry("760x600")
-        raiz.minsize(620, 420)
+        raiz.title("Aplicaciones FactuPOS para Windows")
+        # 1.0.1: con el zoom de Windows (125-200 %) la ventana fija de 760x600 píxeles salía chica y cortada.
+        # Se mide el zoom real (píxeles por pulgada / 96) y la ventana ocupa ~80 % de la pantalla, centrada.
+        self.zoom = max(1.0, raiz.winfo_fpixels("1i") / 96.0)
+        ancho_p, alto_p = raiz.winfo_screenwidth(), raiz.winfo_screenheight()
+        ancho = min(int(900 * self.zoom), int(ancho_p * 0.85))
+        alto = min(int(760 * self.zoom), int(alto_p * 0.85))
+        raiz.geometry("%dx%d+%d+%d" % (ancho, alto, (ancho_p - ancho) // 2, max(0, (alto_p - alto) // 3)))
+        raiz.minsize(min(int(620 * self.zoom), ancho_p), min(int(420 * self.zoom), alto_p))
         raiz.configure(bg=CLARO)
 
         cab = tk.Frame(raiz, bg=AZUL)
         cab.pack(fill="x")
-        tk.Label(cab, text="Aplicaciones FactuPOS", bg=AZUL, fg="white",
-                 font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=12)
+        tk.Label(cab, text="Aplicaciones FactuPOS para Windows", bg=AZUL, fg="white",
+                 font=("Segoe UI", 15, "bold")).pack(side="left", padx=16, pady=12)
         tk.Label(cab, text="v" + VERSION, bg=AZUL, fg="#cbd5e1",
                  font=("Segoe UI", 9)).pack(side="left", pady=(18, 12))
         tk.Button(cab, text="↻ Actualizar lista", command=self.cargar, bg=AZUL2, fg="white",
@@ -290,7 +296,7 @@ class App:
         tk.Label(izq, text=a.get("nombre", ""), bg="white", fg=AZUL, font=("Segoe UI", 11, "bold"),
                  anchor="w").pack(fill="x")
         tk.Label(izq, text=a.get("desc", ""), bg="white", fg=GRIS, font=("Segoe UI", 9),
-                 anchor="w", wraplength=440, justify="left").pack(fill="x")
+                 anchor="w", wraplength=int(520 * self.zoom), justify="left").pack(fill="x")
 
         disp = a.get("version") or ""
         inst = a.get("_instalada") or ""
