@@ -1,0 +1,60 @@
+name: Build FactuPOS Apps (Android)
+
+# La gemela para Android de FactuPOS Apps de Windows y Linux (#3957, dueño 25-nov-2026): lista, instala, actualiza
+# y quita las apps de FactuPOS. Firma con la keystore FIJA de la casa (la de FactuPOS Print y FactuSuper):
+# sin ella cada versión sale con otra firma y Android no la instala encima.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android/factupos-apps-android/**'
+      - '.github/workflows/factupos-apps-android.yml'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.50.1'
+  APP: android/factupos-apps-android
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Pruebas
+        working-directory: ${{ env.APP }}
+        run: |
+          flutter pub get
+          flutter test
+      - name: Restaurar keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then echo "Falta el secret ANDROID_KEYSTORE_B64: no se publica un APK con firma de prueba"; exit 1; fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Compilar
+        working-directory: ${{ env.APP }}
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk FactuPOS-Apps-Android.apk
+      - name: Borrar keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factupos-apps-android
+          path: ${{ env.APP }}/FactuPOS-Apps-Android.apk
+          if-no-files-found: error

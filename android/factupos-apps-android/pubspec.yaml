@@ -1,0 +1,24 @@
+name: factupos_apps
+description: "FactuPOS Apps para Android: instalar, actualizar y quitar las apps de FactuPOS (#3957)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  material_ui: ^1.1.0
+  http: ^1.6.0
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icono.png
