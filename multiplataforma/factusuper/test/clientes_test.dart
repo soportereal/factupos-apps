@@ -71,7 +71,7 @@ void main() {
       {
         'codigo': '00010',
         'nombre': 'ANA MORA',
-          'comercial': 'ANA MORA',
+        'comercial': 'ANA MORA',
         'cedula': '1-0111-0222',
         'tipo_precio': 1,
         'descuento': 0,

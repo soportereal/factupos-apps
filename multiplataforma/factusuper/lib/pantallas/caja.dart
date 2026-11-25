@@ -14,6 +14,7 @@ import '../caja/cajon.dart';
 import '../caja/cierre.dart';
 import '../caja/clientes.dart';
 import '../caja/cola.dart';
+import '../caja/cola_procesos.dart';
 import '../impresion/sin_internet.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
@@ -29,6 +30,7 @@ import '../motor/redondeo.dart';
 import '../ui/dialogos.dart';
 import '../ui/dialogos_caja.dart';
 import '../ui/tema.dart';
+import '../ui/vista_lineas.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
@@ -109,15 +111,39 @@ class _EstadoCaja extends State<PantallaCaja> {
       widget.config.empresa,
       'preferencias',
     );
-    if (p is Map && p['modoLector'] == false && mounted)
-      setState(() => _modoLector = false);
+    if (p is! Map || !mounted) return;
+    setState(() {
+      if (p['modoLector'] == false) _modoLector = false;
+      _vista = vistaValida(p['vista']);
+      _letras = letrasDesde(p['letras']);
+    });
+  }
+
+  /// Las preferencias de ESTE equipo (modo lector, vista de las líneas y su letra), todas juntas.
+  void _guardarPreferencias() => widget.almacen.guardarTabla(
+    widget.config.empresa,
+    'preferencias',
+    {'modoLector': _modoLector, 'vista': _vista, 'letras': _letras},
+  );
+
+  /// Vistas de las líneas (Básica · Simple · Detallada · Full) — se recuerda en el equipo, como la web.
+  String _vista = 'simple';
+  Map<String, double> _letras = {};
+
+  void _ponerVista(String v) {
+    setState(() => _vista = vistaValida(v));
+    _guardarPreferencias();
+    _foco();
+  }
+
+  void _cambiarLetra(int delta) {
+    setState(() => _letras = cambiarLetra(_vista, _letras, delta));
+    _guardarPreferencias();
   }
 
   void _ponerModoLector(bool v) {
     setState(() => _modoLector = v);
-    widget.almacen.guardarTabla(widget.config.empresa, 'preferencias', {
-      'modoLector': v,
-    });
+    _guardarPreferencias();
     _aviso(
       v
           ? 'Modo lector: cada código entra con cantidad 1'
@@ -190,6 +216,7 @@ class _EstadoCaja extends State<PantallaCaja> {
   @override
   void dispose() {
     _reloj?.cancel();
+    _scrollLado.dispose();
     super.dispose();
   }
 
@@ -1187,6 +1214,100 @@ class _EstadoCaja extends State<PantallaCaja> {
     }
   }
 
+  /// Selector de vista + A− / A+ (la letra es POR VISTA; tocar el número vuelve a la de fábrica).
+  Widget _controlVista() {
+    final f = letraDe(_vista, _letras);
+    final elegida = _letras.containsKey(_vista);
+    Widget b(
+      String t,
+      String ayuda,
+      VoidCallback? fn, {
+      bool marcado = false,
+    }) => Tooltip(
+      message: ayuda,
+      child: InkWell(
+        onTap: fn,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 32),
+          height: 32,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            t,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: fn == null
+                  ? Marca.tintaSuave.withValues(alpha: 0.4)
+                  : (marcado ? Marca.azul : Marca.tinta),
+            ),
+          ),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: 'Cómo se ven las líneas (se recuerda en este equipo)',
+            child: DropdownButton<String>(
+              value: _vista,
+              underline: const SizedBox.shrink(),
+              isDense: true,
+              icon: const Icon(Icons.view_list_outlined, size: 18),
+              style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                fontSize: 13,
+                color: Marca.azul,
+                fontWeight: FontWeight.w600,
+              ),
+              items: [
+                for (final v in vistasLineas)
+                  DropdownMenuItem(
+                    value: v,
+                    child: Text('Vista ${nombresVista[v]!.toLowerCase()}  '),
+                  ),
+              ],
+              onChanged: (v) => v == null ? null : _ponerVista(v),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Marca.borde),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                b(
+                  'A−',
+                  'Letra más chica',
+                  f <= letraMin ? null : () => _cambiarLetra(-1),
+                ),
+                b(
+                  fmt(f, 0),
+                  elegida
+                      ? 'Volver al tamaño original de esta vista'
+                      : 'Tamaño de fábrica de esta vista',
+                  elegida ? () => _cambiarLetra(0) : null,
+                  marcado: elegida,
+                ),
+                b(
+                  'A+',
+                  'Letra más grande',
+                  f >= letraMax ? null : () => _cambiarLetra(1),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _barraEspera() {
     if (_espera.isEmpty && doc.lineas.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -1243,6 +1364,8 @@ class _EstadoCaja extends State<PantallaCaja> {
               ),
             ),
           ),
+          if (doc.lineas.isNotEmpty && MediaQuery.sizeOf(context).width >= 700)
+            _controlVista(),
           if (doc.lineas.isNotEmpty)
             TextButton.icon(
               onPressed: () => _guardarProforma(),
@@ -1409,9 +1532,25 @@ class _EstadoCaja extends State<PantallaCaja> {
     _foco();
   }
 
+  /// MV-113 · la cola en orden + lo enviado en 7 días (`pintarCola` de la web).
+  Future<List<FilaCola>> _filasCola() async => armarCola(
+    clientes: await _clientes.pendientes(),
+    cajon: await _cajonObj.pendientes(),
+    ventas: widget.cola.pendientes,
+    registro: await _registro.lista(),
+  );
+
   Future<void> _verRegistro() async {
     _cerrarOpciones();
-    await dialogoRegistro(context, await _registro.lista());
+    await dialogoCola(
+      context,
+      cargar: _filasCola,
+      enviar: () async {
+        await _enviar();
+        return _ultimoEnvio;
+      },
+      verVentas: _verVentas,
+    );
     _foco();
   }
 
@@ -1576,9 +1715,9 @@ class _EstadoCaja extends State<PantallaCaja> {
             }),
             accion(
               Icons.history,
-              'Registro de procesos',
+              'Cola de procesos',
               _verRegistro,
-              ayuda: 'Todo lo que este equipo mandó a procesar en la última semana',
+              ayuda: 'Todo lo que esta caja todavía no envió al servidor (facturas, clientes, cajón), en orden, y lo enviado en la semana',
             ),
           ],
         ),
@@ -1712,10 +1851,12 @@ class _EstadoCaja extends State<PantallaCaja> {
       ),
       actions: [
         Tooltip(
-          message: sinRed ? _ultimoEnvio : 'Ver las ventas de esta caja',
+          message: sinRed
+              ? _ultimoEnvio
+              : 'Cola de procesos: lo que falta enviar, en orden',
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: _verVentas,
+            onTap: _verRegistro,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
@@ -2069,7 +2210,7 @@ class _EstadoCaja extends State<PantallaCaja> {
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              '₡${fmt(l.precio)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
+              '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -2093,12 +2234,38 @@ class _EstadoCaja extends State<PantallaCaja> {
         },
       );
     }
-    const estiloCab = TextStyle(
-      fontSize: 12,
+    final f = letraDe(_vista, _letras);
+    final estiloCab = TextStyle(
+      fontSize: (f * 0.78).clamp(11, 22).toDouble(),
       fontWeight: FontWeight.w600,
       color: Marca.tintaSuave,
       letterSpacing: 0.4,
     );
+    final cols = _columnas(f);
+    // La descripción no baja de ~14 letras de ancho (web: min-width 14em); si no cabe, la tabla se desliza de lado.
+    final fijo =
+        40 + f * 5.6 + cols.fold<double>(0, (a, c) => a + c.ancho) + 80 + 24;
+    return LayoutBuilder(
+      builder: (_, lim) {
+        final minimo = fijo + f * 14;
+        final tabla = _tablaAncha(f, estiloCab, cols);
+        if (lim.maxWidth >= minimo) return tabla;
+        return Scrollbar(
+          controller: _scrollLado,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _scrollLado,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(width: minimo, child: tabla),
+          ),
+        );
+      },
+    );
+  }
+
+  final _scrollLado = ScrollController();
+
+  Widget _tablaAncha(double f, TextStyle estiloCab, List<_Col> cols) {
     return Column(
       children: [
         Container(
@@ -2122,32 +2289,25 @@ class _EstadoCaja extends State<PantallaCaja> {
                   ),
                 ),
               ),
-              const SizedBox(width: 84, child: Text('CANT.', style: estiloCab)),
-              const Expanded(child: Text('DESCRIPCIÓN', style: estiloCab)),
-              const SizedBox(
-                width: 120,
-                child: Text(
-                  'PRECIO',
-                  style: estiloCab,
-                  textAlign: TextAlign.right,
-                ),
+              SizedBox(
+                width: f * 5.6,
+                child: Text('CANT.', style: estiloCab),
               ),
-              const SizedBox(
-                width: 80,
-                child: Text(
-                  'DESC.',
-                  style: estiloCab,
-                  textAlign: TextAlign.right,
+              Expanded(child: Text('DESCRIPCIÓN', style: estiloCab)),
+              for (final c in cols)
+                SizedBox(
+                  width: c.ancho,
+                  child: Tooltip(
+                    message: c.ayuda,
+                    child: Text(
+                      c.titulo,
+                      style: estiloCab,
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(
-                width: 130,
-                child: Text(
-                  'TOTAL',
-                  style: estiloCab,
-                  textAlign: TextAlign.right,
-                ),
-              ),
               const SizedBox(width: 80),
             ],
           ),
@@ -2158,19 +2318,109 @@ class _EstadoCaja extends State<PantallaCaja> {
           child: ListView.builder(
             controller: _scroll,
             itemCount: doc.lineas.length,
-            itemBuilder: (_, i) => _fila(i, doc.lineas[i]),
+            itemBuilder: (_, i) => _fila(i, doc.lineas[i], f, cols),
           ),
         ),
       ],
     );
   }
 
-  Widget _fila(int i, Linea l) {
+  /// Las columnas de números de cada vista (después de CANT. y DESCRIPCIÓN), en el orden de la web.
+  List<_Col> _columnas(double f) {
+    final d = doc.dec;
+    final ancho = f * 7.4;
+    final precio = _Col(
+      'PRECIO',
+      'Precio con IVA',
+      ancho,
+      (l) => Text('₡${fmt(precioConIva(l), d.total)}'),
+    );
+    final desc = _Col(
+      'DESC.',
+      'Descuento en colones, con IVA (y su %)',
+      f * 5.6,
+      (l) => l.descuento > 0
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  fmt(descuentoConIva(l), d.subDesc),
+                  style: const TextStyle(
+                    color: Marca.rojo,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '${fmt(l.descuento, d.descPct)} %',
+                  style: TextStyle(fontSize: f * 0.7, color: Marca.tintaSuave),
+                ),
+              ],
+            )
+          : const Text('—', style: TextStyle(color: Marca.tintaSuave)),
+    );
+    final total = _Col(
+      'TOTAL',
+      'Total de la línea, con IVA',
+      f * 8.4,
+      (l) => Text(
+        '₡${fmt(l.total, d.total)}',
+        style: TextStyle(fontWeight: FontWeight.w700, fontSize: f + 1),
+      ),
+    );
+    _Col det(String t, String a, Widget Function(Linea) c, [double? w]) =>
+        _Col(t, a, w ?? f * 6.4, c, detalle: true);
+    return switch (_vista) {
+      'basica' => [precio],
+      'simple' => [precio, desc, total],
+      _ => [
+        det('PV', 'Nivel de precio', (l) => Text('P${l.nivel}'), f * 3),
+        det(
+          'P. UNIT',
+          'Precio por unidad, sin IVA',
+          (l) => Text(fmt(l.precio, d.precio)),
+        ),
+        precio,
+        desc,
+        det(
+          'SUBTOTAL',
+          'Cantidad × precio, sin IVA ni descuento',
+          (l) => Text(fmt(l.subtotal1, d.subDesc)),
+        ),
+        det(
+          'NETO S/IVA',
+          'Base después del descuento, sin IVA',
+          (l) => Text(fmt(l.subtotal2, d.sub2)),
+        ),
+        det(
+          '% IVA',
+          '% de IVA (y lo exonerado)',
+          (l) => Text(
+            '${fmt(l.tarifa, 0)}%${l.ivaExonerado > 0 ? ' −${fmt(l.ivaExonerado, 0)}' : ''}',
+          ),
+          f * 4.4,
+        ),
+        det('IVA', 'Monto del IVA', (l) => Text(fmt(l.iva, d.iva))),
+        det(
+          'P. NETO',
+          'Precio unitario con el descuento y con IVA (Total ÷ Cantidad)',
+          (l) =>
+              Text(l.cantidad != 0 ? fmt(l.total / l.cantidad, d.total) : ''),
+        ),
+        total,
+      ],
+    };
+  }
+
+  Widget _fila(int i, Linea l, double f, List<_Col> cols) {
     final sel = i == _sel;
+    final full = _vista == 'full';
+    final fondo = sel
+        ? Marca.azulClaro
+        : (i.isOdd ? const Color(0xFFFAFBFD) : Colors.white);
+    final compacta = _vista == 'basica' || _vista == 'simple';
     return Material(
-      color: sel
-          ? Marca.azulClaro
-          : (i.isOdd ? const Color(0xFFFAFBFD) : Colors.white),
+      color: fondo,
       child: InkWell(
         onTap: () => setState(() => _sel = i),
         onDoubleTap: () => _editar(i),
@@ -2183,125 +2433,201 @@ class _EstadoCaja extends State<PantallaCaja> {
               ),
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(3, 10, 15, 10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 40,
-                child: Checkbox(
-                  value: _marcadas.contains(i),
-                  onChanged: (v) => setState(
-                    () => v == true ? _marcadas.add(i) : _marcadas.remove(i),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 84,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Marca.fondo,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      fmt(l.cantidad, l.fraccionable != 0 ? 3 : 0),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          padding: EdgeInsets.fromLTRB(
+            3,
+            compacta ? 5 : 8,
+            15,
+            compacta ? 5 : 8,
+          ),
+          child: DefaultTextStyle.merge(
+            style: TextStyle(fontSize: f, color: Marca.tinta),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      l.nombre,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
+                    SizedBox(
+                      width: 40,
+                      child: Checkbox(
+                        value: _marcadas.contains(i),
+                        onChanged: (v) => setState(
+                          () => v == true
+                              ? _marcadas.add(i)
+                              : _marcadas.remove(i),
+                        ),
+                      ),
                     ),
-                    Text(
-                      [
-                        l.codigo,
-                        'IVA ${fmt(l.tarifa, 0)}%',
-                        if (l.ivaExonerado > 0)
-                          'EXO ${fmt(l.ivaExonerado, 0)}%',
-                        if (l.bonificacion) 'BONIFICACIÓN',
-                        if (l.autorizaciones.isNotEmpty) 'autorizado',
-                      ].join(' · '),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Marca.tintaSuave,
+                    SizedBox(
+                      width: f * 5.6,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: f * 0.6,
+                            vertical: f * 0.25,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Marca.fondo,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            fmt(l.cantidad, l.fraccionable != 0 ? 3 : 0),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l.nombre,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            [
+                              if (_vista != 'basica') l.codigo,
+                              'IVA ${fmt(l.tarifa, 0)}%',
+                              if (l.ivaExonerado > 0)
+                                'EXO ${fmt(l.ivaExonerado, 0)}%',
+                              if (l.bonificacion) 'BONIFICACIÓN',
+                              if (l.autorizaciones.isNotEmpty) 'autorizado',
+                            ].join(' · '),
+                            style: TextStyle(
+                              fontSize: (f * 0.62).clamp(10, 20).toDouble(),
+                              color: Marca.tintaSuave,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    for (final c in cols)
+                      SizedBox(
+                        width: c.ancho,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: DefaultTextStyle.merge(
+                            style: c.detalle
+                                ? TextStyle(
+                                    fontSize: f * 0.85,
+                                    color: Marca.tintaSuave,
+                                  )
+                                : const TextStyle(),
+                            maxLines: 1,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: c.celda(l),
+                            ),
+                          ),
+                        ),
+                      ),
+                    SizedBox(
+                      width: 80,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Editar (Ctrl+Enter)',
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: 20,
+                              color: Marca.tintaSuave,
+                            ),
+                            onPressed: () => _editar(i),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Quitar (Supr)',
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: Marca.tintaSuave,
+                            ),
+                            onPressed: () => _quitar(i),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-              SizedBox(
-                width: 120,
-                child: Text('₡${fmt(l.precio)}', textAlign: TextAlign.right),
-              ),
-              SizedBox(
-                width: 80,
-                child: Text(
-                  l.descuento > 0 ? '${fmt(l.descuento, 1)} %' : '—',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: l.descuento > 0
-                        ? Marca.verdeOscuro
-                        : Marca.tintaSuave,
-                    fontWeight: l.descuento > 0
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 130,
-                child: Text(
-                  '₡${fmt(l.total)}',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 80,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Editar (Ctrl+Enter)',
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        size: 20,
-                        color: Marca.tintaSuave,
-                      ),
-                      onPressed: () => _editar(i),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Quitar (Supr)',
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: Marca.tintaSuave,
-                      ),
-                      onPressed: () => _quitar(i),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                if (full) _filaFull(l, f),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Vista FULL: la segunda fila con todos los campos de la línea (`filaFull` de la web).
+  Widget _filaFull(Linea l, double f) {
+    final d = doc.dec;
+    Widget c(String rot, String val, [String? ayuda]) {
+      final w = Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '${rot.toUpperCase()} ',
+              style: TextStyle(
+                fontSize: f * 0.62,
+                color: Marca.tintaSuave,
+                letterSpacing: 0.3,
+              ),
+            ),
+            TextSpan(text: val),
+          ],
+        ),
+        style: TextStyle(fontSize: f * 0.72),
+      );
+      return ayuda == null ? w : Tooltip(message: ayuda, child: w);
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(44 + f * 5.6, 4, 0, 0),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 4,
+        children: [
+          c(
+            'Tipo precio',
+            'P${l.nivel} · lista ${fmt(l.precioLista, d.precio)}',
+          ),
+          c('CABYS', l.cabys.isEmpty ? '—' : l.cabys),
+          c(
+            'Actividad',
+            l.actividad.isEmpty ? '—' : l.actividad,
+            'Actividad económica',
+          ),
+          c('Unidad', l.unidad),
+          c('Naturaleza', naturalezas[l.naturaleza] ?? l.naturaleza),
+          c(
+            'Tarifa',
+            '${l.codigoTarifa} · ${fmt(l.tarifa, 0)} %',
+            'Código de tarifa de IVA de Hacienda y su porcentaje',
+          ),
+          c(
+            'Descuento',
+            '${fmt(l.descuento, d.descPct)} % · ${fmt(l.descuentoMonto, d.subDesc)}',
+            'Porcentaje y monto sin IVA',
+          ),
+          c('Gravado', fmt(l.gravado, 2)),
+          c('Exento', fmt(l.exento, 2)),
+          c('Exonerado', fmt(l.exonerado, 2)),
+          c(
+            '% Exoneración',
+            '${fmt(l.ivaExonerado, 0)} %',
+            'Puntos de IVA exonerados en esta línea',
+          ),
+          c('IVA', fmt(l.iva, d.iva)),
+          c('IVA exonerado', fmt(l.ivaExoneradoMonto, d.iva)),
+          if (l.ivaDevuelto != 0) c('IVA devuelto', fmt(l.ivaDevuelto, d.iva)),
+          if (l.exo != null) c('Documento exo.', l.exo!.documento),
+          if (l.barra.isNotEmpty) c('Barra', l.barra),
+        ],
       ),
     );
   }
@@ -2738,4 +3064,19 @@ class _Atajo extends StatelessWidget {
       Text(que, style: const TextStyle(fontSize: 12, color: Marca.tintaSuave)),
     ],
   );
+}
+
+/// Una columna de números de la tabla de líneas.
+class _Col {
+  final String titulo, ayuda;
+  final double ancho;
+  final Widget Function(Linea) celda;
+  final bool detalle;
+  const _Col(
+    this.titulo,
+    this.ayuda,
+    this.ancho,
+    this.celda, {
+    this.detalle = false,
+  });
 }

@@ -1,9 +1,13 @@
 /// Diálogos de las OPCIONES de caja (#3957): fondo de caja (MV-112), registro de procesos (MV-113).
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../caja/cierre.dart';
+import '../caja/cola_procesos.dart';
 import '../caja/clientes.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
@@ -120,74 +124,287 @@ Future<ResultadoFondo?> dialogoFondo(
   );
 }
 
-/// MV-113 · Registro de la semana: todo lo que este equipo mandó a procesar.
-Future<void> dialogoRegistro(
-  BuildContext context,
-  List<Map<String, dynamic>> lista,
-) => showDialog<void>(
+/// MV-113 · Cola de procesos (`pintarCola` de la web): lo que falta enviar EN ORDEN + lo enviado en 7 días, con el JSON
+/// de envío de cada uno (ver / copiar), «Enviar ahora» y «Ventas del equipo».
+Future<void> dialogoCola(
+  BuildContext context, {
+  required Future<List<FilaCola>> Function() cargar,
+  required Future<String> Function() enviar,
+  required VoidCallback verVentas,
+}) => showDialog<void>(
   context: context,
-  builder: (ctx) => AlertDialog(
-    title: tituloDialogo(
-      'Registro de procesos (7 días)',
-      codigo: 'MV-113',
-      icono: Icons.history,
-    ),
-    content: SizedBox(
-      width: 720,
-      height: 460,
-      child: lista.isEmpty
-          ? const Center(
-              child: Text(
-                'Todavía no hay procesos registrados en este equipo',
-                style: TextStyle(color: Marca.tintaSuave),
-              ),
-            )
-          : ListView.separated(
-              itemCount: lista.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final p = lista[i];
-                final ok = p['estado'] == 'procesado';
-                final mal = p['estado'] == 'rechazado';
-                final f = DateTime.tryParse('${p['fecha']}')?.toLocal();
-                String d(int n) => n.toString().padLeft(2, '0');
-                return ListTile(
-                  dense: true,
-                  leading: Icon(
-                    ok
-                        ? Icons.check_circle
-                        : mal
-                        ? Icons.cancel
-                        : Icons.schedule,
-                    color: ok
-                        ? Marca.verde
-                        : mal
-                        ? Marca.rojo
-                        : Marca.ambar,
-                  ),
-                  title: Text('${p['idProceso']} · ${p['tipo']}'),
-                  subtitle: Text(
-                    [
-                      if (f != null)
-                        '${d(f.day)}/${d(f.month)} ${d(f.hour)}:${d(f.minute)}',
-                      if ('${p['resultado'] ?? ''}'.isNotEmpty)
-                        '${p['resultado']}',
-                      if ('${p['error'] ?? ''}'.isNotEmpty) '${p['error']}',
-                    ].join(' · '),
-                  ),
-                  trailing: Text('${p['estado']}'),
-                );
-              },
+  builder: (ctx) {
+    List<FilaCola>? filas;
+    FilaCola? elegida;
+    var enviando = false;
+    var cargando = false;
+    String d2(int n) => n.toString().padLeft(2, '0');
+    String hora(String t) {
+      final f = DateTime.tryParse(t)?.toLocal();
+      return f == null
+          ? ''
+          : '${d2(f.day)}/${d2(f.month)} ${d2(f.hour)}:${d2(f.minute)}:${d2(f.second)}';
+    }
+
+    return StatefulBuilder(
+      builder: (ctx, set) {
+        if (filas == null && !cargando) {
+          cargando = true;
+          cargar().then((f) {
+            if (ctx.mounted) set(() => filas = f);
+          });
+        }
+        final hay = filas?.any((f) => f.pendiente) ?? false;
+        Widget estado(FilaCola f) {
+          final ok = f.estado == 'procesado' || f.estado == 'procesada';
+          final mal = f.estado.startsWith('rechazad');
+          final err = f.estado == 'error';
+          final c = ok
+              ? Marca.verde
+              : mal
+              ? Marca.rojo
+              : err
+              ? Marca.ambar
+              : Marca.azul;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
             ),
-    ),
-    actions: [
-      FilledButton(
-        onPressed: () => Navigator.pop(ctx),
-        child: const Text('Cerrar'),
-      ),
-    ],
-  ),
+            child: Text(
+              nombresEstado[f.estado] ?? f.estado,
+              style: TextStyle(
+                color: c,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        }
+
+        return AlertDialog(
+          title: tituloDialogo(
+            'Cola de procesos',
+            codigo: 'MV-113',
+            icono: Icons.format_list_numbered,
+          ),
+          content: SizedBox(
+            width: 900,
+            height: 520,
+            child: filas == null
+                ? const Center(child: CircularProgressIndicator())
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        resumenCola(filas!),
+                        style: const TextStyle(color: Marca.tintaSuave),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: filas!.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'Todavía no hay procesos en este equipo',
+                                  style: TextStyle(color: Marca.tintaSuave),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filas!.length,
+                                separatorBuilder: (_, _) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (_, i) {
+                                  final f = filas![i];
+                                  return ListTile(
+                                    dense: true,
+                                    selected: identical(f, elegida),
+                                    selectedTileColor: Marca.azulClaro,
+                                    leading: SizedBox(
+                                      width: 28,
+                                      child: Text(
+                                        f.pendiente ? '${f.orden}' : '',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    title: Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text:
+                                                '${nombresProceso[f.tipo] ?? f.tipo}  ',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: f.id,
+                                            style: const TextStyle(
+                                              color: Marca.tintaSuave,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    subtitle: Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: [
+                                              hora(f.fecha),
+                                              if (f.detalle.isNotEmpty)
+                                                f.detalle,
+                                            ].join(' · '),
+                                          ),
+                                          if (f.error.isNotEmpty)
+                                            TextSpan(
+                                              text: '  ${f.error}',
+                                              style: const TextStyle(
+                                                color: Marca.rojo,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (f.monto != null)
+                                          Text(
+                                            '₡${fmt(f.monto!.toDouble())}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        const SizedBox(width: 12),
+                                        estado(f),
+                                        const SizedBox(width: 4),
+                                        TextButton.icon(
+                                          onPressed: f.json == null
+                                              ? null
+                                              : () => set(() => elegida = f),
+                                          icon: const Icon(
+                                            Icons.data_object,
+                                            size: 16,
+                                          ),
+                                          label: const Text('ver'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      if (elegida != null) ...[
+                        const Divider(color: Marca.azul, thickness: 2),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'JSON de envío · ${nombresProceso[elegida!.tipo] ?? elegida!.tipo} · ${elegida!.id} · ${nombresEstado[elegida!.estado] ?? elegida!.estado}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(
+                                    text: _jsonBonito(elegida!.json),
+                                  ),
+                                );
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
+                                    const SnackBar(
+                                      content: Text('JSON copiado'),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.copy, size: 16),
+                              label: const Text('Copiar'),
+                            ),
+                            IconButton(
+                              tooltip: 'Cerrar el JSON',
+                              onPressed: () => set(() => elegida = null),
+                              icon: const Icon(Icons.close, size: 18),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          height: 160,
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          color: Marca.fondo,
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              _jsonBonito(elegida!.json),
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+          actions: [
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                verVentas();
+              },
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('Ventas del equipo'),
+            ),
+            FilledButton.icon(
+              onPressed: enviando || !hay
+                  ? null
+                  : () async {
+                      set(() => enviando = true);
+                      final msg = await enviar();
+                      final f = await cargar();
+                      if (!ctx.mounted) return;
+                      set(() {
+                        enviando = false;
+                        filas = f;
+                        elegida = null;
+                      });
+                      if (msg.isNotEmpty) {
+                        ScaffoldMessenger.maybeOf(ctx)
+                            ?.showSnackBar(SnackBar(content: Text(msg)));
+                      }
+                    },
+              icon: enviando
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Enviar ahora'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  },
 );
+
+String _jsonBonito(Object? j) => const JsonEncoder.withIndent('  ').convert(j);
 
 /// MV-114 · Proformas de ESTE equipo. → ('abrir' | 'borrar', id) o null.
 Future<(String, String)?> dialogoProformas(

@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:factusuper/ui/vista_lineas.dart';
 import 'package:factusuper/caja/cajeros.dart';
 import 'package:factusuper/caja/cola.dart';
 import 'package:factusuper/caja/datos_caja.dart';
@@ -297,6 +298,31 @@ void main() {
     await t.pump(const Duration(milliseconds: 600));
     await foto(t, '7g-favoritos');
     await t.tap(find.text('Ocultar'));
+    await t.pump(const Duration(milliseconds: 500));
+    // Vistas de las líneas + letra por vista
+    var actual = 'simple';
+    for (final v in ['basica', 'detallada', 'full']) {
+      await t.tap(find.text('Vista ${nombresVista[actual]!.toLowerCase()}  '));
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.text('Vista ${nombresVista[v]!.toLowerCase()}  ').last);
+      await t.pump(const Duration(milliseconds: 500));
+      actual = v;
+      await foto(t, '7h-vista-$v');
+    }
+    await t.tap(find.text('A+'));
+    await t.pump();
+    await t.tap(find.text('A+'));
+    await t.pump(const Duration(milliseconds: 300));
+    await foto(t, '7i-full-letra-mas');
+    await t.tap(find.byTooltip('Cola de procesos: lo que falta enviar, en orden'));
+    for (var i = 0; i < 3; i++) {
+      await t.pump(const Duration(milliseconds: 200));
+      await t.runAsync(() => Future.delayed(const Duration(milliseconds: 300)));
+    }
+    await t.runAsync(() => Future.delayed(const Duration(milliseconds: 500)));
+    await t.pump(const Duration(milliseconds: 600));
+    await foto(t, '7j-cola');
+    await t.tap(find.text('Cerrar').last);
     await t.pump(const Duration(milliseconds: 500));
 
     await t.pumpWidget(

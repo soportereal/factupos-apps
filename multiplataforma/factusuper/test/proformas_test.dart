@@ -111,7 +111,11 @@ void main() {
     final l = await p.lista();
     expect(l.length, 2);
     final misma = l.firstWhere((x) => x['id'] == r.id);
-    expect(misma['lineas'], 1, reason: 'el mismo artículo suma en la misma línea');
+    expect(
+      misma['lineas'],
+      1,
+      reason: 'el mismo artículo suma en la misma línea',
+    );
     expect(misma['total'], greaterThan(3000));
     expect(misma['etiqueta'], 'señora blusa roja');
     expect((misma['doc'] as Map).containsKey('proformaOrigen'), false);
