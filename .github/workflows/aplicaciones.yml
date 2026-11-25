@@ -1,0 +1,50 @@
+name: Build Aplicaciones FactuPOS (Windows)
+
+# App de Windows para descargar e instalar las demás apps de FactuPOS sin navegador
+# (idea del dueño, 25-nov-2026, sale del #3907). Se compila en 32 bits: corre en Windows de 32 y 64.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'windows/factupos-aplicaciones/**'
+      - '.github/workflows/aplicaciones.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.8 (x86)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: x86
+
+      - name: Instalar PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller==5.13.2
+
+      - name: Compilar el .exe
+        run: pyinstaller --onefile --windowed --icon windows/factupos-aplicaciones/aplicaciones.ico --add-data "windows/factupos-aplicaciones/aplicaciones.ico;." --name Aplicaciones-FactuPOS windows/factupos-aplicaciones/aplicaciones.py
+
+      - name: Copiar el .exe junto al instalador
+        shell: pwsh
+        run: Copy-Item dist/Aplicaciones-FactuPOS.exe windows/factupos-aplicaciones/installer/
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compilar el instalador
+        shell: cmd
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\factupos-aplicaciones\installer\aplicaciones.iss'
+
+      - name: Subir el instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: aplicaciones-factupos-installer
+          path: windows\factupos-aplicaciones\installer\Output\Aplicaciones-FactuPOS-Setup.exe
+          if-no-files-found: error
