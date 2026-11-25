@@ -322,6 +322,49 @@ class Documento {
     return ResultadoAgregar(ok: true, linea: l, avisos: avisos);
   }
 
+  /// Precio de lista (colones) del artículo para el nivel: si el nivel no tiene precio > 0, el PRIMER precio > 0 y su nivel.
+  /// → (precio, nivel) o null si no tiene precio (precioPara de la web).
+  (double, int)? precioPara(String codigo, int nivel) {
+    final lista = datos.precios(codigo);
+    final p =
+        lista
+            .where(
+              (x) => _n(x['numero']).toInt() == nivel && _n(x['precio']) > 0,
+            )
+            .firstOrNull ??
+        lista.where((x) => _n(x['precio']) > 0).firstOrNull;
+    if (p == null) return null;
+    final art = datos.articuloExacto(codigo) ?? const {};
+    var precio = _n(p['precio']);
+    final moneda = _t(p['moneda']).isNotEmpty
+        ? _t(p['moneda'])
+        : (_t(art['moneda']).isNotEmpty ? _t(art['moneda']) : 'CRC');
+    if (moneda != 'CRC') {
+      final tc = datos.tipoCambio(moneda);
+      precio = tc > 0 ? redondear(precio * tc, 5) : 0;
+    }
+    return precio > 0 ? (precio, _n(p['numero']).toInt()) : null;
+  }
+
+  /// Tras bajar cambios del servidor: las líneas de [codigos] toman el precio nuevo (revisarCambiosAlAgregar de la web).
+  /// No toca las líneas con precio o descuento puestos a mano. → cuántas cambiaron.
+  int aplicarPreciosNuevos(Iterable<String> codigos) {
+    final cambiados = codigos.toSet();
+    var n = 0;
+    for (var i = 0; i < lineas.length; i++) {
+      final l = lineas[i];
+      if (!cambiados.contains(l.codigo) ||
+          l.descManual ||
+          l.precio != l.precioLista)
+        continue;
+      if (datos.articuloExacto(l.codigo) == null) continue;
+      final p = precioPara(l.codigo, l.nivel > 0 ? l.nivel : 1);
+      if (p == null || p.$1 == l.precioLista) continue;
+      if (cambiarNivel(i, p.$2).$1) n++;
+    }
+    return n;
+  }
+
   /// Barra: cambiar el NIVEL DE PRECIO de una línea (cotizacion_tipoprecio_cambiar.php + reaplicar descuento de FactuDesk):
   /// si el nivel no tiene precio > 0 se SALTA; si no, toma su precio y reglas, el descuento vuelve a 0 y se re-aplica el
   /// automático. → (ok, motivo, avisos)

@@ -10,11 +10,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../caja/cajeros.dart';
+import '../caja/cajon.dart';
 import '../caja/cola.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
 import '../datos/almacen.dart';
 import '../datos/conexion.dart';
+import '../datos/descarga.dart';
 import '../motor/linea.dart';
 import '../motor/redondeo.dart';
 import '../ui/dialogos.dart';
@@ -185,8 +187,12 @@ class _EstadoCaja extends State<PantallaCaja> {
   }
 
   Future<void> _enviar() async {
-    if (_enviando || widget.cola.pendientes.isEmpty) return;
+    if (_enviando) return;
+    if (widget.cola.pendientes.isEmpty &&
+        (await _cajonObj.pendientes()).isEmpty)
+      return;
     setState(() => _enviando = true);
+    await _cajonObj.subirPendientes(widget.cajero.usuario);
     final r = await widget.cola.enviar();
     if (!mounted) return;
     setState(() {
@@ -205,6 +211,90 @@ class _EstadoCaja extends State<PantallaCaja> {
   }
 
   void _foco() => _focoBuscar.requestFocus();
+
+  // ── Cambios del servidor al agregar (revisarCambiosAlAgregar de la web): en segundo plano, como mucho cada 10 s ──
+  bool _revisando = false;
+  DateTime _ultimaRevision = DateTime.fromMillisecondsSinceEpoch(0);
+
+  Future<void> _revisarCambiosAlAgregar() async {
+    if (_revisando ||
+        DateTime.now().difference(_ultimaRevision) <
+            const Duration(seconds: 10))
+      return;
+    _revisando = true;
+    _ultimaRevision = DateTime.now();
+    final con = Conexion(
+      llave: widget.config.llave,
+      cajero: widget.cajero.usuario,
+    );
+    try {
+      final r = await Descarga(
+        con,
+        widget.almacen,
+        widget.config.empresa,
+      ).sincronizarSiHaceFalta(soloCambios: true);
+      final c = r.cambios;
+      if (c == null || !mounted) return;
+      await widget.datos.recargar(
+        widget.almacen,
+        widget.config.empresa,
+        grupos: (c['hechos'] as List).cast<String>(),
+      );
+      final n = doc.aplicarPreciosNuevos(
+        (c['codigos'] as List? ?? const []).map((x) => '$x'),
+      );
+      if (n > 0) {
+        _cambio();
+        _aviso(
+          'Precio actualizado desde el servidor en $n ${n == 1 ? 'línea' : 'líneas'}',
+        );
+      }
+    } catch (_) {
+      // sin internet / el servidor no contestó: se sigue con la copia del equipo
+    } finally {
+      con.cerrar();
+      _revisando = false;
+    }
+  }
+
+  /// «Revisar cambios» (menú): solo lo que cambió, ya.
+  Future<void> _revisarCambios() async {
+    final con = Conexion(
+      llave: widget.config.llave,
+      cajero: widget.cajero.usuario,
+    );
+    try {
+      final r = await Descarga(
+        con,
+        widget.almacen,
+        widget.config.empresa,
+      ).sincronizarSiHaceFalta();
+      if (r.estado == 'sin_conexion')
+        return _aviso(
+          'Sin conexión: se sigue con los datos del equipo',
+          error: true,
+        );
+      if (r.estado == 'al_dia') return _aviso('Los datos están al día');
+      await widget.datos.recargar(widget.almacen, widget.config.empresa);
+      doc.lineas.forEach(doc.agregarRecalculo); // decimales/parámetros nuevos
+      final c = r.cambios;
+      final partes = [
+        if (c != null && (c['hechos'] as List).contains('articulos'))
+          '${c['articulos']} artículos cambiados${(c['bajas'] as int) > 0 ? ' y ${c['bajas']} de baja' : ''}',
+        if (c != null && (c['hechos'] as List).contains('clientes'))
+          '${c['clientes']} clientes nuevos o cambiados',
+        if (r.grupos.isNotEmpty) 'se bajó: ${r.grupos.join(', ')}',
+      ];
+      _cambio();
+      _aviso(
+        'Datos actualizados${partes.isEmpty ? '' : ' · ${partes.join(' · ')}'}',
+      );
+    } on ErrorConexion catch (e) {
+      _aviso('No se pudo sincronizar: ${e.mensaje}', error: true);
+    } finally {
+      con.cerrar();
+    }
+  }
 
   // ── Agregar ──
   Future<void> _agregar(
@@ -244,6 +334,7 @@ class _EstadoCaja extends State<PantallaCaja> {
       _buscar.clear();
       if (r.ok) _sel = doc.lineas.indexOf(r.linea!);
     });
+    if (r.ok) _revisarCambiosAlAgregar();
     final pc = r.ok ? Documento.cabysProblema(r.linea!) : '';
     if (!r.ok) {
       _aviso(r.motivo, error: true);
@@ -664,6 +755,41 @@ class _EstadoCaja extends State<PantallaCaja> {
     );
   }
 
+  late final Cajon _cajonObj = Cajon(
+    widget.almacen,
+    widget.config,
+    widget.datos,
+  );
+
+  /// F9 — abrir el cajón: permiso 141 o la clave de un supervisor.
+  Future<void> _cajon() async {
+    var autoriza = '';
+    if (!doc.tienePermiso('141')) {
+      final a = await dialogoSupervisor(
+        context,
+        widget.cajeros,
+        const Validacion(
+          permiso: '141',
+          motivo: 'Abrir el cajón requiere permiso (141) o la clave de un supervisor.',
+        ),
+      );
+      if (a is! Cajero) return _foco();
+      autoriza = a.nombre;
+    }
+    final (ok, via, error) = await _cajonObj.abrir(
+      cajero: widget.cajero.usuario,
+      usuario: '${widget.cajero.usuario} ${widget.cajero.nombre}',
+      autoriza: autoriza,
+    );
+    _aviso(
+      ok
+          ? 'Cajón abierto${via == 'equipo' ? ' (por FactuPOS Print de este equipo)' : ''}'
+          : 'No se pudo abrir el cajón: $error',
+      error: !ok,
+    );
+    _foco();
+  }
+
   Future<void> _consulta() async {
     await dialogoConsulta(
       context,
@@ -838,6 +964,7 @@ class _EstadoCaja extends State<PantallaCaja> {
     const SingleActivator(LogicalKeyboardKey.f4): () => _cobrar('01'),
     const SingleActivator(LogicalKeyboardKey.f5): _accionDescuento,
     const SingleActivator(LogicalKeyboardKey.f6): _consulta,
+    const SingleActivator(LogicalKeyboardKey.f9): _cajon,
     const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
         _editar(_sel),
     const SingleActivator(LogicalKeyboardKey.delete): () => _quitar(_sel),
@@ -1019,6 +1146,8 @@ class _EstadoCaja extends State<PantallaCaja> {
                 _romana();
               case 'datos':
                 _actualizarDatos();
+              case 'cambios':
+                _revisarCambios();
             }
           },
           itemBuilder: (_) => [
@@ -1035,10 +1164,17 @@ class _EstadoCaja extends State<PantallaCaja> {
               ),
             ),
             const PopupMenuItem(
+              value: 'cambios',
+              child: ListTile(
+                leading: Icon(Icons.update),
+                title: Text('Revisar cambios'),
+              ),
+            ),
+            const PopupMenuItem(
               value: 'datos',
               child: ListTile(
                 leading: Icon(Icons.sync),
-                title: Text('Actualizar datos'),
+                title: Text('Actualizar datos (todo)'),
               ),
             ),
             const PopupMenuDivider(),
@@ -1165,6 +1301,7 @@ class _EstadoCaja extends State<PantallaCaja> {
               _Atajo('F4  ·  *', 'Cobrar'),
               _Atajo('F5', 'Descuento'),
               _Atajo('F6', 'Consulta'),
+              _Atajo('F9', 'Cajón'),
               _Atajo('Ctrl+Enter', 'Editar línea'),
               _Atajo('Supr', 'Quitar'),
               _Atajo('↑ ↓', 'Elegir línea'),
@@ -1687,6 +1824,15 @@ class _EstadoCaja extends State<PantallaCaja> {
           ),
         Row(
           children: [
+            Tooltip(
+              message: 'Abrir el cajón (F9)',
+              child: OutlinedButton(
+                onPressed: _cajon,
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16)),
+                child: const Icon(Icons.inbox_outlined, size: 20),
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: vacia

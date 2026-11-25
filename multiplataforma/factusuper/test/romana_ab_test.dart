@@ -8,7 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final f = File('test/ab_romana.json');
   test('romana = la web', () {
-    final casos = (jsonDecode(f.readAsStringSync()) as List).cast<Map<String, dynamic>>();
+    final casos = (jsonDecode(f.readAsStringSync()) as List)
+        .cast<Map<String, dynamic>>();
     final malos = <String>[];
     for (var i = 0; i < casos.length; i++) {
       final k = casos[i], e = k['E'] as Map<String, dynamic>;
@@ -17,16 +18,36 @@ void main() {
         precios: (e['precios'] as List).cast<Map<String, dynamic>>(),
         catalogos: {
           'romana': [e['cfg']],
-          'estacion': [{...(e['estacion'] as Map), 'clave': 'actual'}],
-          'tipo_cambio': [{'moneda': 'USD', 'fecha': '2026-11-25', 'venta': e['tc']}],
+          'estacion': [
+            {...(e['estacion'] as Map), 'clave': 'actual'},
+          ],
+          'tipo_cambio': [
+            {'moneda': 'USD', 'fecha': '2026-11-25', 'venta': e['tc']},
+          ],
         },
       );
       final r = d.romanaLeer('${k['codigo']}');
-      final app = r == null ? null : r['error'] != null ? {'error': r['error']} : {'articulo': (r['articulo'] as Map)['codigo'], 'cantidad': r['cantidad'], 'tipo': r['tipo'], 'valor': r['valor']};
+      final app = r == null
+          ? null
+          : r['error'] != null
+          ? {'error': r['error']}
+          : {
+              'articulo': (r['articulo'] as Map)['codigo'],
+              'cantidad': r['cantidad'],
+              'tipo': r['tipo'],
+              'valor': r['valor'],
+            };
       final web = k['r'] as Map<String, dynamic>?;
-      final igual = (web == null && app == null) ||
-          (web != null && app != null && web['error'] == app['error'] && web['articulo'] == app['articulo'] && web['tipo'] == app['tipo'] &&
-              web['valor'] == app['valor'] && ((web['cantidad'] as num?) ?? 0) == ((app['cantidad'] as num?) ?? 0));
+      final igual =
+          (web == null && app == null) ||
+          (web != null &&
+              app != null &&
+              web['error'] == app['error'] &&
+              web['articulo'] == app['articulo'] &&
+              web['tipo'] == app['tipo'] &&
+              web['valor'] == app['valor'] &&
+              ((web['cantidad'] as num?) ?? 0) ==
+                  ((app['cantidad'] as num?) ?? 0));
       if (!igual) malos.add('caso $i ${k['codigo']}: web=$web app=$app');
     }
     // ignore: avoid_print

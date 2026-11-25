@@ -113,9 +113,11 @@ class Almacen {
       await tmp.rename(f.path);
     });
     _fila[f.path] = esta;
-    esta.whenComplete(() {
-      if (identical(_fila[f.path], esta)) _fila.remove(f.path);
-    }).catchError((_) {});
+    esta
+        .whenComplete(() {
+          if (identical(_fila[f.path], esta)) _fila.remove(f.path);
+        })
+        .catchError((_) {});
     return esta;
   }
 }

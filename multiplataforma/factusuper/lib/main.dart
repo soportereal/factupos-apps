@@ -50,7 +50,9 @@ class _EstadoApp extends State<FactuSuperApp> {
     setState(() => _abriendo = true);
     final con = Conexion(llave: cfg.llave, cajero: c.usuario);
     try {
-      await Descarga(con, widget.almacen, cfg.empresa).catalogos();
+      // «Cuando un usuario entra de nuevo debe sincronizar, pero inteligente» (web): solo lo que cambió. Las firmas de los
+      // catálogos dependen del cajero → con otro cajero se baja SU estación (caja, bodega, impresora, nivel de precio).
+      await Descarga(con, widget.almacen, cfg.empresa).sincronizarSiHaceFalta();
     } catch (_) {
       // sin internet: sigue con la copia que hay
     } finally {

@@ -6,9 +6,24 @@ void main() {
   const hash = r'$2y$10$bOAuYIxtPueTLF.aUqWdjuKa1oGPD1ooZUy7ktrGWkmAfifYDDViS';
   final c = Cajeros({
     'usuarios': [
-      {'usuario': '00006', 'nombre': 'Ana', 'hash': hash, 'permisos': <String>[]},
-      {'usuario': '00007', 'nombre': 'Beto', 'hash': hash, 'permisos': <String>[]},
-      {'usuario': '00008', 'nombre': 'Sin clave', 'hash': '', 'permisos': <String>[]},
+      {
+        'usuario': '00006',
+        'nombre': 'Ana',
+        'hash': hash,
+        'permisos': <String>[],
+      },
+      {
+        'usuario': '00007',
+        'nombre': 'Beto',
+        'hash': hash,
+        'permisos': <String>[],
+      },
+      {
+        'usuario': '00008',
+        'nombre': 'Sin clave',
+        'hash': '',
+        'permisos': <String>[],
+      },
     ],
     'permisos_usuario': [
       {'usuario': '00006', 'permiso': '653'},

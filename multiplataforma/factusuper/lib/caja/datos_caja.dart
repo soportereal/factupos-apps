@@ -11,36 +11,93 @@ String _t(Object? v) => '${v ?? ''}'.trim();
 double _n(Object? v) => v is num ? v.toDouble() : (double.tryParse(_t(v)) ?? 0);
 
 class DatosCaja {
-  final List<Map<String, dynamic>> articulos;
+  List<Map<String, dynamic>> articulos = [];
   final Map<String, Map<String, dynamic>> _porCodigo = {}, _porBarra = {};
   final Map<String, List<Map<String, dynamic>>> _precios = {};
   final Map<String, String> _busca = {};
-  final Map<int, String?> parametros;
-  final Map<String, dynamic> catalogos;
+  final Map<int, String?> parametros = {};
+  Map<String, dynamic> catalogos = {};
   final Map<String, Map<String, dynamic>> clientes = {};
 
   DatosCaja._(
-    this.articulos,
+    List<Map<String, dynamic>> articulos,
     List<Map<String, dynamic>> precios,
     List<Map<String, dynamic>> clientesL,
-    this.catalogos,
-  ) : parametros = {
-        for (final p in _filas(catalogos['parametros']))
-          (int.tryParse(_t(p['parametro'])) ?? -1): p['valor']?.toString(),
-      } {
-    for (final a in articulos) {
-      final c = _t(a['codigo']).toUpperCase();
-      _porCodigo[c] = a;
-      final b = _t(a['barra']).toUpperCase();
-      if (b.isNotEmpty) _porBarra[b] = a;
-      _busca[c] = '$c $b ${_t(a['nombre'])}'.toUpperCase();
+    Map<String, dynamic> catalogos,
+  ) {
+    poner(
+      articulos: articulos,
+      precios: precios,
+      clientes: clientesL,
+      catalogos: catalogos,
+    );
+  }
+
+  /// Reemplaza los datos EN SU LUGAR (la venta en curso sigue apuntando a este mismo objeto) y rearma los índices.
+  void poner({
+    List<Map<String, dynamic>>? articulos,
+    List<Map<String, dynamic>>? precios,
+    List<Map<String, dynamic>>? clientes,
+    Map<String, dynamic>? catalogos,
+  }) {
+    if (catalogos != null) {
+      this.catalogos = catalogos;
+      parametros
+        ..clear()
+        ..addAll({
+          for (final p in _filas(catalogos['parametros']))
+            (int.tryParse(_t(p['parametro'])) ?? -1): p['valor']?.toString(),
+        });
     }
-    for (final p in precios) {
-      (_precios[_t(p['articulo'])] ??= []).add(p);
+    if (articulos != null) {
+      this.articulos = articulos;
+      _porCodigo.clear();
+      _porBarra.clear();
+      _busca.clear();
+      for (final a in articulos) {
+        final c = _t(a['codigo']).toUpperCase();
+        _porCodigo[c] = a;
+        final b = _t(a['barra']).toUpperCase();
+        if (b.isNotEmpty) _porBarra[b] = a;
+        _busca[c] = '$c $b ${_t(a['nombre'])}'.toUpperCase();
+      }
     }
-    for (final c in clientesL) {
-      clientes[_t(c['codigo']).toUpperCase()] = c;
+    if (precios != null) {
+      _precios.clear();
+      for (final p in precios) {
+        (_precios[_t(p['articulo'])] ??= []).add(p);
+      }
     }
+    if (clientes != null) {
+      this.clientes.clear();
+      for (final c in clientes) {
+        this.clientes[_t(c['codigo']).toUpperCase()] = c;
+      }
+    }
+  }
+
+  /// Vuelve a leer del disco lo que cambió (tras sincronizar).
+  Future<void> recargar(
+    Almacen almacen,
+    String empresa, {
+    Iterable<String> grupos = const [
+      'articulos',
+      'precios',
+      'clientes',
+      'catalogos',
+    ],
+  }) async {
+    Future<List<Map<String, dynamic>>> filas(String t) async =>
+        _filas(await almacen.leerTabla(empresa, t));
+    final cat = grupos.contains('catalogos')
+        ? await almacen.leerTabla(empresa, 'catalogos')
+        : null;
+    poner(
+      articulos: grupos.contains('articulos') ? await filas('articulos') : null,
+      precios: grupos.contains('precios') ? await filas('precios') : null,
+      clientes: grupos.contains('clientes') ? await filas('clientes') : null,
+      catalogos: cat is Map ? Map<String, dynamic>.from(cat) : null,
+    );
   }
 
   /// Para las pruebas (y para armarla desde datos ya en memoria).
