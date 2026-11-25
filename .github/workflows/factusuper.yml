@@ -49,10 +49,19 @@ jobs:
           flutter pub get
           flutter build linux --release
           tar -C build/linux/x64/release/bundle -czf FactuSuper-Linux-x64.tar.gz .
+      # #3957: el paquete .deb para FactuPOS OS (repo apt de soportereal.com, Tienda FactuPOS Apps)
+      - name: Paquete .deb
+        working-directory: ${{ env.APP }}
+        run: |
+          V=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/version: *([0-9.]+).*/\1/')
+          bash installer/linux/build-deb.sh "$V" build/linux/x64/release/bundle installer/linux/Output
+          dpkg-deb -I installer/linux/Output/*.deb | grep -E 'Package|Version|Architecture'
       - uses: actions/upload-artifact@v4
         with:
           name: factusuper-linux
-          path: ${{ env.APP }}/FactuSuper-Linux-x64.tar.gz
+          path: |
+            ${{ env.APP }}/FactuSuper-Linux-x64.tar.gz
+            ${{ env.APP }}/installer/linux/Output/*.deb
           if-no-files-found: error
 
   windows:

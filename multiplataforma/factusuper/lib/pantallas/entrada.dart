@@ -2,6 +2,8 @@
 /// también sin internet). Aquí sale el aviso de versión nueva: entre cajeros, nunca a media venta.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../caja/cajeros.dart';
@@ -45,7 +47,11 @@ class _EstadoEntrada extends State<PantallaEntrada> {
 
   Future<void> _actualizar() async {
     final v = _nueva!;
-    setState(() => _avanceAct = 'Bajando la versión ${v.nueva}…');
+    setState(
+      () => _avanceAct = Platform.isLinux
+          ? 'Instalando la versión ${v.nueva}…'
+          : 'Bajando la versión ${v.nueva}…',
+    );
     try {
       await instalarVersion(
         v,

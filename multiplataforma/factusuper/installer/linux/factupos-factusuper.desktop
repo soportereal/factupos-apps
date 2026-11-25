@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FactuSuper
+GenericName=Caja de supermercado
+Comment=Caja FactuSuper de FactuPOS (también sin internet)
+Exec=factusuper
+Icon=factusuper
+Terminal=false
+Categories=Office;Finance;
+StartupWMClass=factusuper

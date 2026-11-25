@@ -1679,10 +1679,7 @@ Future<Map<String, dynamic>?> dialogoEstacion(
                   for (final o in ops)
                     DropdownMenuItem(
                       value: o.cod,
-                      child: Text(
-                        o.txt,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(o.txt, overflow: TextOverflow.ellipsis),
                     ),
                 ],
                 onChanged: puede ? (x) => set(() => v[campo] = x ?? '') : null,

@@ -34,6 +34,8 @@ static void my_application_activate(GApplication* application) {
   // gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
   gtk_window_set_title(window, "FactuSuper");
+  // #3957: el ícono que instala el .deb (/usr/share/icons/hicolor/…/factusuper.png).
+  gtk_window_set_icon_name(window, "factusuper");
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
