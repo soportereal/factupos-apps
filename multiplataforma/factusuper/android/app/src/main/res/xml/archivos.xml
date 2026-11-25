@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #3957: el APK de la versión nueva lo baja la app a su caché (carpeta «actualizacion»). -->
+<paths>
+    <cache-path name="actualizacion" path="actualizacion/" />
+</paths>

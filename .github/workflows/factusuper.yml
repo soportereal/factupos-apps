@@ -122,12 +122,30 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+      # #3957: firma con la keystore FIJA de la casa (la misma de android.yml). Con la debug del runner cada versión sale con
+      # otra firma y Android NO la instala encima (habría que desinstalar = perder las ventas guardadas en el equipo).
+      - name: Restaurar keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then echo "Falta el secret ANDROID_KEYSTORE_B64: no se publica un APK con firma de prueba"; exit 1; fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
       - name: Compilar
         working-directory: ${{ env.APP }}
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter pub get
           flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk FactuSuper-Android.apk
+          # La huella del certificado (pública): tiene que ser SIEMPRE la misma.
+          keytool -printcert -jarfile FactuSuper-Android.apk | grep -E 'SHA256:|Owner:' | head -2
+      - name: Borrar keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
       - uses: actions/upload-artifact@v4
         with:
           name: factusuper-android

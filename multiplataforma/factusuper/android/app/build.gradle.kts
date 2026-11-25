@@ -29,11 +29,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // #3957: la keystore de la casa NO vive en el repo: llega por variables de entorno (secrets de GitHub en el CI).
+    // Android exige la MISMA firma para actualizar encima; sin keystore (compilando a mano) sale con la debug.
+    val ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+    val hayKs = !ksPath.isNullOrEmpty() && file(ksPath).exists()
+    signingConfigs {
+        if (hayKs) {
+            create("release") {
+                storeFile = file(ksPath!!)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hayKs) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 }
@@ -46,4 +59,9 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // #3957: FileProvider para entregarle el APK nuevo al instalador de Android.
+    implementation("androidx.core:core:1.13.1")
 }

@@ -8,13 +8,16 @@
 /// Linux (FactuPOS OS): el paquete `factupos-factusuper` del repo apt. «Actualizar ahora» usa el MISMO servicio con que
 /// instala la Tienda (factupos-apps-op@instalar-<paquete>, sin clave por su regla polkit; op.sh solo acepta paquetes del
 /// repo FactuPOS), revisa que quedó la versión nueva y la vuelve a abrir. Solo si la app es la instalada por el .deb.
-/// Android: todavía no.
+/// Android: baja el APK a la caché de la app y abre el INSTALADOR de Android (canal factusuper/actualizar en
+/// MainActivity.kt); el cajero confirma ahí. Requiere el APK firmado SIEMPRE con la misma llave (la de la casa, CI).
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 const String _jsonVersion =
@@ -39,7 +42,9 @@ int compararVersion(String a, String b) {
 
 /// null si no hay nada nuevo, no hay internet o la plataforma no se actualiza sola todavía.
 Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
-  if (!Platform.isWindows && !linuxSeActualiza()) return null;
+  if (!Platform.isWindows && !Platform.isAndroid && !linuxSeActualiza()) {
+    return null;
+  }
   final c = cliente ?? http.Client();
   try {
     final actual = (await PackageInfo.fromPlatform()).version;
@@ -51,7 +56,8 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
         .timeout(const Duration(seconds: 15));
     if (r.statusCode != 200) return null;
     final j = jsonDecode(utf8.decode(r.bodyBytes));
-    final nueva = '${j['version'] ?? ''}', url = '${j['downloadUrl'] ?? ''}';
+    final nueva = '${j['version'] ?? ''}';
+    final url = Platform.isAndroid ? apkAndroid : '${j['downloadUrl'] ?? ''}';
     if (nueva.isEmpty || !url.startsWith('https://soportereal.com/'))
       return null;
     return compararVersion(nueva, actual) > 0
@@ -63,6 +69,10 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
     if (cliente == null) c.close();
   }
 }
+
+const apkAndroid =
+    'https://soportereal.com/software/factupos-app/android/FactuSuper-Android.apk';
+const _canalAndroid = MethodChannel('factusuper/actualizar');
 
 const paqueteLinux = 'factupos-factusuper';
 const _opTienda = '/usr/lib/factupos-apps/op.sh';
@@ -130,9 +140,20 @@ Future<void> instalarVersion(
         'No se pudo bajar la versión nueva (HTTP ${r.statusCode})',
       );
     final total = r.contentLength ?? 0;
-    final f = File(
-      '${Directory.systemTemp.path}${Platform.pathSeparator}FactuSuper-Setup-${v.nueva}.exe',
-    );
+    final File f;
+    if (Platform.isAndroid) {
+      // La caché de la app (cacheDir): es la carpeta que MainActivity acepta y que su FileProvider comparte.
+      final dir = Directory(
+        '${(await getTemporaryDirectory()).path}/actualizacion',
+      );
+      if (await dir.exists()) await dir.delete(recursive: true);
+      await dir.create(recursive: true);
+      f = File('${dir.path}/FactuSuper-${v.nueva}.apk');
+    } else {
+      f = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}FactuSuper-Setup-${v.nueva}.exe',
+      );
+    }
     final s = f.openWrite();
     var bajado = 0;
     await for (final trozo in r.stream) {
@@ -143,6 +164,17 @@ Future<void> instalarVersion(
     await s.close();
     if (total > 0 && await f.length() != total)
       throw Exception('La descarga quedó incompleta: intente de nuevo');
+    if (Platform.isAndroid) {
+      final r = await _canalAndroid.invokeMethod<String>('instalar', {
+        'ruta': f.path,
+      });
+      if (r == 'permiso') {
+        throw Exception(
+          'Permita «Instalar apps desconocidas» para FactuSuper en el ajuste que se abrió y vuelva a tocar «Actualizar ahora».',
+        );
+      }
+      return; // el instalador de Android sigue solo; al terminar, Android cierra y reabre la app
+    }
     await Process.start(f.path, [
       '/SILENT',
       '/SUPPRESSMSGBOXES',

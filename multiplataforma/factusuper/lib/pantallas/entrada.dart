@@ -63,6 +63,13 @@ class _EstadoEntrada extends State<PantallaEntrada> {
             );
         },
       );
+      // Android: el instalador del sistema quedó abierto; ahí se confirma.
+      if (mounted && Platform.isAndroid) {
+        setState(
+          () => _avanceAct =
+              'Confirme «Instalar» en la ventana de Android (la versión ${v.nueva}).',
+        );
+      }
     } catch (e) {
       if (mounted)
         setState(() => _avanceAct = '$e'.replaceFirst('Exception: ', ''));
