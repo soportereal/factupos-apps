@@ -69,6 +69,18 @@ jobs:
         run: |
           flutter pub get
           flutter build windows --release
+          # #3967: Flutter necesita el runtime de Visual C++ (MSVCP140, VCRUNTIME140, VCRUNTIME140_1).
+          # Un Windows limpio no lo trae → «no se encontró MSVCP140.dll». Se copian al lado del .exe
+          # (despliegue local, sin admin) y si falta alguno la compilación FALLA, no sale un instalador roto.
+          $rel = 'build\windows\x64\runner\Release'
+          foreach ($dll in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
+            $src = Join-Path $env:WINDIR "System32\$dll"
+            if (-not (Test-Path $src)) { throw "Falta $dll en el runner" }
+            Copy-Item $src $rel
+          }
+          foreach ($dll in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
+            if (-not (Test-Path (Join-Path $rel $dll))) { throw "No quedó $dll junto al exe" }
+          }
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath FactuSuper-Windows-x64.zip
           New-Item -ItemType Directory -Force installer\app | Out-Null
           Copy-Item -Recurse build\windows\x64\runner\Release\* installer\app\
