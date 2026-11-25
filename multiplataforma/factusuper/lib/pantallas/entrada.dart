@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../caja/cajeros.dart';
+import '../datos/actualizacion.dart';
 import '../datos/almacen.dart';
 
 class PantallaEntrada extends StatefulWidget {
@@ -24,6 +25,29 @@ class _EstadoEntrada extends State<PantallaEntrada> {
   String? _usuario;
   String _error = '';
   bool _ocupado = false;
+  VersionNueva? _nueva;
+  String _avanceAct = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Se revisa al llegar a la entrada (entre cajeros): nunca interrumpe una venta.
+    buscarVersionNueva().then((v) {
+      if (mounted && v != null) setState(() => _nueva = v);
+    });
+  }
+
+  Future<void> _actualizar() async {
+    final v = _nueva!;
+    setState(() => _avanceAct = 'Bajando la versión ${v.nueva}…');
+    try {
+      await instalarVersion(v, avance: (b, t) {
+        if (mounted && t > 0) setState(() => _avanceAct = 'Bajando la versión ${v.nueva}: ${(b * 100 / t).floor()} %');
+      });
+    } catch (e) {
+      if (mounted) setState(() => _avanceAct = '$e'.replaceFirst('Exception: ', ''));
+    }
+  }
 
   Future<void> _entrar() async {
     setState(() {
@@ -62,6 +86,27 @@ class _EstadoEntrada extends State<PantallaEntrada> {
             shrinkWrap: true,
             padding: const EdgeInsets.all(20),
             children: [
+              if (_nueva != null)
+                Card(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Hay una versión nueva de FactuSuper (${_nueva!.nueva}). Tiene la ${_nueva!.actual}.'),
+                      const SizedBox(height: 4),
+                      const Text('Tarda un par de minutos y la caja se vuelve a abrir sola. Hágalo cuando no haya clientes en fila.',
+                          style: TextStyle(fontSize: 12)),
+                      const SizedBox(height: 8),
+                      if (_avanceAct.isNotEmpty)
+                        Text(_avanceAct)
+                      else
+                        Wrap(spacing: 8, children: [
+                          FilledButton(onPressed: _actualizar, child: const Text('Actualizar ahora')),
+                          TextButton(onPressed: () => setState(() => _nueva = null), child: const Text('Más tarde')),
+                        ]),
+                    ]),
+                  ),
+                ),
               Text('Entrar a la caja', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 16),
               if (lista.isEmpty)

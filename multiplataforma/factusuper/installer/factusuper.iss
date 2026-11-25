@@ -59,3 +59,5 @@ Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Actualización desde la propia app (corre en silencio, /SILENT): al terminar la vuelve a abrir sola.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
