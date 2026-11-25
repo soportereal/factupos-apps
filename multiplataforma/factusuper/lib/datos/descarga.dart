@@ -33,6 +33,14 @@ class Descarga {
     return n;
   }
 
+  /// Solo los catálogos, con el CAJERO que entró: así la copia trae SU estación (caja, bodega, impresora, nivel de
+  /// precio), como la web que se vuelve a armar al cambiar de cajero. Sin internet sigue la copia anterior.
+  Future<void> catalogos() async {
+    final cat = await con.get('catalogos_descargar.php');
+    if (cat['success'] != true) throw ErrorConexion('No se pudieron bajar los catálogos: ${cat['error'] ?? ''}');
+    await almacen.guardarTabla(empresa, 'catalogos', cat['tablas'] ?? {});
+  }
+
   Future<int> _porTandas(String grupo, Avance? avance) async {
     const tanda = 2000;
     final filas = <dynamic>[];

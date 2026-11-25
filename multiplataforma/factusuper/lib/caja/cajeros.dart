@@ -19,7 +19,7 @@ class Cajeros {
       : _usuarios = _filas(catalogos?['usuarios']),
         _permisos = _filas(catalogos?['permisos_usuario']);
 
-  static List<Map<String, dynamic>> _filas(Object? v) => v is List ? v.whereType<Map<String, dynamic>>().toList() : const [];
+  static List<Map<String, dynamic>> _filas(Object? v) => v is List ? [for (final x in v) if (x is Map) Map<String, dynamic>.from(x)] : const [];
   static String _t(Object? v) => '${v ?? ''}'.trim();
 
   bool _tiene(Map<String, dynamic> u, String permiso) {
