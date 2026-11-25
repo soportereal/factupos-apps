@@ -69,6 +69,34 @@ class Exoneracion {
     this.fechaEmision = '',
     this.vencimiento = '',
   });
+
+  /// Fila del equipo (catálogo `exoneraciones`, mismos nombres que la web).
+  factory Exoneracion.desdeFila(Map<String, dynamic> e) {
+    String t(Object? v) => '${v ?? ''}'.trim();
+    return Exoneracion(
+      porcentaje: double.tryParse(t(e['porcentaje'])) ?? 0,
+      tipoDocumento: t(e['tipo_documento']),
+      documento: t(e['documento']),
+      articulo: t(e['articulo']),
+      inciso: t(e['inciso']),
+      institucion: t(e['institucion']),
+      institucionCodigo: t(e['institucion_codigo']),
+      fechaEmision: t(e['fecha_emision']),
+      vencimiento: t(e['vencimiento']),
+    );
+  }
+
+  Map<String, dynamic> aFila() => {
+    'porcentaje': porcentaje,
+    'tipo_documento': tipoDocumento,
+    'documento': documento,
+    'articulo': articulo,
+    'inciso': inciso,
+    'institucion': institucion,
+    'institucion_codigo': institucionCodigo,
+    'fecha_emision': fechaEmision,
+    'vencimiento': vencimiento,
+  };
 }
 
 /// Una línea de la venta. Los nombres siguen a los del JS para poder compararlos.

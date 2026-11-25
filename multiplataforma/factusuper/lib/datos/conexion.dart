@@ -106,6 +106,25 @@ class Conexion {
     esPost: true,
   );
 
+  /// POST como formulario (los APIs de FactuDesk que leen `$_POST`, ej. cierre_contabilizar.php).
+  Future<Map<String, dynamic>> postForm(
+    String ruta,
+    Map<String, String> campos, {
+    Duration espera = const Duration(seconds: 90),
+  }) => _porDominios(
+    (b) => _cliente
+        .post(
+          _uri(b, ruta),
+          headers: {
+            ..._cabeceras(b),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: campos,
+        )
+        .timeout(espera),
+    esPost: true,
+  );
+
   Future<Map<String, dynamic>> _porDominios(
     Future<http.Response> Function(String base) hacer, {
     bool esPost = false,

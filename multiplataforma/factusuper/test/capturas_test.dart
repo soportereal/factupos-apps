@@ -271,6 +271,33 @@ void main() {
     await foto(t, '7c-consulta');
     await t.tap(find.text('Cerrar'));
     await t.pump(const Duration(milliseconds: 500));
+    // Opciones (F10) · fondo · cierre · favoritos
+    await t.sendKeyEvent(LogicalKeyboardKey.f10);
+    await t.pump(const Duration(milliseconds: 600));
+    await foto(t, '7d-opciones');
+    await t.tap(find.text('Ingreso de fondo'));
+    await t.pump(const Duration(milliseconds: 600));
+    await foto(t, '7e-fondo');
+    await t.tap(find.text('Cancelar'));
+    for (var i = 0; i < 4; i++) {
+      await t.pump(const Duration(milliseconds: 400));
+    }
+    await t.sendKeyEvent(LogicalKeyboardKey.f10);
+    for (var i = 0; i < 4; i++) {
+      await t.pump(const Duration(milliseconds: 400));
+    }
+    await t.tap(find.text('Cierre de caja'));
+    await t.runAsync(() => Future.delayed(const Duration(seconds: 2)));
+    await t.pump(const Duration(milliseconds: 600));
+    await foto(t, '7f-cierre');
+    await t.tap(find.text('Cerrar').last);
+    await t.pump(const Duration(milliseconds: 500));
+    await t.tap(find.byTooltip('Favoritos: los más vendidos y los suyos'));
+    await t.runAsync(() => Future.delayed(const Duration(seconds: 1)));
+    await t.pump(const Duration(milliseconds: 600));
+    await foto(t, '7g-favoritos');
+    await t.tap(find.text('Ocultar'));
+    await t.pump(const Duration(milliseconds: 500));
 
     await t.pumpWidget(
       app(

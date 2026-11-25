@@ -10,6 +10,7 @@ library;
 
 import '../datos/almacen.dart';
 import '../datos/conexion.dart';
+import 'registro.dart';
 
 class ResumenEnvio {
   int procesadas = 0, rechazadas = 0;
@@ -25,7 +26,25 @@ class Cola {
   final String empresa, llave;
   List<Map<String, dynamic>> ventas = [];
   bool _enCurso = false;
+
+  /// MV-113: cada venta enviada queda anotada (lo pone la caja).
+  Registro? registro;
   Cola(this.almacen, this.empresa, this.llave);
+
+  /// El servidor dio el código REAL de un cliente creado en el equipo: se cambia en las ventas pendientes.
+  Future<void> remapearCliente(String provisional, String real) async {
+    var hubo = false;
+    for (final v in pendientes) {
+      final pq = v['paquete'] as Map<String, dynamic>;
+      for (final c in [v['cliente'], pq['cliente'], pq['clienteCompleto']]) {
+        if (c is Map && c['codigo'] == provisional) {
+          c['codigo'] = real;
+          hubo = true;
+        }
+      }
+    }
+    if (hubo) await _guardar();
+  }
 
   Future<void> cargar() async {
     final v = await almacen.leerTabla(empresa, 'ventas');
@@ -76,6 +95,17 @@ class Cola {
         ..sort((a, b) => '${a['fecha']}'.compareTo('${b['fecha']}'));
       for (final v in cola) {
         final paquete = v['paquete'] as Map<String, dynamic>;
+        // La venta de un cliente creado en el equipo espera a que el servidor lo cree (la cola va en orden).
+        final cli = '${(paquete['cliente'] as Map?)?['codigo'] ?? ''}';
+        if (cli.startsWith('N-')) {
+          v['error'] = {
+            'codigo': 'ALTA_PENDIENTE',
+            'mensaje': 'Espera a que el servidor cree su cliente',
+          };
+          r.detenida =
+              'La cola espera por la venta ${v['idProceso']}: espera a que el servidor cree su cliente $cli';
+          break;
+        }
         final con = Conexion(
           llave: llave,
           cajero: '${paquete['usuario'] ?? ''}',
@@ -127,6 +157,18 @@ class Cola {
           break;
         }
         await _guardar();
+        await registro?.anotar(
+          idProceso: '${v['idProceso']}',
+          tipo: 'venta',
+          estado: estado == 'procesada' ? 'procesado' : 'rechazado',
+          resultado: estado == 'procesada'
+              ? 'Factura ${(v['factura'] as Map?)?['numero'] ?? ''}'
+              : '',
+          error: estado == 'procesada'
+              ? ''
+              : '${(v['error'] as Map?)?['mensaje'] ?? ''}',
+          intentos: (v['intentos'] as num).toInt(),
+        );
       }
     } finally {
       _enCurso = false;

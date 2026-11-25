@@ -11,16 +11,23 @@ import 'package:flutter/services.dart';
 
 import '../caja/cajeros.dart';
 import '../caja/cajon.dart';
+import '../caja/cierre.dart';
+import '../caja/clientes.dart';
 import '../caja/cola.dart';
 import '../impresion/sin_internet.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
+import '../caja/favoritos.dart';
+import '../caja/fondo.dart';
+import '../caja/proformas.dart';
+import '../caja/registro.dart';
 import '../datos/almacen.dart';
 import '../datos/conexion.dart';
 import '../datos/descarga.dart';
 import '../motor/linea.dart';
 import '../motor/redondeo.dart';
 import '../ui/dialogos.dart';
+import '../ui/dialogos_caja.dart';
 import '../ui/tema.dart';
 
 class PantallaCaja extends StatefulWidget {
@@ -52,6 +59,35 @@ class PantallaCaja extends StatefulWidget {
 
 class _EstadoCaja extends State<PantallaCaja> {
   late final Documento doc = Documento(widget.datos, widget.cajero);
+  final _andamio = GlobalKey<ScaffoldState>();
+  late final Registro _registro = Registro(
+    widget.almacen,
+    widget.config.empresa,
+  );
+  late final Proformas _proformas = Proformas(
+    widget.almacen,
+    widget.config.empresa,
+    widget.datos,
+  );
+
+  /// Las ventas en espera de esta estación (la barra «En espera» de la web).
+  List<Map<String, dynamic>> _espera = [];
+  late final Favoritos _favoritos = Favoritos(
+    widget.almacen,
+    widget.config,
+    widget.datos,
+  );
+  late final ClientesLocal _clientes = ClientesLocal(
+    widget.almacen,
+    widget.config,
+    widget.datos,
+    registro: _registro,
+  );
+  late final Fondos _fondos = Fondos(
+    widget.config,
+    widget.datos,
+    registro: _registro,
+  );
   final _buscar = TextEditingController();
   final _focoBuscar = FocusNode();
   final _scroll = ScrollController();
@@ -125,7 +161,11 @@ class _EstadoCaja extends State<PantallaCaja> {
   @override
   void initState() {
     super.initState();
-    _restaurar();
+    widget.cola.registro = _registro;
+    _restaurar().then((_) => _pintarEspera());
+    _favoritos.refrescar(
+      widget.cajero.usuario,
+    ); // el ranking de hoy, en segundo plano
     _leerPreferencias();
     _reloj = Timer.periodic(const Duration(seconds: 60), (_) => _enviar());
     _enviar();
@@ -158,6 +198,13 @@ class _EstadoCaja extends State<PantallaCaja> {
     setState(f ?? () {});
     _marcadas.removeWhere((i) => i >= doc.lineas.length);
     if (_notas.text != doc.notas) _notas.text = doc.notas;
+    // #2629n: la venta retomada que se queda SIN líneas sale de la lista de espera.
+    final origen = doc.proformaOrigen;
+    if (origen != null && doc.lineas.isEmpty) {
+      doc.proformaOrigen = null;
+      _proformas.quitar(origen).then((_) => _pintarEspera());
+      _aviso('La venta en espera se quedó sin artículos: salió de la lista.');
+    }
     widget.almacen.guardarTabla(
       widget.config.empresa,
       'documento',
@@ -189,12 +236,36 @@ class _EstadoCaja extends State<PantallaCaja> {
 
   Future<void> _enviar() async {
     if (_enviando) return;
+    final clientesPend = await _clientes.pendientes();
     if (widget.cola.pendientes.isEmpty &&
-        (await _cajonObj.pendientes()).isEmpty)
+        (await _cajonObj.pendientes()).isEmpty &&
+        !clientesPend.any(
+          (c) => c['estado'] != 'rechazado' || c['nuevo'] == true,
+        ))
       return;
     setState(() => _enviando = true);
-    await _cajonObj.subirPendientes(widget.cajero.usuario);
-    final r = await widget.cola.enviar();
+    // Etapa 17: primero los clientes (si no, la factura sale sin los datos editados), después el cajón y las ventas.
+    final rc = await _clientes.subir();
+    for (final e in rc.remapeos.entries) {
+      await widget.cola.remapearCliente(e.key, e.value);
+      if (doc.cliente['codigo'] == e.key) {
+        _cambio(() => doc.cliente['codigo'] = e.value);
+      }
+    }
+    for (final x in rc.rechazados) {
+      _aviso('El servidor rechazó el cambio del cliente $x', error: true);
+    }
+    final ResumenEnvio r;
+    if (rc.detenida.isNotEmpty) {
+      r = ResumenEnvio()
+        ..detenida = rc.sinRed
+            ? 'Sin internet: las ventas quedan guardadas y salen solas cuando vuelva'
+            : rc.detenida
+        ..sinRed = rc.sinRed;
+    } else {
+      await _cajonObj.subirPendientes(widget.cajero.usuario);
+      r = await widget.cola.enviar();
+    }
     // Sin red: el comprobante PROVISIONAL directo a FactuPOS Print de esta computadora (una vez por venta, últimos 15 min).
     if (r.sinRed) {
       final impresas = await imprimirPendientesSinRed(
@@ -904,10 +975,16 @@ class _EstadoCaja extends State<PantallaCaja> {
         error: true,
       );
     }
+    final deProforma = doc.proformaOrigen;
+    doc.proformaOrigen = null;
     _cambio(() {
       doc.nuevo();
       _sel = -1;
     });
+    if (deProforma != null) {
+      await _proformas.quitar(deProforma);
+      await _pintarEspera();
+    }
     if (r.tipoPago == 'contado' && r.vuelto > 0 && mounted)
       await dialogoVuelto(context, r.vuelto);
     _aviso(
@@ -977,6 +1054,538 @@ class _EstadoCaja extends State<PantallaCaja> {
     _foco();
   }
 
+  // ═══════════ OPCIONES (el panel lateral de la web) ═══════════
+  void _cerrarOpciones() => _andamio.currentState?.closeEndDrawer();
+
+  Future<void> _fondo(String tipo) async {
+    _cerrarOpciones();
+    final r = await dialogoFondo(
+      context,
+      tipo,
+      (monto, detalle) =>
+          _fondos.registrar(tipo, monto, detalle, widget.cajero.usuario),
+    );
+    if (r != null) {
+      _aviso(
+        '${tipo == 'FCA' ? 'Ingreso' : 'Retiro'} de fondo registrado: $tipo #${r.documento} · ₡${fmt(r.monto)}'
+        '${r.errorImpresion.isNotEmpty ? ' — no se imprimió: ${r.errorImpresion}' : ''}',
+        error: r.errorImpresion.isNotEmpty,
+      );
+    }
+    _foco();
+  }
+
+  // ── Proformas / ventas en espera (MV-114) ──
+  Future<void> _pintarEspera() async {
+    final l = await _proformas.lista();
+    l.sort((a, b) => '${a['fecha']}'.compareTo('${b['fecha']}'));
+    if (mounted) setState(() => _espera = l);
+  }
+
+  /// → true si quedó guardada (o no había nada que guardar).
+  Future<bool> _guardarProforma({bool cotizacion = false}) async {
+    if (doc.lineas.isEmpty) {
+      _aviso('La venta no tiene artículos.', error: true);
+      return false;
+    }
+    if (!doc.tienePermiso('104')) {
+      _aviso('Sin permiso para guardar proformas (104)', error: true);
+      return false;
+    }
+    String? etiqueta;
+    if (await _proformas.pideEtiqueta(doc)) {
+      if (!mounted) return false;
+      etiqueta = await pedirTexto(
+        context,
+        cotizacion ? 'Guardar cotización' : 'Guardar en espera',
+        'Nombre o seña del cliente (para encontrarlo en la lista de espera):',
+        'Ej.: señora blusa roja',
+      );
+      if (etiqueta == null) return false;
+    }
+    Map<String, dynamic>? pq;
+    if (cotizacion) {
+      try {
+        pq = doc.paquete(
+          pagos: const [],
+          vuelto: 0,
+          imprimir: false,
+          transaccionId: uuidV4(),
+          cuando: DateTime.now(),
+        );
+      } catch (e) {
+        _aviso('No se pudo armar la cotización: $e', error: true);
+        return false;
+      }
+    }
+    final r = await _proformas.guardar(
+      doc,
+      etiqueta: etiqueta,
+      cotizacion: cotizacion,
+    );
+    if (!r.ok) {
+      _aviso(r.motivo, error: true);
+      return false;
+    }
+    _cambio(() => _sel = -1);
+    await _pintarEspera();
+    if (pq != null) {
+      final e = await _proformas.imprimirCotizacion(pq, r.id);
+      _aviso(
+        'Cotización ${r.id} guardada en el equipo${e.isEmpty ? ' e impresa' : ' — no se imprimió: $e'}',
+        error: e.isNotEmpty,
+      );
+    } else {
+      _aviso(
+        'Venta guardada en espera (${r.id}${r.actualizada ? ', actualizada' : ''}) — puede atender al siguiente cliente',
+      );
+    }
+    _foco();
+    return true;
+  }
+
+  Future<void> _retomar(String id) async {
+    if (doc.proformaOrigen == id) return;
+    // La venta a medias se guarda sola (se pasa de un cliente a otro sin perder nada).
+    if (doc.lineas.isNotEmpty && !await _guardarProforma()) return;
+    final p = await _proformas.abrir(id, doc);
+    if (p == null) {
+      _aviso('Esa proforma ya no está en el equipo.', error: true);
+      return;
+    }
+    _cambio(() => _sel = -1);
+    await _pintarEspera();
+    _aviso('Retomada: ${Proformas.nombreDe(p)}');
+    _foco();
+  }
+
+  Future<void> _verProformas() async {
+    _cerrarOpciones();
+    await _pintarEspera();
+    if (!mounted) return;
+    final accion = await dialogoProformas(
+      context,
+      _espera,
+      puedeBorrar: doc.tienePermiso('060'),
+      actual: doc.proformaOrigen,
+    );
+    if (accion == null) return _foco();
+    if (accion.$1 == 'abrir') return _retomar(accion.$2);
+    if (accion.$1 == 'borrar' && mounted) {
+      if (await confirmar(
+        context,
+        'Eliminar proforma',
+        '¿Eliminar la proforma ${accion.$2} de este equipo?',
+        'Eliminar',
+      )) {
+        await _proformas.quitar(accion.$2);
+        if (doc.proformaOrigen == accion.$2) doc.proformaOrigen = null;
+        await _pintarEspera();
+        _aviso('Proforma ${accion.$2} eliminada');
+      }
+      return _verProformas();
+    }
+  }
+
+  Widget _barraEspera() {
+    if (_espera.isEmpty && doc.lineas.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.people_alt_outlined,
+            size: 18,
+            color: Marca.tintaSuave,
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'En espera',
+            style: TextStyle(
+              color: Marca.tintaSuave,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (_espera.isEmpty)
+                    const Text(
+                      'Ninguna',
+                      style: TextStyle(color: Marca.tintaSuave, fontSize: 13),
+                    ),
+                  for (final p in _espera)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Tooltip(
+                        message:
+                            '${p['cotizacion'] == true ? 'Cotización ' : ''}${p['id']} · ${p['lineas']} líneas — tocar para retomarla',
+                        child: ChoiceChip(
+                          selected: doc.proformaOrigen == p['id'],
+                          avatar: Icon(
+                            p['cotizacion'] == true
+                                ? Icons.description_outlined
+                                : Icons.person_outline,
+                            size: 16,
+                          ),
+                          label: Text(
+                            '${Proformas.nombreDe(p)}  ₡${fmt((p['total'] as num?) ?? 0)}',
+                          ),
+                          onSelected: (_) => _retomar('${p['id']}'),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (doc.lineas.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => _guardarProforma(),
+              icon: const Icon(Icons.save_outlined, size: 18),
+              label: const Text('Guardar y atender otro'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── MV-118 · Favoritos ──
+  // Los clics van EN FILA: dos clics rápidos sobre un artículo nuevo no pueden crear dos líneas.
+  Future<void> _filaFav = Future.value();
+  Future<void> _verFavoritos() async {
+    _cerrarOpciones();
+    await panelFavoritos(
+      context,
+      favoritos: _favoritos,
+      doc: doc,
+      datos: widget.datos,
+      aviso: _aviso,
+      agregar: (art) => _filaFav = _filaFav.then((_) {
+        final r = doc.agregar(art, '1', repetido: 'sumar');
+        _cambio(() {
+          if (r.ok) _sel = doc.lineas.indexOf(r.linea!);
+        });
+        if (!r.ok) return _aviso(r.motivo, error: true);
+        _revisarCambiosAlAgregar();
+        final pc = Documento.cabysProblema(r.linea!);
+        if (pc.isNotEmpty) {
+          _aviso(
+            '«${art['nombre']}» $pc: así no se puede facturar (Hacienda la rechaza). Corrija el CABYS en la ficha del artículo.',
+            error: true,
+          );
+        } else if (r.avisos.isNotEmpty) {
+          _aviso(r.avisos.join(' · '), error: true);
+        }
+      }),
+    );
+    _foco();
+  }
+
+  // ── MV-106 · Exoneración: a las líneas MARCADAS; si no hay ninguna marcada, a todas (y se dice) ──
+  Future<void> _exoneracion() async {
+    _cerrarOpciones();
+    if (doc.lineas.isEmpty)
+      return _aviso('La venta no tiene artículos.', error: true);
+    final cod = '${doc.cliente['codigo'] ?? ''}';
+    if (cod.isEmpty || cod.toUpperCase() == 'SN') {
+      return _aviso('Elija el cliente (F3) antes de exonerar.', error: true);
+    }
+    if (doc.exoneracionesCliente().isEmpty) {
+      return _aviso(
+        '${doc.cliente['nombre']} no tiene exoneraciones registradas.',
+        error: true,
+      );
+    }
+    final marcadas = _marcadas.where((i) => i < doc.lineas.length).toList()
+      ..sort();
+    final todas = marcadas.isEmpty;
+    final indices = todas
+        ? [for (var i = 0; i < doc.lineas.length; i++) i]
+        : marcadas;
+    final r = await dialogoExoneracion(
+      context,
+      doc: doc,
+      indices: indices,
+      todas: todas,
+    );
+    if (r == null) return _foco();
+    if (r.$1 == 'aplicar') {
+      late List<PlanExo> plan;
+      _cambio(() => plan = doc.exoneracionAplicar(indices, r.$2));
+      final ok = plan.where((x) => x.exo != null).length;
+      _aviso(
+        'Exoneración aplicada a $ok de ${plan.length} líneas${ok < plan.length ? ' (las demás no califican)' : ''}',
+        error: ok == 0,
+      );
+    } else {
+      var n = 0;
+      _cambio(() => n = doc.exoneracionQuitar(indices));
+      _aviso(
+        n > 0
+            ? 'Exoneración quitada de $n líneas'
+            : 'Esas líneas no tenían exoneración',
+      );
+    }
+    _foco();
+  }
+
+  // ── MV-107 · Ventas de esta caja y REIMPRIMIR (permiso 142 o clave de supervisor, como FactuDesk) ──
+  Future<void> _verVentas() => dialogoVentas(
+    context,
+    widget.cola.ventas,
+    _enviar,
+    reimprimir: _reimprimir,
+  );
+
+  Future<void> _reimprimir(Map<String, dynamic> v) async {
+    final fac = (v['factura'] as Map?) ?? const {};
+    // Quién pide: el cajero si tiene el 142; si no, el supervisor que lo autoriza (el servidor revisa SU permiso).
+    var quien = widget.cajero.usuario;
+    if (!doc.tienePermiso('142')) {
+      final a = await dialogoSupervisor(
+        context,
+        widget.cajeros,
+        const Validacion(
+          permiso: '142',
+          motivo: 'Reimprimir una factura requiere el permiso 142.',
+        ),
+      );
+      if (a is! Cajero) return _foco();
+      quien = a.usuario;
+    }
+    final imp = ((v['paquete'] as Map?)?['impresion'] as Map?) ?? const {};
+    final con = Conexion(llave: widget.config.llave, cajero: quien);
+    try {
+      final j = await con.post('venta_reimprimir.php', {
+        'numero': '${fac['numero'] ?? ''}',
+        'impresora': '${imp['impresora'] ?? ''}',
+        'formato': '${imp['formato'] ?? ''}',
+      });
+      _aviso(
+        j['ok'] == true
+            ? 'Reimpresa la factura ${fac['numero']}'
+            : 'No se pudo reimprimir: ${j['error'] ?? ''}',
+        error: j['ok'] != true,
+      );
+    } on ErrorConexion catch (e) {
+      _aviso(
+        e.sinInternet
+            ? 'Sin internet: la reimpresión necesita conexión'
+            : 'No se pudo reimprimir: ${e.mensaje}',
+        error: true,
+      );
+    } finally {
+      con.cerrar();
+    }
+    _foco();
+  }
+
+  // ── MU-001 · Cierre de caja: contar siempre; contabilizar solo con la cola vacía ──
+  Future<int> _colaParaCierre() async {
+    await _enviar();
+    final cli = (await _clientes.pendientes()).where(
+      (c) => c['estado'] != 'rechazado' || c['nuevo'] == true,
+    );
+    return widget.cola.pendientes.length +
+        (await _cajonObj.pendientes()).length +
+        cli.length;
+  }
+
+  Future<void> _cierre() async {
+    _cerrarOpciones();
+    final r = await dialogoCierre(
+      context,
+      cierre: CierreCaja(widget.config, widget.cajero.usuario),
+      nombreCajero: widget.cajero.nombre,
+      tipoCambio: widget.datos.tipoCambio('USD'),
+      colaPendiente: _colaParaCierre,
+    );
+    if (r != null) _aviso(r);
+    _foco();
+  }
+
+  Future<void> _verRegistro() async {
+    _cerrarOpciones();
+    await dialogoRegistro(context, await _registro.lista());
+    _foco();
+  }
+
+  Widget _opciones() {
+    Widget grupo(String t) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+      child: Text(
+        t.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11.5,
+          letterSpacing: 1.3,
+          fontWeight: FontWeight.w700,
+          color: Marca.tintaSuave,
+        ),
+      ),
+    );
+    Widget accion(
+      IconData i,
+      String t,
+      VoidCallback? f, {
+      String atajo = '',
+      String ayuda = '',
+    }) => Tooltip(
+      message: ayuda,
+      waitDuration: const Duration(milliseconds: 600),
+      child: ListTile(
+        dense: true,
+        enabled: f != null,
+        leading: Icon(i, color: f == null ? null : Marca.azul),
+        title: Text(t, style: const TextStyle(fontSize: 14.5)),
+        trailing: atajo.isEmpty
+            ? null
+            : Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Marca.fondo,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: Marca.borde),
+                ),
+                child: Text(
+                  atajo,
+                  style: const TextStyle(fontSize: 11, color: Marca.tintaSuave),
+                ),
+              ),
+        onTap: f,
+      ),
+    );
+    void y(FutureOr<void> Function() f) {
+      _cerrarOpciones();
+      f();
+    }
+
+    return Drawer(
+      width: 340,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 20),
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              color: Marca.azul,
+              child: const Row(
+                children: [
+                  Icon(Icons.apps_rounded, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text(
+                    'Opciones',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            grupo('Documento'),
+            accion(
+              Icons.star_outline_rounded,
+              'Favoritos',
+              _verFavoritos,
+              ayuda: 'Los más vendidos y los que usted agrega',
+            ),
+            accion(
+              Icons.folder_open_outlined,
+              'Abrir proforma',
+              _verProformas,
+              ayuda: 'Ventas guardadas en ESTE equipo',
+            ),
+            accion(
+              Icons.save_outlined,
+              'Guardar en espera',
+              doc.lineas.isEmpty ? null : () => y(_guardarProforma),
+              ayuda: 'Guardar esta venta en el equipo y atender a otro cliente',
+            ),
+            accion(
+              Icons.print_outlined,
+              'Reimprimir',
+              () {
+                _cerrarOpciones();
+                _verVentas();
+              },
+              ayuda: 'Las ventas de esta caja: reimprimir una factura (permiso 142)',
+            ),
+            accion(
+              Icons.search,
+              'Consultar artículo',
+              () => y(_consulta),
+              atajo: 'F6',
+            ),
+            grupo('Precio'),
+            accion(
+              Icons.percent,
+              'Descuento',
+              doc.lineas.isEmpty ? null : () => y(_accionDescuento),
+              atajo: 'F5',
+            ),
+            accion(
+              Icons.description_outlined,
+              'Cotización',
+              doc.lineas.isEmpty
+                  ? null
+                  : () => y(() => _guardarProforma(cotizacion: true)),
+              ayuda: 'Guardar como cotización en este equipo e imprimirla para el cliente',
+            ),
+            accion(
+              Icons.verified_user_outlined,
+              'Exoneración',
+              doc.lineas.isEmpty ? null : _exoneracion,
+              ayuda: 'Exonerar las líneas marcadas (igual que FactuDesk)',
+            ),
+            grupo('Caja'),
+            accion(
+              Icons.inbox_outlined,
+              'Abrir cajón',
+              () => y(_cajon),
+              atajo: 'F9',
+              ayuda: 'Permiso 141 o clave de supervisor — también sin internet',
+            ),
+            accion(
+              Icons.calculate_outlined,
+              'Cierre de caja',
+              _cierre,
+              ayuda: 'Contar la caja y contabilizar el cierre (MU-001). Contabilizar pide la cola vacía.',
+            ),
+            accion(
+              Icons.move_to_inbox_outlined,
+              'Ingreso de fondo',
+              () => _fondo('FCA'),
+              ayuda: 'Ingreso de fondo de caja (FCA) — en tiempo real, necesita internet',
+            ),
+            accion(
+              Icons.outbox_outlined,
+              'Retiro de fondo',
+              () => _fondo('SCA'),
+              ayuda: 'Retiro de fondo de caja (SCA) — en tiempo real, necesita internet',
+            ),
+            grupo('Envíos'),
+            accion(Icons.receipt_long_outlined, 'Ventas de esta caja', () {
+              _cerrarOpciones();
+              _verVentas();
+            }),
+            accion(
+              Icons.history,
+              'Registro de procesos',
+              _verRegistro,
+              ayuda: 'Todo lo que este equipo mandó a procesar en la última semana',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Map<ShortcutActivator, VoidCallback> get _atajos => {
     // Las MISMAS teclas de FactuSuper web (y FactuDesk): F2 artículo · F3 cliente · F4 cobrar · * cobrar.
     const SingleActivator(LogicalKeyboardKey.f2): _abrirBusqueda,
@@ -985,6 +1594,8 @@ class _EstadoCaja extends State<PantallaCaja> {
     const SingleActivator(LogicalKeyboardKey.f5): _accionDescuento,
     const SingleActivator(LogicalKeyboardKey.f6): _consulta,
     const SingleActivator(LogicalKeyboardKey.f9): _cajon,
+    const SingleActivator(LogicalKeyboardKey.f10): () =>
+        _andamio.currentState?.openEndDrawer(),
     const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
         _editar(_sel),
     const SingleActivator(LogicalKeyboardKey.delete): () => _quitar(_sel),
@@ -1008,6 +1619,11 @@ class _EstadoCaja extends State<PantallaCaja> {
     return CallbackShortcuts(
       bindings: _atajos,
       child: Scaffold(
+        key: _andamio,
+        endDrawer: _opciones(),
+        onEndDrawerChanged: (abierto) {
+          if (!abierto) _foco();
+        },
         appBar: _barra(),
         body: LayoutBuilder(
           builder: (context, c) {
@@ -1099,7 +1715,7 @@ class _EstadoCaja extends State<PantallaCaja> {
           message: sinRed ? _ultimoEnvio : 'Ver las ventas de esta caja',
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: () => dialogoVentas(context, widget.cola.ventas, _enviar),
+            onTap: _verVentas,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
@@ -1147,7 +1763,18 @@ class _EstadoCaja extends State<PantallaCaja> {
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: 'Favoritos: los más vendidos y los suyos',
+          onPressed: _verFavoritos,
+          icon: const Icon(Icons.star_rounded, color: Color(0xFFFCD34D)),
+        ),
+        IconButton(
+          tooltip: 'Opciones (F10)',
+          onPressed: () => _andamio.currentState?.openEndDrawer(),
+          icon: const Icon(Icons.apps_rounded),
+        ),
+        const SizedBox(width: 4),
         PopupMenuButton<String>(
           tooltip: 'Cajero',
           offset: const Offset(0, 48),
@@ -1303,6 +1930,7 @@ class _EstadoCaja extends State<PantallaCaja> {
             onSubmitted: _alEnter,
           ),
         ),
+        _barraEspera(),
         const SizedBox(height: 14),
         Expanded(
           child: Card(
@@ -1599,6 +2227,9 @@ class _EstadoCaja extends State<PantallaCaja> {
                     Text(
                       [
                         l.codigo,
+                        'IVA ${fmt(l.tarifa, 0)}%',
+                        if (l.ivaExonerado > 0)
+                          'EXO ${fmt(l.ivaExonerado, 0)}%',
                         if (l.bonificacion) 'BONIFICACIÓN',
                         if (l.autorizaciones.isNotEmpty) 'autorizado',
                       ].join(' · '),
@@ -1715,12 +2346,106 @@ class _EstadoCaja extends State<PantallaCaja> {
                   ],
                 ),
               ),
+              _botonCliente(
+                Icons.edit_outlined,
+                contado
+                    ? 'Elija un cliente (F3) para editarlo'
+                    : !doc.tienePermiso('313')
+                    ? 'Sin permiso para editar clientes (313)'
+                    : 'Editar los datos del cliente (se guarda sin conexión)',
+                contado || !doc.tienePermiso('313') ? null : _clienteEditar,
+              ),
+              _botonCliente(
+                Icons.person_add_alt_1_outlined,
+                doc.tienePermiso('311')
+                    ? 'Crear un cliente nuevo (también sin internet; el código lo da el servidor)'
+                    : 'Sin permiso para crear clientes (311)',
+                doc.tienePermiso('311') ? _clienteNuevo : null,
+              ),
               const Icon(Icons.chevron_right, color: Marca.tintaSuave),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Sin permiso el botón NO se oculta: queda gris con la razón.
+  Widget _botonCliente(IconData i, String ayuda, VoidCallback? f) => Tooltip(
+    message: ayuda,
+    child: IconButton(
+      visualDensity: VisualDensity.compact,
+      icon: Icon(i, size: 20),
+      color: Marca.azul,
+      onPressed: f,
+    ),
+  );
+
+  List<Map<String, dynamic>> get _monedas => [
+    for (final m in (widget.datos.catalogos['monedas'] as List? ?? const []))
+      if (m is Map) Map<String, dynamic>.from(m),
+  ];
+
+  Future<void> _clienteNuevo() async {
+    if (!doc.tienePermiso('311')) {
+      return _aviso('Sin permiso para crear clientes (311)', error: true);
+    }
+    final c = await dialogoClienteEditar(
+      context,
+      titulo: 'Nuevo cliente',
+      nota: 'Cliente nuevo: la cédula es obligatoria y no puede existir ya. Se guarda en el equipo con un código provisional; el código real lo da el servidor al enviarlo.',
+      esNuevo: true,
+      conFactura: _clientes.conFactura,
+      original: const {
+        'tipo_cedula': '01',
+        'tipo_precio': 1,
+        'descuento': 0,
+        'moneda': 'CRC',
+        'plazo': 0,
+        'monto_credito': 0,
+      },
+      monedas: _monedas,
+      guardar: (v) => _clientes.crear(v, widget.cajero.usuario),
+    );
+    if (c != null) {
+      _cambio(() => doc.asignarCliente(c));
+      _aviso('Cliente ${c['codigo']} · ${c['nombre']} creado en el equipo');
+      _enviar();
+    }
+    _foco();
+  }
+
+  Future<void> _clienteEditar() async {
+    final cod = '${doc.cliente['codigo'] ?? ''}';
+    final original = widget.datos.cliente(cod) ?? doc.cliente;
+    final pend = (await _clientes.pendientes())
+        .where((p) => p['codigo'] == cod)
+        .firstOrNull;
+    if (!mounted) return;
+    final act = widget.datos.actividadCliente(cod);
+    final c = await dialogoClienteEditar(
+      context,
+      titulo: '$cod · ${original['nombre'] ?? ''}',
+      nota: pend == null
+          ? 'Los cambios se guardan en este equipo y suben al servidor cuando haya conexión.'
+          : pend['estado'] == 'rechazado'
+          ? '⚠ El servidor rechazó el último cambio: ${pend['error']}'
+          : pend['nuevo'] == true
+          ? 'Cliente nuevo: todavía no se creó en el servidor (código provisional).'
+          : 'Tiene cambios que todavía no subieron al servidor.',
+      esNuevo: false,
+      conFactura: _clientes.conFactura,
+      original: {...original, if (act.isNotEmpty) 'actividad': act},
+      monedas: _monedas,
+      guardar: (v) => _clientes.editar(cod, v, widget.cajero.usuario),
+    );
+    if (c != null) {
+      // Es el MISMO cliente: se actualizan sus datos sin quitar las exoneraciones de las líneas.
+      _cambio(() => doc.cliente = Map.of(c));
+      _aviso('Cliente $cod actualizado en el equipo');
+      _enviar();
+    }
+    _foco();
   }
 
   Widget _panel() {

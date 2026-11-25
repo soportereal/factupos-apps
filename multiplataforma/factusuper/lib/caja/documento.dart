@@ -100,6 +100,9 @@ class Documento {
   String medioPago = '01';
   String notas = '';
 
+  /// La venta vino de una proforma de este equipo (MV-114): al facturarla sale de la lista.
+  String? proformaOrigen;
+
   Documento(this.datos, this.cajero);
 
   Decimales get dec => datos.decimales;
@@ -109,6 +112,7 @@ class Documento {
     'cliente': cliente,
     'medioPago': medioPago,
     'notas': notas,
+    'proformaOrigen': ?proformaOrigen,
     'lineas': [for (final l in lineas) lineaAMapa(l)],
   };
 
@@ -126,6 +130,9 @@ class Documento {
         : Map.of(clienteContado);
     medioPago = _t(m['medioPago']).isEmpty ? '01' : _t(m['medioPago']);
     notas = _t(m['notas']);
+    proformaOrigen = _t(m['proformaOrigen']).isEmpty
+        ? null
+        : _t(m['proformaOrigen']);
     lineas.forEach(_calc);
   }
 
@@ -134,6 +141,7 @@ class Documento {
     cliente = Map.of(clienteContado);
     medioPago = '01';
     notas = '';
+    proformaOrigen = null;
   }
 
   /// FDF:407 — param 57 = 1 → siempre el de la estación; si no, el del cliente (no SN, > 0); si no, el de la estación.
@@ -574,6 +582,121 @@ class Documento {
     }
   }
 
+  // ═══ EXONERACIÓN (MV-106) — réplica de FSDoc.exoneracionPlan/Aplicar/Quitar (= FactuDesk + las validaciones de
+  //     cotizacion_exoneracion_aplicar.php) sobre las tablas del equipo ═══
+
+  /// Las del cliente, la de vencimiento más lejano primero, con `vigente`.
+  List<Map<String, dynamic>> exoneracionesCliente({DateTime? hoy}) {
+    final h = (hoy ?? DateTime.now()).toIso8601String().substring(0, 10);
+    final k = _t(cliente['codigo']).toUpperCase();
+    final l = [
+      for (final e in (datos.catalogos['exoneraciones'] as List? ?? const []))
+        if (e is Map && _t(e['cliente']).toUpperCase() == k)
+          {
+            ...Map<String, dynamic>.from(e),
+            'vigente':
+                _t(e['vencimiento']).isNotEmpty &&
+                _t(e['vencimiento'])
+                        .substring(0, math.min(10, _t(e['vencimiento']).length))
+                        .compareTo(h) >=
+                    0,
+          },
+    ];
+    l.sort((a, b) => _t(b['vencimiento']).compareTo(_t(a['vencimiento'])));
+    return l;
+  }
+
+  /// CABYS → documentos que lo cubren (el «cabysMap» de FactuDesk). Vacío = sin mapa.
+  Map<String, List<String>> cabysExonerados() {
+    final k = _t(cliente['codigo']).toUpperCase();
+    final m = <String, List<String>>{};
+    for (final r
+        in (datos.catalogos['exoneraciones_cabys'] as List? ?? const [])) {
+      if (r is! Map || _t(r['cliente']).toUpperCase() != k) continue;
+      final l = m.putIfAbsent(_t(r['cabys']), () => []);
+      final d = _t(r['documento']);
+      if (d.isNotEmpty && !l.contains(d)) l.add(d);
+    }
+    return m;
+  }
+
+  /// Qué pasaría con cada línea. [elegida] se usa cuando el cliente no tiene mapa de CABYS.
+  List<PlanExo> exoneracionPlan(
+    List<int> indices,
+    Map<String, dynamic>? elegida,
+  ) {
+    final lista = exoneracionesCliente();
+    final mapa = cabysExonerados();
+    final sinMapa = mapa.isEmpty;
+    return [
+      for (final i in indices)
+        () {
+          final l = lineas[i];
+          final cab = l.cabys.trim();
+          Map<String, dynamic>? exo;
+          var motivo = '';
+          if (sinMapa) {
+            exo = elegida ?? lista.firstOrNull;
+          } else if (cab.isEmpty) {
+            motivo = 'La línea no tiene CABYS';
+          } else {
+            final docs = mapa[cab] ?? const [];
+            exo = lista.where((e) => docs.contains(e['documento'])).firstOrNull;
+            if (exo == null)
+              motivo = 'CABYS no autorizado en ninguna exoneración del cliente';
+          }
+          if (exo != null && motivo.isEmpty) {
+            if (!(_n(exo['porcentaje']) > 0)) {
+              motivo = 'La exoneración tiene 0 %';
+            } else if (_t(exo['tipo_documento']).isEmpty ||
+                _t(exo['documento']).isEmpty) {
+              motivo = 'Exoneración incompleta: falta el tipo o el número de documento';
+            } else if (_t(exo['tipo_documento']) == '01' &&
+                !mapa.containsKey(cab)) {
+              motivo = 'CABYS ${cab.isEmpty ? '(vacío)' : cab} no exonerado';
+            } else if (!(l.tarifa > 0)) {
+              motivo = 'La línea no lleva IVA';
+            }
+          }
+          final ok = exo != null && motivo.isEmpty;
+          return PlanExo(
+            i,
+            l.codigo,
+            l.nombre,
+            cab,
+            ok ? exo : null,
+            ok ? math.min(_n(exo['porcentaje']), l.tarifa) : 0,
+            motivo,
+          );
+        }(),
+    ];
+  }
+
+  List<PlanExo> exoneracionAplicar(
+    List<int> indices,
+    Map<String, dynamic>? elegida,
+  ) {
+    final plan = exoneracionPlan(indices, elegida);
+    for (final r in plan) {
+      final l = lineas[r.indice];
+      l.exo = r.exo == null ? null : Exoneracion.desdeFila(r.exo!);
+      _calc(l);
+    }
+    return plan;
+  }
+
+  int exoneracionQuitar(List<int> indices) {
+    var n = 0;
+    for (final i in indices) {
+      if (i < lineas.length && lineas[i].exo != null) {
+        lineas[i].exo = null;
+        _calc(lineas[i]);
+        n++;
+      }
+    }
+    return n;
+  }
+
   /// '' si la línea se puede facturar, o el problema (Hacienda rechaza CABYS malo y precio 0).
   static String cabysProblema(Linea l) {
     final c = l.cabys.trim();
@@ -883,6 +1006,7 @@ Map<String, dynamic> lineaAMapa(Linea l) => {
   'descuento': l.descuento,
   'descMonto': l.descMonto,
   'autorizaciones': l.autorizaciones,
+  if (l.exo != null) 'exo': l.exo!.aFila(),
 };
 
 Linea lineaDesde(Map<String, dynamic> m) =>
@@ -913,6 +1037,9 @@ Linea lineaDesde(Map<String, dynamic> m) =>
         bonificacion: m['bonificacion'] == true,
         descuento: _n(m['descuento']),
         descMonto: m['descMonto'] == null ? null : _n(m['descMonto']),
+        exo: m['exo'] is Map
+            ? Exoneracion.desdeFila(Map<String, dynamic>.from(m['exo'] as Map))
+            : null,
       )
       ..autorizaciones.addAll(
         ((m['autorizaciones'] as Map?) ?? const {}).map(
@@ -921,6 +1048,24 @@ Linea lineaDesde(Map<String, dynamic> m) =>
       );
 
 Totales totales_(List<Linea> l, Decimales d) => totales(l, d);
+
+/// Resultado del plan de exoneración por línea.
+class PlanExo {
+  final int indice;
+  final String codigo, nombre, cabys;
+  final Map<String, dynamic>? exo;
+  final double porcentaje;
+  final String motivo;
+  const PlanExo(
+    this.indice,
+    this.codigo,
+    this.nombre,
+    this.cabys,
+    this.exo,
+    this.porcentaje,
+    this.motivo,
+  );
+}
 
 /// Hora local con su desfase (-06:00): la cola la guarda como la hora REAL del cobro.
 String ahoraIso(DateTime d) {

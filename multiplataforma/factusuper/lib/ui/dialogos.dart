@@ -1234,8 +1234,9 @@ Future<void> dialogoVuelto(BuildContext context, double vuelto) =>
 Future<void> dialogoVentas(
   BuildContext context,
   List<Map<String, dynamic>> ventas,
-  VoidCallback enviar,
-) {
+  VoidCallback enviar, {
+  void Function(Map<String, dynamic> venta)? reimprimir,
+}) {
   const nombres = {
     'pendiente': 'Pendiente',
     'en_proceso': 'Enviando',
@@ -1292,23 +1293,53 @@ Future<void> dialogoVentas(
                           '${(v['error'] as Map)['mensaje']}',
                       ].where((x) => x.isNotEmpty).join(' · '),
                     ),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: color(e).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        nombres[e] ?? e,
-                        style: TextStyle(
-                          color: color(e),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (v['impresionLocal'] is Map)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              (v['impresionLocal'] as Map)['ok'] == true
+                                  ? '✔ provisional'
+                                  : '✖ provisional no salió',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    (v['impresionLocal'] as Map)['ok'] == true
+                                    ? Marca.verde
+                                    : Marca.rojo,
+                              ),
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color(e).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            nombres[e] ?? e,
+                            style: TextStyle(
+                              color: color(e),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (fac != null && reimprimir != null)
+                          IconButton(
+                            tooltip: 'Reimprimir (permiso 142)',
+                            icon: const Icon(Icons.print_outlined),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              reimprimir(v);
+                            },
+                          ),
+                      ],
                     ),
                   );
                 },
