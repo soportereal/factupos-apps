@@ -10,6 +10,7 @@ import '../caja/cierre.dart';
 import '../caja/cola_procesos.dart';
 import '../caja/clientes.dart';
 import '../caja/datos_caja.dart';
+import '../caja/estacion_config.dart';
 import '../caja/documento.dart';
 import '../caja/favoritos.dart';
 import '../caja/fondo.dart';
@@ -1611,3 +1612,340 @@ Future<String?> dialogoCierre(
     ),
   );
 }
+
+/// CF-006 · Configuración de la estación (la del cajero): Ventas (factura, crédito, cotización, precio) · Cajas (caja,
+/// comprobantes) · Inventario (bodega) — los grupos de estacion_form.js. Sin permiso todo se ve en gris con la razón.
+/// → la configuración que quedó guardada (para refrescar la caja), o null.
+Future<Map<String, dynamic>?> dialogoEstacion(
+  BuildContext context,
+  EstacionConfig ec,
+) => showDialog<Map<String, dynamic>>(
+  context: context,
+  builder: (ctx) {
+    DatosEstacion? d;
+    String error = '';
+    var cargando = false, guardando = false;
+    final v = <String, String>{};
+    final nums = <String, TextEditingController>{};
+    return StatefulBuilder(
+      builder: (ctx, set) {
+        if (d == null && error.isEmpty && !cargando) {
+          cargando = true;
+          ec.cargar().then((r) {
+            if (!ctx.mounted) return;
+            set(() {
+              d = r.$1;
+              error = r.$2;
+              if (d != null) {
+                final f = d!.fila;
+                for (final k in const ['BodegaCodigo', 'Caja', 'TipoPrecio']) {
+                  v[k] = DatosEstacion.valorInicial(k, f[k]);
+                }
+                for (final i in impresorasEstacion) {
+                  v[i.num] = DatosEstacion.valorInicial(i.num, f[i.num]);
+                  nums[i.num] = TextEditingController(text: v[i.num]);
+                  if (i.formato != null) {
+                    v[i.formato!] = DatosEstacion.valorInicial(
+                      i.formato!,
+                      f[i.formato!],
+                    );
+                  }
+                  v[i.ancho] = DatosEstacion.valorInicial(
+                    i.ancho,
+                    f[i.ancho],
+                    anchoDef: i.anchoDef,
+                  );
+                  v[i.ruta] = DatosEstacion.valorInicial(i.ruta, f[i.ruta]);
+                }
+              }
+            });
+          });
+        }
+        final puede = d?.puedeGuardar ?? false;
+
+        Widget combo(String campo, String label, String queEs) {
+          final ops = d!.opciones(campo);
+          final val = v[campo] ?? '';
+          final aviso = d!.avisoFuera(campo, val, queEs);
+          final hay = ops.any((o) => o.cod == val);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: hay ? val : (ops.isEmpty ? null : ops.first.cod),
+                isExpanded: true,
+                decoration: InputDecoration(labelText: label, isDense: true),
+                items: [
+                  for (final o in ops)
+                    DropdownMenuItem(
+                      value: o.cod,
+                      child: Text(
+                        o.txt,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: puede ? (x) => set(() => v[campo] = x ?? '') : null,
+              ),
+              if (aviso != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '⚠ $aviso',
+                    style: const TextStyle(color: Marca.ambar, fontSize: 12),
+                  ),
+                ),
+            ],
+          );
+        }
+
+        Widget seccion(
+          IconData ic,
+          String t,
+          String ayuda,
+          List<Widget> hijos,
+        ) => Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            border: Border.all(color: Marca.borde),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(ic, size: 18, color: Marca.azul),
+                  const SizedBox(width: 8),
+                  Text(t, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      ayuda,
+                      style: const TextStyle(
+                        color: Marca.tintaSuave,
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...hijos,
+            ],
+          ),
+        );
+
+        Widget impresora(ImpresoraEst i) {
+          final ruta = v[i.ruta];
+          return seccion(Icons.print_outlined, i.titulo, i.ayuda, [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 96,
+                  child: TextField(
+                    controller: nums[i.num],
+                    enabled: puede,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(3),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Número',
+                      isDense: true,
+                    ),
+                    onChanged: (x) => v[i.num] = x,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                if (i.formato != null) ...[
+                  Expanded(
+                    flex: 5,
+                    child: combo(i.formato!, 'Formato', 'El formato'),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  flex: 2,
+                  child: combo(i.ancho, 'Ancho de papel', 'El ancho'),
+                ),
+              ],
+            ),
+            // La ruta solo a quien hoy imprime por Bluetooth (2) o Bridge (3): decisión del dueño, como la web.
+            if (ruta == '2' || ruta == '3') ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: ruta,
+                decoration: const InputDecoration(
+                  labelText: 'Ruta de impresión',
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: '2', child: Text('Bluetooth')),
+                  DropdownMenuItem(
+                    value: '3',
+                    child: Text('Bridge (app Android)'),
+                  ),
+                  DropdownMenuItem(value: '4', child: Text('WebSocket')),
+                ],
+                onChanged: puede ? (x) => set(() => v[i.ruta] = x!) : null,
+              ),
+            ],
+          ]);
+        }
+
+        Widget cuerpo() {
+          if (error.isNotEmpty && d == null) {
+            return Center(
+              child: Text(
+                error,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Marca.rojo),
+              ),
+            );
+          }
+          if (d == null)
+            return const Center(child: CircularProgressIndicator());
+          final f = d!.fila;
+          return ListView(
+            children: [
+              Text(
+                '${f['EstacionNombre'] ?? 'Estación'} #${d!.id}'
+                '${'${f['Detalle'] ?? ''}'.trim().isEmpty ? '' : ' · ${f['Detalle']}'}'
+                ' · ${d!.usuarios.length} usuario${d!.usuarios.length == 1 ? '' : 's'}',
+                style: const TextStyle(color: Marca.tintaSuave),
+              ),
+              if (!puede)
+                Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Marca.ambar.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Solo lectura: cambiar la configuración de la estación requiere el permiso 130, o el 840 (configurar la propia).',
+                  ),
+                ),
+              const SizedBox(height: 14),
+              const Text(
+                'VENTAS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Marca.tintaSuave,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final i in impresorasEstacion.take(3)) impresora(i),
+              seccion(
+                Icons.sell_outlined,
+                'Precio',
+                'Tipo de precio con que vende',
+                [combo('TipoPrecio', 'Tipo precio', 'El precio')],
+              ),
+              const Text(
+                'CAJAS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Marca.tintaSuave,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              seccion(
+                Icons.point_of_sale_outlined,
+                'Caja',
+                'Caja de la estación',
+                [combo('Caja', 'Caja', 'La caja')],
+              ),
+              impresora(impresorasEstacion[3]),
+              const Text(
+                'INVENTARIO',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Marca.tintaSuave,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              seccion(
+                Icons.inventory_2_outlined,
+                'Bodega',
+                'De donde sale la mercadería',
+                [combo('BodegaCodigo', 'Bodega', 'La bodega')],
+              ),
+            ],
+          );
+        }
+
+        return AlertDialog(
+          title: tituloDialogo(
+            'Configuración de la estación',
+            codigo: 'CF-006',
+            icono: Icons.settings_outlined,
+          ),
+          content: SizedBox(width: 680, height: 560, child: cuerpo()),
+          actions: [
+            if (error.isNotEmpty && d != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(error, style: const TextStyle(color: Marca.rojo)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            Tooltip(
+              message: d == null
+                  ? ''
+                  : puede
+                  ? 'Guardar en el servidor (necesita internet)'
+                  : 'Sin permiso (130, o 840 para la propia)',
+              child: FilledButton.icon(
+                onPressed: d == null || !puede || guardando
+                    ? null
+                    : () async {
+                        set(() {
+                          guardando = true;
+                          error = '';
+                        });
+                        // Los combos que muestran el primero de la lista porque lo guardado ya no está: se manda ese.
+                        final valores = Map<String, String>.of(v);
+                        for (final k in valores.keys.toList()) {
+                          final ops = d!.opciones(k);
+                          if (!k.endsWith('Num') &&
+                              !k.endsWith('Ruta') &&
+                              ops.isNotEmpty &&
+                              !ops.any((o) => o.cod == valores[k])) {
+                            valores[k] = ops.first.cod;
+                          }
+                        }
+                        final (e, cfg) = await ec.guardar(valores);
+                        if (!ctx.mounted) return;
+                        if (e.isEmpty) {
+                          Navigator.pop(ctx, cfg ?? const {});
+                        } else {
+                          set(() {
+                            guardando = false;
+                            error = e;
+                          });
+                        }
+                      },
+                icon: const Icon(Icons.check),
+                label: Text(guardando ? 'Guardando…' : 'Guardar'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  },
+);

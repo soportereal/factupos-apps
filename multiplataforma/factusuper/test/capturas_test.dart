@@ -7,6 +7,11 @@ import 'package:factusuper/ui/vista_lineas.dart';
 import 'package:factusuper/caja/cajeros.dart';
 import 'package:factusuper/caja/cola.dart';
 import 'package:factusuper/caja/datos_caja.dart';
+import 'package:factusuper/caja/estacion_config.dart';
+import 'package:factusuper/ui/dialogos_caja.dart';
+
+import 'estacion_config_test.dart' show respuestaGet;
+
 import 'package:factusuper/datos/almacen.dart';
 import 'package:factusuper/pantallas/caja.dart';
 import 'package:factusuper/pantallas/configuracion.dart';
@@ -314,7 +319,9 @@ void main() {
     await t.tap(find.text('A+'));
     await t.pump(const Duration(milliseconds: 300));
     await foto(t, '7i-full-letra-mas');
-    await t.tap(find.byTooltip('Cola de procesos: lo que falta enviar, en orden'));
+    await t.tap(
+      find.byTooltip('Cola de procesos: lo que falta enviar, en orden'),
+    );
     for (var i = 0; i < 3; i++) {
       await t.pump(const Duration(milliseconds: 200));
       await t.runAsync(() => Future.delayed(const Duration(milliseconds: 300)));
@@ -323,6 +330,15 @@ void main() {
     await t.pump(const Duration(milliseconds: 600));
     await foto(t, '7j-cola');
     await t.tap(find.text('Cerrar').last);
+    await t.pump(const Duration(milliseconds: 500));
+    // CF-006 · configuración de la estación (sin servidor: los datos de ejemplo de estacion_config_test)
+    dialogoEstacion(t.element(find.byType(PantallaCaja)), _EstacionFalsa());
+    for (var i = 0; i < 3; i++) {
+      await t.pump(const Duration(milliseconds: 200));
+      await t.runAsync(() => Future.delayed(const Duration(milliseconds: 100)));
+    }
+    await foto(t, '7k-estacion');
+    await t.tap(find.text('Cancelar').last);
     await t.pump(const Duration(milliseconds: 500));
 
     await t.pumpWidget(
@@ -352,4 +368,20 @@ void main() {
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);
   }, skip: salida.isEmpty);
+}
+
+class _EstacionFalsa extends EstacionConfig {
+  _EstacionFalsa()
+    : super(
+        ConfigCaja(
+          llave: 'x',
+          empresa: 'demoferre',
+          empresaNombre: 'Demo',
+          guardada: DateTime(2026),
+        ),
+        '00006',
+      );
+  @override
+  Future<(DatosEstacion?, String)> cargar() async =>
+      (DatosEstacion.desde(respuestaGet()), '');
 }

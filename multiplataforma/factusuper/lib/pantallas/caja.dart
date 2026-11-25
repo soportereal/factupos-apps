@@ -18,6 +18,7 @@ import '../caja/cola_procesos.dart';
 import '../impresion/sin_internet.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
+import '../caja/estacion_config.dart';
 import '../caja/favoritos.dart';
 import '../caja/fondo.dart';
 import '../caja/proformas.dart';
@@ -412,6 +413,40 @@ class _EstadoCaja extends State<PantallaCaja> {
     } finally {
       con.cerrar();
     }
+  }
+
+  /// CF-006 · Configuración de la estación del cajero. Al guardar baja los catálogos (la estación nueva: impresoras,
+  /// caja, bodega, tipo de precio) y repinta, como `datosNuevos()` de la web.
+  Future<void> _configEstacion() async {
+    _cerrarOpciones();
+    final cfg = await dialogoEstacion(
+      context,
+      EstacionConfig(widget.config, widget.cajero.usuario),
+    );
+    if (cfg == null || !mounted) return _foco();
+    final con = Conexion(
+      llave: widget.config.llave,
+      cajero: widget.cajero.usuario,
+    );
+    try {
+      await Descarga(con, widget.almacen, widget.config.empresa).catalogos();
+      await widget.datos.recargar(
+        widget.almacen,
+        widget.config.empresa,
+        grupos: const ['catalogos'],
+      );
+      doc.lineas.forEach(doc.agregarRecalculo);
+      _cambio();
+      _aviso('Configuración de la estación guardada');
+    } on ErrorConexion catch (e) {
+      _aviso(
+        'Se guardó, pero no se pudo bajar la estación nueva: ${e.mensaje} (salga y vuelva a entrar)',
+        error: true,
+      );
+    } finally {
+      con.cerrar();
+    }
+    _foco();
   }
 
   // ── Agregar ──
@@ -1932,6 +1967,8 @@ class _EstadoCaja extends State<PantallaCaja> {
                 _ponerModoLector(!_modoLector);
               case 'romana':
                 _romana();
+              case 'estacion':
+                _configEstacion();
               case 'datos':
                 _actualizarDatos();
               case 'cambios':
@@ -1943,6 +1980,14 @@ class _EstadoCaja extends State<PantallaCaja> {
               value: 'lector',
               checked: _modoLector,
               child: const Text('Modo lector de barras'),
+            ),
+            const PopupMenuItem(
+              value: 'estacion',
+              child: ListTile(
+                leading: Icon(Icons.settings_outlined),
+                title: Text('Configuración de la estación'),
+                subtitle: Text('Impresoras, caja, bodega y tipo de precio'),
+              ),
             ),
             const PopupMenuItem(
               value: 'romana',
