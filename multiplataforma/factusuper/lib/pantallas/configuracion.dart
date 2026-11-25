@@ -1,7 +1,8 @@
 /// Configuración de la caja (#3957) — dueño: «la aplicación tiene que tener una parte de la configuración
-/// para poner el token». Se pega la LLAVE de la empresa (FactuPOS › Configuración › Tokens, CF-027) y el
-/// código del usuario que configura; la app la revisa con el servidor, muestra a qué empresa conecta y,
-/// al guardar, baja la copia de los datos para vender sin internet.
+/// para poner el token» · «solo debería pedir la llave de la empresa, porque el usuario cuando entra a la
+/// aplicación lo tiene que seleccionar desde la lista y autenticarse». Se pega SOLO la LLAVE (FactuPOS ›
+/// Configuración › Tokens, CF-027); la app la revisa con el servidor, muestra a qué empresa conecta y, al
+/// guardar, baja la copia de los datos (con la lista de usuarios para la entrada) para vender sin internet.
 library;
 
 import 'package:flutter/material.dart';
@@ -23,17 +24,10 @@ class PantallaConfiguracion extends StatefulWidget {
 
 class _EstadoConfiguracion extends State<PantallaConfiguracion> {
   final _llave = TextEditingController();
-  final _usuario = TextEditingController();
   InfoLlave? _info;
   String _error = '';
   String _avance = '';
   bool _ocupado = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _usuario.text = widget.actual?.usuarioConfiguro ?? '';
-  }
 
   Future<void> _pegar() async {
     final d = await Clipboard.getData(Clipboard.kTextPlain);
@@ -47,7 +41,7 @@ class _EstadoConfiguracion extends State<PantallaConfiguracion> {
       _info = null;
     });
     try {
-      final i = await revisarLlave(_llave.text, _usuario.text);
+      final i = await revisarLlave(_llave.text);
       setState(() => _info = i);
     } on ErrorConexion catch (e) {
       setState(() => _error = e.mensaje);
@@ -65,12 +59,11 @@ class _EstadoConfiguracion extends State<PantallaConfiguracion> {
     });
     final cfg = ConfigCaja(
       llave: _llave.text.trim(),
-      usuarioConfiguro: _usuario.text.trim(),
       empresa: i.empresa,
       empresaNombre: i.empresaNombre,
       guardada: DateTime.now(),
     );
-    final con = Conexion(llave: cfg.llave, cajero: cfg.usuarioConfiguro);
+    final con = Conexion(llave: cfg.llave);
     try {
       final n = await Descarga(con, widget.almacen, cfg.empresa).todo(
         avance: (que, hechos, total) => setState(() => _avance = 'Bajando $que: $hechos${total > 0 ? ' de $total' : ''}'),
@@ -120,16 +113,6 @@ class _EstadoConfiguracion extends State<PantallaConfiguracion> {
                 onChanged: (_) => setState(() => _info = null),
               ),
               const SizedBox(height: 16),
-              Text('Su código de usuario', style: t.titleMedium),
-              const SizedBox(height: 4),
-              Text('El de quien instala la caja: tiene que estar activo y poder facturar (653).', style: t.bodySmall),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _usuario,
-                decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Ej. 00001'),
-                onChanged: (_) => setState(() => _info = null),
-              ),
-              const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _ocupado ? null : _revisar,
                 icon: const Icon(Icons.verified_user),
@@ -142,9 +125,7 @@ class _EstadoConfiguracion extends State<PantallaConfiguracion> {
                   child: ListTile(
                     leading: const Icon(Icons.check_circle, color: Colors.green),
                     title: Text(_info!.empresaNombre.isEmpty ? _info!.empresa : _info!.empresaNombre),
-                    subtitle: Text('Empresa ${_info!.empresa}'
-                        '${_info!.estacionNombre.isEmpty ? '' : ' · Estación ${_info!.estacionNombre}'}'
-                        '${_info!.cajeroNombre.isEmpty ? '' : ' · ${_info!.cajeroNombre}'}'),
+                    subtitle: Text('Empresa ${_info!.empresa}'),
                   ),
                 ),
                 const SizedBox(height: 8),

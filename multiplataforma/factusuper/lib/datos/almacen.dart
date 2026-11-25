@@ -12,20 +12,18 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 class ConfigCaja {
-  final String llave, usuarioConfiguro, empresa, empresaNombre;
+  final String llave, empresa, empresaNombre;
   final DateTime guardada;
-  const ConfigCaja({required this.llave, required this.usuarioConfiguro, required this.empresa, required this.empresaNombre, required this.guardada});
+  const ConfigCaja({required this.llave, required this.empresa, required this.empresaNombre, required this.guardada});
 
   Map<String, Object?> aMapa() => {
         'llave': llave,
-        'usuarioConfiguro': usuarioConfiguro,
         'empresa': empresa,
         'empresaNombre': empresaNombre,
         'guardada': guardada.toIso8601String(),
       };
   factory ConfigCaja.desde(Map<String, dynamic> m) => ConfigCaja(
         llave: '${m['llave'] ?? ''}',
-        usuarioConfiguro: '${m['usuarioConfiguro'] ?? ''}',
         empresa: '${m['empresa'] ?? ''}',
         empresaNombre: '${m['empresaNombre'] ?? ''}',
         guardada: DateTime.tryParse('${m['guardada']}') ?? DateTime.now(),

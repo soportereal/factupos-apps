@@ -1,10 +1,16 @@
-/// Conexión con FactuPOS (#3957). La app solo conoce UNA dirección fija y la LLAVE de la empresa:
+/// Conexión con FactuPOS (#3957). La app solo conoce las dos direcciones públicas y la LLAVE de la empresa:
 /// la empresa, su servidor y su base los resuelve el servidor desde la llave (dbcontrol `factusuper_tokens`),
 /// y la estación sale del cajero. No hay servidor, base ni clave de SQL en el equipo.
 ///
 ///  · `Authorization: Bearer fs1.…`  → la empresa (la llave de CF-027 › Tokens).
-///  · `X-FS-Cajero: <código>`         → quién hace la operación (la llave no define el usuario).
+///  · `X-FS-Cajero: <código>`         → quién hace la operación (la llave no define el usuario). Revisar la llave y
+///    bajar la copia van SIN cajero (#3957): el cajero se elige después, en la entrada de la caja.
 /// La llave solo abre las APIs de FactuSuper (FST_RUTAS en functions/facturacion/factusuper/factusuper_token.php).
+///
+/// 🔑 DOS DOMINIOS, cada uno por su internet (dueño, 25-nov-2026: «debería rotar entre los dos dominios… si un dominio
+///    o una IP pública se cae, que entre por la otra»): invefacon.com (Metrocom) e invefacon.net (Kolbi). Si uno no
+///    contesta, se reintenta el MISMO pedido por el otro y la app se queda con el que funcionó.
+///    🪤 NO factupos.com: desde internet ese nombre es la página de AWS y las APIs dan 404 (pasó en la primera prueba).
 library;
 
 import 'dart:async';
@@ -13,8 +19,11 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-const String servidorFactuPOS = 'https://factupos.com';
+const List<String> servidoresFactuPOS = ['https://invefacon.com', 'https://invefacon.net'];
 const String _api = '/apis/shared/venta/factusuper/';
+
+/// Por cuál dominio se entró la última vez (compartido por toda la app): el próximo pedido arranca por ahí.
+int _preferido = 0;
 
 /// Formato de la llave de la empresa (el mismo que revisa la web).
 final RegExp formatoLlave = RegExp(r'^fs1\.[0-9a-f]{64}$');
@@ -33,50 +42,87 @@ class ErrorConexion implements Exception {
   String toString() => mensaje;
 }
 
+/// Este dominio no sirve ahora: se prueba el otro.
+class _DominioCaido implements Exception {
+  final String porque;
+  const _DominioCaido(this.porque);
+}
+
 class Conexion {
   final String llave;
   String cajero;
-  final String servidor;
+  final List<String> servidores;
   final http.Client _cliente;
-  Conexion({required this.llave, required this.cajero, this.servidor = servidorFactuPOS, http.Client? cliente})
+  Conexion({required this.llave, this.cajero = '', this.servidores = servidoresFactuPOS, http.Client? cliente})
       : _cliente = cliente ?? http.Client();
 
-  /// La sesión del servidor (cookie FSSID) se reutiliza entre pedidos: así no se arma una nueva cada vez.
-  String? _cookie;
+  /// La sesión del servidor (cookie FSSID), una por dominio: así no se arma una nueva en cada pedido.
+  final Map<String, String> _cookies = {};
 
-  Map<String, String> get _cabeceras => {
+  Map<String, String> _cabeceras(String base) => {
         'Authorization': 'Bearer $llave',
         if (cajero.isNotEmpty) 'X-FS-Cajero': cajero,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json',
         'User-Agent': 'FactuSuper-App/1.0',
-        if (_cookie != null) 'Cookie': _cookie!,
+        if (_cookies[base] != null) 'Cookie': _cookies[base]!,
       };
 
-  Uri _uri(String ruta, [Map<String, String>? q]) =>
-      Uri.parse(servidor + (ruta.startsWith('/') ? ruta : _api + ruta)).replace(queryParameters: q);
+  Uri _uri(String base, String ruta, [Map<String, String>? q]) =>
+      Uri.parse(base + (ruta.startsWith('/') ? ruta : _api + ruta)).replace(queryParameters: q);
 
   Future<Map<String, dynamic>> get(String ruta, {Map<String, String>? query, Duration espera = const Duration(seconds: 60)}) =>
-      _pedir(() => _cliente.get(_uri(ruta, query), headers: _cabeceras).timeout(espera));
+      _porDominios((b) => _cliente.get(_uri(b, ruta, query), headers: _cabeceras(b)).timeout(espera));
 
-  Future<Map<String, dynamic>> post(String ruta, Object cuerpo, {Duration espera = const Duration(seconds: 90)}) => _pedir(() =>
-      _cliente.post(_uri(ruta), headers: {..._cabeceras, 'Content-Type': 'application/json'}, body: jsonEncode(cuerpo)).timeout(espera));
+  /// 🔑 Un POST solo se reintenta por el otro dominio si NO llegó al servidor (conexión rechazada / nombre que no
+  ///    resuelve). Si se cortó a media espera, puede haber llegado: lo resuelve el transaccionId de la venta, no esto.
+  Future<Map<String, dynamic>> post(String ruta, Object cuerpo, {Duration espera = const Duration(seconds: 90)}) =>
+      _porDominios(
+          (b) => _cliente
+              .post(_uri(b, ruta), headers: {..._cabeceras(b), 'Content-Type': 'application/json'}, body: jsonEncode(cuerpo))
+              .timeout(espera),
+          esPost: true);
 
-  Future<Map<String, dynamic>> _pedir(Future<http.Response> Function() hacer) async {
+  Future<Map<String, dynamic>> _porDominios(Future<http.Response> Function(String base) hacer, {bool esPost = false}) async {
+    final n = servidores.length;
+    final inicio = _preferido % n;
+    String ultimo = '';
+    for (var i = 0; i < n; i++) {
+      final k = (inicio + i) % n;
+      final base = servidores[k];
+      try {
+        final j = await _pedir(base, () => hacer(base), esPost: esPost);
+        _preferido = k;
+        return j;
+      } on _DominioCaido catch (e) {
+        ultimo = e.porque;
+      }
+    }
+    throw ErrorConexion(ultimo.isEmpty ? 'Sin conexión con el servidor' : ultimo, sinInternet: true);
+  }
+
+  Future<Map<String, dynamic>> _pedir(String base, Future<http.Response> Function() hacer, {required bool esPost}) async {
     http.Response r;
     try {
       r = await hacer();
     } on SocketException {
-      throw const ErrorConexion('Sin conexión con el servidor', sinInternet: true);
+      throw const _DominioCaido('Sin conexión con el servidor');
     } on TimeoutException {
-      throw const ErrorConexion('El servidor no contestó a tiempo', sinInternet: true);
+      if (esPost) throw const ErrorConexion('El servidor no contestó a tiempo', sinInternet: true);
+      throw const _DominioCaido('El servidor no contestó a tiempo');
     } on http.ClientException {
-      throw const ErrorConexion('Sin conexión con el servidor', sinInternet: true);
+      throw const _DominioCaido('Sin conexión con el servidor');
+    } on HandshakeException {
+      throw const _DominioCaido('No se pudo abrir la conexión segura con el servidor');
+    }
+    // La entrada de ese internet está caída (el balanceador no tiene a quién pasarle el pedido): por el otro.
+    if (r.statusCode == 502 || r.statusCode == 503 || r.statusCode == 504) {
+      throw _DominioCaido('El servidor no está disponible (HTTP ${r.statusCode})');
     }
     final galleta = r.headers['set-cookie'];
     if (galleta != null) {
       final m = RegExp(r'(FSSID=[^;]+)').firstMatch(galleta);
-      if (m != null) _cookie = m.group(1);
+      if (m != null) _cookies[base] = m.group(1)!;
     }
     Map<String, dynamic>? j;
     try {
@@ -111,23 +157,22 @@ class InfoLlave {
   }
 }
 
-/// Revisa una llave pegada en Configuración. El servidor exige un cajero para armar la sesión: se usa el
-/// código del usuario que está configurando la caja (activo y con permiso de facturar, 653).
-Future<InfoLlave> revisarLlave(String llave, String usuario, {http.Client? cliente}) async {
+/// Revisa una llave pegada en Configuración. Con SOLO la llave (dueño: «solo debería pedir la llave de la empresa»):
+/// el usuario se elige después, de la lista, en la entrada de la caja.
+Future<InfoLlave> revisarLlave(String llave, {http.Client? cliente}) async {
   llave = llave.trim();
-  usuario = usuario.trim();
   if (!formatoLlave.hasMatch(llave)) {
     throw const ErrorConexion('La llave no tiene el formato correcto: empieza con «fs1.» y sigue con 64 letras y números');
   }
-  if (usuario.isEmpty) throw const ErrorConexion('Escriba su código de usuario de FactuPOS');
-  final c = Conexion(llave: llave, cajero: usuario, cliente: cliente);
+  final c = Conexion(llave: llave, cliente: cliente);
   try {
     final j = await c.get('token_info.php');
     if (j['ok'] != true) throw ErrorConexion((j['mensaje'] ?? 'La llave no es válida o fue anulada').toString());
     return InfoLlave.desde(j);
   } on ErrorConexion catch (e) {
     if (e.motivo == 'cajero_invalido') {
-      throw const ErrorConexion('Ese usuario no está activo en la empresa de la llave o no tiene permiso para facturar (653)');
+      throw const ErrorConexion('La llave no tiene un usuario activo con permiso de facturar para abrirla. '
+          'Entre una vez a FactuSuper web con un cajero, o regenere la llave en Configuración › Tokens.');
     }
     rethrow;
   } finally {
