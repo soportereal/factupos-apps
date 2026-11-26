@@ -275,7 +275,7 @@ void main() {
 
     await t.tap(find.widgetWithText(FilledButton, 'Efectivo'));
     await t.pump(const Duration(milliseconds: 500));
-    await t.tap(find.text('₡20.000'));
+    await t.tap(find.text('₡20,000'));
     await t.pump(const Duration(milliseconds: 300));
     await foto(t, '6-cobro-efectivo');
     await t.tap(find.text('Cancelar'));
@@ -462,7 +462,7 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     await foto(t, '17-factumovil-cobro');
-    await t.tap(find.text('CRC5.000'));
+    await t.tap(find.text('CRC5,000'));
     await t.pump();
     await t.tap(find.text('Todo Tarjetas Bac'));
     await t.pump();

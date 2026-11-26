@@ -106,7 +106,7 @@ class _EstadoEditorLineaMovil extends State<_EditorLineaMovil> {
   }
 
   String _n(double v, [int? d]) =>
-      fmt(v, d ?? doc.dec.precio).replaceAll('.', '');
+      fmt(v, d ?? doc.dec.precio).replaceAll(',', '');
 
   /// Reescribe todos los campos menos [salvo] (el que se está escribiendo).
   void _pintar([TextEditingController? salvo]) {

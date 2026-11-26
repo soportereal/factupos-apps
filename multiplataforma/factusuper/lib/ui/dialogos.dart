@@ -12,23 +12,26 @@ import '../motor/linea.dart';
 import '../motor/redondeo.dart';
 import 'tema.dart';
 
+/// Dueño (26-nov, #3957): miles con COMA y decimales con PUNTO, como la web → «12,601.27».
 String fmt(num n, [int d = 2]) {
   final s = redondear(n, d).abs().toStringAsFixed(d);
   final p = s.split('.');
   final ent = p[0].replaceAllMapped(
     RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
+    (_) => ',',
   );
-  return '${n < 0 ? '-' : ''}${d > 0 ? '$ent,${p[1]}' : ent}';
+  return '${n < 0 ? '-' : ''}${d > 0 ? '$ent.${p[1]}' : ent}';
 }
 
-/// «12.500,50» / «12500.5» / «12,5» → número.
+/// «12,500.50» / «12500.5» / «12,500» → número. Si alguien escribe «12,5» (coma como decimal) también se entiende.
 double leerMonto(String t) {
   var s = t.trim().replaceAll(RegExp(r'[₡\s]'), '');
-  if (s.contains(',')) {
-    s = s.replaceAll('.', '').replaceAll(',', '.');
-  } else if (RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(s)) {
-    s = s.replaceAll('.', '');
+  if (s.contains('.')) {
+    s = s.replaceAll(',', '');
+  } else if (RegExp(r'^\d{1,3}(,\d{3})+$').hasMatch(s)) {
+    s = s.replaceAll(',', '');
+  } else {
+    s = s.replaceAll(',', '.');
   }
   return double.tryParse(s) ?? double.nan;
 }
@@ -736,10 +739,10 @@ Future<bool> dialogoLinea(
 ) async {
   final l = doc.lineas[indice];
   final cant = TextEditingController(
-    text: fmt(l.cantidad, l.fraccionable != 0 ? 3 : 0).replaceAll('.', ''),
+    text: fmt(l.cantidad, l.fraccionable != 0 ? 3 : 0).replaceAll(',', ''),
   );
   final precio = TextEditingController(
-    text: fmt(l.precio, doc.dec.precio).replaceAll('.', ''),
+    text: fmt(l.precio, doc.dec.precio).replaceAll(',', ''),
   );
   var modo = l.descMonto != null ? 'monto' : 'pct';
   final valor = TextEditingController(
@@ -834,7 +837,7 @@ Future<bool> dialogoLinea(
                         precio.text = fmt(
                           l.precio,
                           doc.dec.precio,
-                        ).replaceAll('.', '');
+                        ).replaceAll(',', '');
                         modo = 'pct';
                         bonif = false;
                         valor.text = l.descuento > 0
