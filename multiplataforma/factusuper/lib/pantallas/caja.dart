@@ -34,6 +34,8 @@ import '../ui/dialogos_caja.dart';
 import '../ui/tema.dart';
 import '../ui/vista_lineas.dart';
 
+part 'caja_movil.dart';
+
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
   final Almacen almacen;
@@ -96,6 +98,11 @@ class _EstadoCaja extends State<PantallaCaja> {
   final _focoBuscar = FocusNode();
   final _scroll = ScrollController();
   final _notas = TextEditingController();
+
+  // FactuMóvil (caja_movil.dart): acordeón del cliente y «Nombre del documento».
+  bool _cliAbierto = false;
+  final _fmNombre = TextEditingController();
+  String _fmCliCod = '';
   List<Map<String, dynamic>> _resultados = [];
   int _sel = -1;
 
@@ -1800,6 +1807,18 @@ class _EstadoCaja extends State<PantallaCaja> {
   // ═══════════ Pantalla ═══════════
   @override
   Widget build(BuildContext context) {
+    if (sabor.esMovil) {
+      final cod = '${doc.cliente['codigo'] ?? 'SN'}';
+      if (cod != _fmCliCod) {
+        _fmCliCod = cod;
+        _fmNombre.text =
+            cod.toUpperCase() == 'SN' &&
+                '${doc.cliente['nombre']}' == 'CLIENTE CONTADO'
+            ? ''
+            : '${doc.cliente['nombre'] ?? ''}';
+      }
+      return _movil();
+    }
     return CallbackShortcuts(
       bindings: _atajos,
       child: Scaffold(

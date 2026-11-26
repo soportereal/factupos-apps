@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:factusuper/app/sabor.dart';
 import 'package:factusuper/ui/vista_lineas.dart';
 import 'package:factusuper/caja/cajeros.dart';
 import 'package:factusuper/caja/cola.dart';
@@ -366,6 +367,63 @@ void main() {
     }
     await t.pump(const Duration(seconds: 4));
     await foto(t, '9-celular-lineas');
+
+    // FactuMóvil: SU pantalla (réplica de FactuMóvil web), con la venta en curso que quedó guardada.
+    sabor = saborFactuMovil;
+    await t.pumpWidget(
+      app(
+        PantallaCaja(
+          key: const ValueKey('movil'),
+          config: cfg,
+          almacen: almacen,
+          datos: datos,
+          cola: cola,
+          cajeros: cajeros,
+          cajero: const Cajero('00006', 'Ana Rodríguez'),
+          alSalir: () {},
+        ),
+      ),
+    );
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '10-factumovil');
+    await t.tap(find.byIcon(Icons.expand_more).first);
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '11-factumovil-cliente');
+    await t.tap(find.byIcon(Icons.expand_less).first);
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.text('Agregar artículo'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    Finder campo(String pista) => find.byWidgetPredicate(
+      (w) => w is TextField && w.decoration?.hintText == pista,
+    );
+    await t.enterText(campo('Buscar artículo'), 'caf');
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '12-factumovil-buscar');
+    await t.tap(find.text('Agregar').first);
+    await t.pump(const Duration(seconds: 1));
+    await t.enterText(campo('Buscar artículo'), 'arroz');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.text('+').first);
+    await t.tap(find.text('+').first);
+    await t.pump(const Duration(milliseconds: 300));
+    await t.tap(find.text('Agregar').first);
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '13-factumovil-agregado');
+    await t.tap(find.text('Regresar').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Seleccionar cliente'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.enterText(campo('Buscar cliente'), 'a');
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '14-factumovil-clientes');
+    await t.tap(find.text('Regresar').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '15-factumovil-final');
+    sabor = saborFactuSuper;
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);
   }, skip: salida.isEmpty);
