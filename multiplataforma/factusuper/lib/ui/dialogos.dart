@@ -1373,6 +1373,7 @@ Future<void> dialogoVentas(
   List<Map<String, dynamic>> ventas,
   VoidCallback enviar, {
   void Function(Map<String, dynamic> venta)? reimprimir,
+  void Function(Map<String, dynamic> venta)? abrir,
 }) {
   const nombres = {
     'pendiente': 'Pendiente',
@@ -1401,79 +1402,98 @@ Future<void> dialogoVentas(
     ].where((x) => x.trim().isNotEmpty).join(' · ');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 8, 4, 10),
-      decoration: BoxDecoration(
+      child: Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFCBD9EA)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '₡${fmt((v['total'] as num?) ?? 0)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 17,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: abrir == null
+              ? null
+              : () {
+                  Navigator.pop(ctx);
+                  abrir(v);
+                },
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFCBD9EA)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '₡${fmt((v['total'] as num?) ?? 0)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color(e).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        nombres[e] ?? e,
+                        style: TextStyle(
+                          color: color(e),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    if (fac != null && reimprimir != null)
+                      IconButton(
+                        tooltip: 'Reimprimir (permiso 142)',
+                        icon: const Icon(Icons.print_outlined),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          reimprimir(v);
+                        },
+                      )
+                    else
+                      const SizedBox(width: 8),
+                  ],
+                ),
+                if (detalle.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      detalle,
+                      style: const TextStyle(
+                        color: Marca.tintaSuave,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: color(e).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  nombres[e] ?? e,
-                  style: TextStyle(
-                    color: color(e),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                if (v['error'] is Map)
+                  Text(
+                    '${(v['error'] as Map)['mensaje']}',
+                    style: const TextStyle(color: Marca.rojo, fontSize: 12),
                   ),
-                ),
-              ),
-              if (fac != null && reimprimir != null)
-                IconButton(
-                  tooltip: 'Reimprimir (permiso 142)',
-                  icon: const Icon(Icons.print_outlined),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    reimprimir(v);
-                  },
-                )
-              else
-                const SizedBox(width: 8),
-            ],
+                if (loc != null)
+                  Text(
+                    loc['ok'] == true
+                        ? '✔ provisional'
+                        : '✖ provisional no salió',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: loc['ok'] == true ? Marca.verde : Marca.rojo,
+                    ),
+                  ),
+              ],
+            ),
           ),
-          if (detalle.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                detalle,
-                style: const TextStyle(color: Marca.tintaSuave, fontSize: 13),
-              ),
-            ),
-          if (v['error'] is Map)
-            Text(
-              '${(v['error'] as Map)['mensaje']}',
-              style: const TextStyle(color: Marca.rojo, fontSize: 12),
-            ),
-          if (loc != null)
-            Text(
-              loc['ok'] == true ? '✔ provisional' : '✖ provisional no salió',
-              style: TextStyle(
-                fontSize: 12,
-                color: loc['ok'] == true ? Marca.verde : Marca.rojo,
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }

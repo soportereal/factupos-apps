@@ -5,9 +5,14 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app/sabor.dart';
 import '../caja/cajeros.dart';
@@ -38,6 +43,7 @@ part 'caja_movil.dart';
 part 'cobro_movil.dart';
 part 'editar_movil.dart';
 part 'cotizaciones_movil.dart';
+part 'detalle_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
@@ -1547,6 +1553,7 @@ class _EstadoCaja extends State<PantallaCaja> {
     widget.cola.ventas,
     _enviar,
     reimprimir: _reimprimir,
+    abrir: _fmDetalleVenta, // tocar la venta → su detalle (#3957)
   );
 
   Future<void> _reimprimir(Map<String, dynamic> v) async {

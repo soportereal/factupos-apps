@@ -559,6 +559,36 @@ void main() {
         'total': 7205.8,
         'cliente': {'nombre': 'FIORELLA SANCHEZ SEQUEIRA'},
         'factura': {'numero': '00200001010000003353'},
+        'paquete': {
+          'cobradoEn': '2026-11-26T05:53:00-06:00',
+          'tipoPago': 'contado',
+          'agente': '00006',
+          'total': 7205.8,
+          'cliente': {'codigo': '4', 'nombre': 'FIORELLA SANCHEZ SEQUEIRA'},
+          'clienteCompleto': {'cedula': '604830935'},
+          'lineas': [
+            {
+              'codigo': '00000009',
+              'nombre': 'COCA gorda',
+              'cantidad': 2,
+              'precio': 1330,
+              'iva': 13,
+              'total': 3005.8,
+            },
+            {
+              'codigo': '00010006',
+              'nombre': 'COCA 2',
+              'cantidad': 2,
+              'precio': 1858.41,
+              'iva': 13,
+              'total': 4200,
+            },
+          ],
+          'pagos': [
+            {'medio': '01', 'cuenta': '', 'monto': 2000},
+            {'medio': '02', 'cuenta': '110107', 'monto': 5205.8},
+          ],
+        },
       },
       {
         'idProceso': '01-002-00027-131002-26',
@@ -571,7 +601,14 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     await foto(t, '23-factumovil-ventas');
-    await t.pageBack();
+    await t.tap(find.textContaining('FIORELLA').first);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '24-factumovil-detalle');
+    await t.drag(find.byType(ListView).last, const Offset(0, -900));
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '25-factumovil-detalle-acciones');
+    await t.tap(find.byTooltip('Regresar'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     sabor = saborFactuSuper;
