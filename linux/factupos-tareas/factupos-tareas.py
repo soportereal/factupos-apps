@@ -24,7 +24,7 @@ import signal
 import pwd
 import subprocess
 
-VERSION = "1.1.4"                                 # fuente única de versión
+VERSION = "1.2.1"                                 # fuente única de versión
 
 CLK_TCK = os.sysconf("SC_CLK_TCK") or 100          # jiffies por segundo
 
@@ -403,21 +403,29 @@ def main_cli(argv):
 # ----------------------------------------------------------------------
 
 CSS = """
-.fpt-win { background: #f4f6f9; }
-.fpt-header { background: #0e1b33; }
+/* Diseno navy 1.2.0 (#2698): mismo lenguaje que el kiosko y la barra 1.6.x. */
+.fpt-win { background: #0b1533; }
+.fpt-win scrolledwindow, .fpt-win viewport { background: #0b1533; }
+.fpt-header { background: linear-gradient(135deg, #1e1b4b, #1e3a8a); border-bottom: 2px solid #7c3aed; }
 .fpt-header-title { color: #ffffff; font-weight: bold; font-size: 15px; }
-.fpt-header-resumen { color: #9fb3d9; font-size: 12px; }
-.fpt-text { color: #14233f; }
+.fpt-header-resumen { color: #a5b4fc; font-size: 12px; }
+.fpt-text { color: #e2e8f0; }
+.fpt-win entry { background: #14224d; color: #ffffff; border: 1px solid #4f63a8; border-radius: 12px; }
+.fpt-win entry:focus { border-color: #38bdf8; }
+.fpt-win treeview { background-color: #0f1a3a; color: #e2e8f0; }
+.fpt-win treeview:selected { background-color: #7c3aed; color: #ffffff; }
+.fpt-win treeview header button { background: #14224d; color: #a5b4fc; font-weight: bold;
+    border: none; border-bottom: 1px solid rgba(255,255,255,0.12); }
 .fpt-finalizar {
-    background: #c0392b; color: #ffffff; font-weight: bold;
-    border-radius: 6px; padding: 6px 18px;
+    background: linear-gradient(135deg, #e11d48, #be123c); color: #ffffff; font-weight: bold;
+    border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; padding: 6px 20px;
 }
-.fpt-finalizar:hover { background: #a5301f; }
-.fpt-finalizar:disabled { background: #e3b8b3; color: #f6e6e4; }
+.fpt-finalizar:hover { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+.fpt-finalizar:disabled { background: #3b2a45; color: #7c6f86; border-color: transparent; }
 
 /* Barra de titulo propia: navy flat, letra blanca, minimalista */
 .fp-titlebar {
-    background: #0e1b33;
+    background: linear-gradient(to right, #0b1533, #14224d 55%, #1e1b4b);
     color: #ffffff;
     border: none;
     box-shadow: none;
@@ -431,17 +439,18 @@ CSS = """
 }
 .fp-titlebar button:hover { background: rgba(255,255,255,0.18); border-radius: 6px; }
 
-/* Panel de rendimiento (columna derecha) */
-.fpt-panel-derecho { background: #f4f6f9; }
+/* Panel de rendimiento: fichas con relieve */
+.fpt-panel-derecho { background: #0b1533; }
 .fpt-ficha {
-    background: #ffffff;
-    border: 1px solid #e2e6ee;
-    border-radius: 8px;
-    padding: 10px;
+    background: linear-gradient(to bottom, #182a5c, #14224d);
+    border: 1px solid rgba(255,255,255,0.10); border-top-color: rgba(255,255,255,0.20);
+    border-bottom-color: rgba(0,0,0,0.55);
+    border-radius: 14px; padding: 10px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.45);
 }
-.fpt-ficha-titulo { color: #14233f; font-weight: bold; font-size: 13px; }
-.fpt-ficha-clave { color: #5b6b85; font-size: 11px; }
-.fpt-ficha-valor { color: #14233f; font-weight: bold; font-size: 11px; }
+.fpt-ficha-titulo { color: #ffffff; font-weight: bold; font-size: 13px; }
+.fpt-ficha-clave { color: #b4c2e0; font-size: 11px; }
+.fpt-ficha-valor { color: #ffffff; font-weight: bold; font-size: 11px; }
 """
 
 COL_NOMBRE, COL_PID, COL_USUARIO, COL_CPU, COL_MEM = range(5)
@@ -593,7 +602,7 @@ def main_gui():
         """Grafico de area/linea 0-100% con el historial de muestras."""
         ancho = area.get_allocated_width()
         alto = area.get_allocated_height()
-        cr.set_source_rgb(0.933, 0.949, 0.972)  # #eef2f8
+        cr.set_source_rgb(0.043, 0.082, 0.200)  # #0b1533 (navy)
         cr.rectangle(0, 0, ancho, alto)
         cr.fill()
         datos = list(historial)
@@ -612,13 +621,13 @@ def main_gui():
             cr.line_to(x, y)
         cr.line_to(pts[-1][0], alto)
         cr.close_path()
-        cr.set_source_rgba(0.176, 0.353, 0.651, 0.22)  # #2d5aa6 translucido
+        cr.set_source_rgba(0.220, 0.741, 0.973, 0.25)  # #38bdf8 translucido
         cr.fill()
         # linea
         cr.move_to(*pts[0])
         for x, y in pts[1:]:
             cr.line_to(x, y)
-        cr.set_source_rgb(0.176, 0.353, 0.651)
+        cr.set_source_rgb(0.220, 0.741, 0.973)  # #38bdf8
         cr.set_line_width(1.6)
         cr.stroke()
         return True
@@ -627,7 +636,7 @@ def main_gui():
         """Mini-barras verticales, una por nucleo (% de uso)."""
         ancho = area.get_allocated_width()
         alto = area.get_allocated_height()
-        cr.set_source_rgb(0.933, 0.949, 0.972)
+        cr.set_source_rgb(0.043, 0.082, 0.200)  # #0b1533
         cr.rectangle(0, 0, ancho, alto)
         cr.fill()
         n = len(porcentajes)
@@ -635,7 +644,7 @@ def main_gui():
             return True
         gap = 2.0
         ancho_barra = max(1.0, (ancho - gap * (n - 1)) / n)
-        cr.set_source_rgb(0.176, 0.353, 0.651)
+        cr.set_source_rgb(0.486, 0.227, 0.929)  # #7c3aed
         for i, pct in enumerate(porcentajes):
             x = i * (ancho_barra + gap)
             h = (min(max(pct, 0.0), 100.0) / 100.0) * (alto - 2)
@@ -645,7 +654,7 @@ def main_gui():
 
     def dibujar_barra_uso(area, cr, pct_usado, texto=None):
         """Barra horizontal apilada, bordes redondeados: porción USADA en
-        rojo (#c0392b) y porción LIBRE en verde (#1e7e34), proporcional a
+        rosa (#f43f5e) y porción LIBRE en verde (#22c55e), proporcional a
         pct_usado. Si se pasa 'texto' se centra en blanco/negrita sobre la
         barra (lo usa la ficha Memoria); los discos la llaman sin texto
         porque ya muestran el detalle en un label aparte debajo.
@@ -665,10 +674,10 @@ def main_gui():
 
         pct = min(max(pct_usado, 0.0), 100.0)
         w_usado = (pct / 100.0) * ancho
-        cr.set_source_rgb(0.753, 0.224, 0.169)  # #c0392b usado
+        cr.set_source_rgb(0.957, 0.247, 0.369)  # #f43f5e usado
         cr.rectangle(0, 0, w_usado, alto)
         cr.fill()
-        cr.set_source_rgb(0.118, 0.494, 0.204)  # #1e7e34 libre
+        cr.set_source_rgb(0.133, 0.773, 0.369)  # #22c55e libre
         cr.rectangle(w_usado, 0, ancho - w_usado, alto)
         cr.fill()
         cr.reset_clip()
@@ -816,9 +825,9 @@ def main_gui():
         v_mem_uso.set_text("%.1f GB" % usada_gb)
         v_mem_libre.set_text("%.1f GB" % libre_gb)
         lbl_leyenda_mem.set_markup(
-            '<span foreground="#c0392b" weight="bold" size="small">%.0f%% en uso</span>'
-            '<span foreground="#5b6b85" size="small">  ·  </span>'
-            '<span foreground="#1e7e34" weight="bold" size="small">%.0f%% libre</span>'
+            '<span foreground="#fb7185" weight="bold" size="small">%.0f%% en uso</span>'
+            '<span foreground="#7184ad" size="small">  ·  </span>'
+            '<span foreground="#4ade80" weight="bold" size="small">%.0f%% libre</span>'
             % (pct_mem, max(0.0, 100.0 - pct_mem)))
         v_cpu_uso.set_text("%.1f%%" % cpu_sistema)
         v_cpu_libre.set_text("%.1f%%" % max(0.0, 100.0 - cpu_sistema))

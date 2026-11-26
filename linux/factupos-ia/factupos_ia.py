@@ -32,8 +32,8 @@ from gi.repository import Gtk, GLib, Pango, Gdk
 # ---------------------------------------------------------------------------
 # Versión y auto-actualización
 # ---------------------------------------------------------------------------
-VERSION = "1.1.5"                                   # fuente única de versión
-UPDATE_INTERVAL = 6 * 3600                          # re-chequeo cada 6 horas
+VERSION = "1.2.0"                                   # fuente única de versión
+UPDATE_INTERVAL = 3600                              # re-chequeo cada hora (#2698)
 # Ambos manifests en soportereal.com: es el server de la oficina, alcanzable
 # desde PCs remotas (igual que el proxy) y desplegable con deploy.sh. El público
 # factupos.com vive en AWS y NO tiene /downloads/ → daba 404 a clientes remotos.
@@ -393,12 +393,23 @@ class SoporteApp(Gtk.Window):
         # Estilos del campo: verde = listo para escribir, rojo = trabajando
         _css = Gtk.CssProvider()
         _css.load_from_data(
-            b"entry{background:#fff176;color:#000000;caret-color:#000000;"
-            b"font-size:14px;padding:8px;}"
-            b"entry.listo{border:2px solid #2e7d32;}"
-            b"entry.ocupado{border:2px solid #c62828;}"
-            b"entry placeholder{color:#777777;}"
-            b"textview, textview text{background:#ffffff;color:#000000;font-size:14px;}")
+            # Diseno NAVY 1.2.0 (#2698). Se conserva el codigo de color del campo:
+            # borde VERDE = listo para escribir, ROJO = trabajando.
+            b"window{background:#0b1533;color:#e2e8f0;}"
+            b"label{color:#e2e8f0;}"
+            b"entry{background:#14224d;color:#ffffff;caret-color:#ffffff;"
+            b"font-size:14px;padding:8px;border-radius:12px;}"
+            b"entry.listo{border:2px solid #22c55e;}"
+            b"entry.ocupado{border:2px solid #f43f5e;}"
+            b"entry placeholder{color:#7184ad;}"
+            b"button{background-image:none;background-color:rgba(255,255,255,0.08);color:#e2e8f0;"
+            b"border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:6px 14px;}"
+            b"button:hover{background-color:rgba(255,255,255,0.16);}"
+            b"button label{color:#e2e8f0;}"
+            b"button.suggested-action{background-image:linear-gradient(135deg,#7c3aed,#2563eb);}"
+            b"button.suggested-action label{color:#ffffff;font-weight:bold;}"
+            b"textview, textview text{background:#0f1a3a;color:#e2e8f0;font-size:14px;}"
+            b"scrolledwindow{border:1px solid rgba(255,255,255,0.12);border-radius:10px;}")
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), _css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 

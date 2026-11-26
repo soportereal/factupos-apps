@@ -9,6 +9,8 @@ import android.telephony.SmsMessage;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 
+import org.json.JSONObject;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -51,8 +53,12 @@ public class SmsReceiver extends BroadcastReceiver {
         int slot = slotForSubId(context, subId);
         final String empresa = Config.getEmpresaForSlot(context, slot);
 
-        final String endpoint = Config.getEndpoint(context);
         final String token = Config.getToken(context);
+
+        // Queda anotado en el teléfono ANTES de mandarlo: si no se puede cargar, no se pierde (#1307).
+        final Context app = context.getApplicationContext();
+        final JSONObject item = Aviso.nuevo(fFecha, fOrigen, fTexto, fSubId, fSim, empresa);
+        Aviso.guardar(app, item);
 
         // Enviar en hilo de fondo manteniendo vivo el receiver hasta terminar.
         final PendingResult pr = goAsync();
@@ -60,7 +66,12 @@ public class SmsReceiver extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
-                    Poster.post(endpoint, token, empresa, fFecha, fOrigen, fTexto, fSubId, fSim);
+                    Poster.Resultado r = Poster.post(token, empresa, fFecha, fOrigen, fTexto, fSubId, fSim);
+                    Aviso.aplicar(item, r);
+                    Aviso.guardar(app, item);
+                    Aviso.avisar(app, item);
+                    // Si este entró hay conexión: se aprovecha para mandar lo que había quedado pendiente.
+                    if (r.ok) Aviso.reintentarEnFondo(app, 0);
                 } finally {
                     pr.finish();
                 }
@@ -69,7 +80,7 @@ public class SmsReceiver extends BroadcastReceiver {
     }
 
     /** Slot (0-based) de la SIM para un subId; -1 si no se puede determinar. */
-    private int slotForSubId(Context ctx, int subId) {
+    static int slotForSubId(Context ctx, int subId) {
         try {
             SubscriptionManager sm = (SubscriptionManager) ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
             if (sm != null && subId >= 0) {
@@ -83,7 +94,7 @@ public class SmsReceiver extends BroadcastReceiver {
     }
 
     /** Describe la SIM por la que entró el SMS: "SIM1 (Kolbi ICE)". Requiere READ_PHONE_STATE. */
-    private String describeSim(Context ctx, int subId) {
+    static String describeSim(Context ctx, int subId) {
         try {
             SubscriptionManager sm = (SubscriptionManager) ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
             if (sm != null && subId >= 0) {

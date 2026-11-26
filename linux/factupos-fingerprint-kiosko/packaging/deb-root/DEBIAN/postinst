@@ -36,6 +36,13 @@ sysctl -w "net.ipv4.ip_local_reserved_ports=$NEW" >/dev/null 2>&1 || true
 # eso se libera al reiniciar el equipo (o cerrando ese programa). Desde el próximo arranque
 # el servicio toma el puerto antes que nadie y la reserva impide que se lo roben.
 
+# (#2698) Retirar el servicio VIEJO «fingerprint-service» (paquete 2.4.x de antes del
+# cambio de nombre): si queda, le gana el puerto 52181 y el lector al nuevo.
+systemctl stop fingerprint-service 2>/dev/null || true
+systemctl disable fingerprint-service 2>/dev/null || true
+rm -f /etc/systemd/system/fingerprint-service.service
+systemctl reset-failed fingerprint-service 2>/dev/null || true
+
 systemctl daemon-reload
 systemctl enable factupos-fingerprint-servicio.service
 systemctl restart factupos-fingerprint-servicio.service

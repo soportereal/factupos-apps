@@ -11,7 +11,16 @@
 # MODO 2 (flota vieja sin repo): manifests versiones.txt de descargas.
 
 REPO_LIST=/etc/apt/sources.list.d/factupos.list
+
+# Al terminar (pase lo que pase): parches de SEGURIDAD del sistema, en otro servicio, sin
+# esperar (--no-block) para que FactuPOS Update no se demore (#2942). Nunca reinicia.
+al_salir() {
+    rm -rf "${TMP:-}"
+    systemctl start --no-block factupos-seguridad.service 2>/dev/null || true
+}
+trap al_salir EXIT
 BASE_TXT=/etc/factupos-actualizador/apps-base.txt
+QUITADAS=/var/lib/factupos-apps/quitadas.txt   # las anota la Tienda (op.sh) al quitar
 
 # Destraba apt/dpkg antes de trabajar: comenta la fuente cdrom (rompe apt en
 # equipos instalados de USB) y termina de configurar paquetes a medias (un
@@ -37,6 +46,8 @@ if [ -f "$REPO_LIST" ]; then
         FALTAN=""
         while read -r p; do
             case "$p" in ""|\#*) continue;; esac
+            # quitada a propósito desde FactuPOS Apps (#3037): no se reinstala sola
+            grep -qxF "$p" "$QUITADAS" 2>/dev/null && continue
             instalado "$p" || FALTAN="$FALTAN $p"
         done < "$BASE_TXT"
         if [ -n "$FALTAN" ]; then
@@ -49,7 +60,15 @@ if [ -f "$REPO_LIST" ]; then
     LISTA=$(awk '/^Package:/{print $2}' /var/lib/apt/lists/*soportereal*_Packages 2>/dev/null | sort -u)
     ACTUALIZAR=""
     for p in $LISTA; do
-        instalado "$p" && ACTUALIZAR="$ACTUALIZAR $p"
+        instalado "$p" || continue
+        # Soporte Remoto (rustdesk): actualizarlo reinicia su servicio y CORTA la sesión de
+        # soporte que esté en curso. Si hay alguien conectado (RustDesk abre su gestor de
+        # conexión, «rustdesk --cm»), se deja para la próxima pasada (#2942).
+        if [ "$p" = rustdesk ] && pgrep -f "rustdesk --cm" >/dev/null 2>&1; then
+            echo "actualizador: hay una sesión de soporte remoto abierta: rustdesk se actualiza la próxima vez"
+            continue
+        fi
+        ACTUALIZAR="$ACTUALIZAR $p"
     done
     if [ -n "$ACTUALIZAR" ]; then
         echo "actualizador: revisando$ACTUALIZAR"
@@ -64,7 +83,7 @@ fi
 # MODO 2: metodo clasico por manifests (equipos sin el repo configurado)
 # ---------------------------------------------------------------------------
 BASES="https://soportereal.com/software/factupos-app/linux https://invefacon.net/software"
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+TMP=$(mktemp -d)   # lo borra al_salir
 BASE=""
 for b in $BASES; do
     if curl -fsS --max-time 15 "$b/versiones.txt" -o "$TMP/versiones.txt" 2>/dev/null; then

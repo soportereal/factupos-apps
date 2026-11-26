@@ -4,7 +4,9 @@ Section: admin
 Priority: optional
 Architecture: all
 Depends: python3, curl, apt
+Recommends: unattended-upgrades
 Maintainer: Soporte Real <soporte@soportereal.com>
 Description: FactuPOS - Actualizador de aplicaciones
  Mantiene las apps FactuPOS (panel, dataequipo, etc.) al dia desde invefacon.net
  (failover invefacon.com) e instala las que falten. Timer systemd cada 6h.
+ Ademas aplica los parches de SEGURIDAD del sistema operativo, sin reiniciar.

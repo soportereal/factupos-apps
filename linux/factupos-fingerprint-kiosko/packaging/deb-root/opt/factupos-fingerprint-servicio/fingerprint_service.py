@@ -66,7 +66,13 @@ try:
 except ImportError:
     HAS_PIL = False
 
-VERSION = '2.5.3'
+VERSION = '2.5.4'
+# v2.5.4: (#2698) RETIRA SOLO el servicio VIEJO «fingerprint-service» (paquete
+#         factupos-fingerprint 2.4.x, de antes del cambio de nombre de junio) si sigue
+#         en el equipo. En la .110 convivían los dos: el viejo le ganaba el puerto 52181
+#         al nuevo (406 arranques fallidos en un día) y, sin el arreglo de la 2.5.3, se
+#         «calentaba» cada 22 s -> el kiosko decía «Lector no detectado» todo el rato.
+#         Se hace al arrancar, ANTES de abrir el lector y el puerto (el viejo tiene los dos).
 # v2.5.3: FIX del loop "Lector no detectado" por SOBRECALENTAMIENTO (error 257,
 #         caso #463 en la .110). El "overheating" de libfprint 1.94.x es un contador
 #         SIMULADO de tiempo activo del sensor, no un termómetro: con el identify
@@ -1021,6 +1027,37 @@ class ThreadedHTTPServer(HTTPServer):
         finally: self.shutdown_request(req)
 
 
+OLD_UNIT = 'fingerprint-service'
+OLD_UNIT_FILE = '/etc/systemd/system/fingerprint-service.service'
+
+def _retirar_servicio_viejo():
+    """(#2698) Apaga, deshabilita y quita la unidad del servicio VIEJO si existe.
+    Corre como root (systemd). Best-effort: si algo falla, el servicio arranca igual."""
+    import subprocess
+    def sc(*a):
+        try:
+            return subprocess.run(['systemctl', *a], capture_output=True, text=True, timeout=20)
+        except Exception as e:
+            print(f"[SVC] systemctl {' '.join(a)} falló: {e}")
+            return None
+    r = sc('is-active', OLD_UNIT)
+    activo = bool(r and r.stdout.strip() == 'active')
+    if not activo and not os.path.exists(OLD_UNIT_FILE):
+        return
+    print(f"[SVC] Servicio VIEJO '{OLD_UNIT}' encontrado (activo={activo}): se retira")
+    sc('stop', OLD_UNIT)
+    sc('disable', OLD_UNIT)
+    try:
+        if os.path.exists(OLD_UNIT_FILE):
+            os.remove(OLD_UNIT_FILE)
+    except Exception as e:
+        print(f"[SVC] no se pudo borrar {OLD_UNIT_FILE}: {e}")
+    sc('daemon-reload')
+    sc('reset-failed', OLD_UNIT)
+    if activo:
+        time.sleep(1.5)   # que suelte el lector USB y el puerto antes de tomarlos
+
+
 def main():
     global fp_dev, device_name, device_driver, device_ready, enroll_stages
 
@@ -1030,6 +1067,7 @@ def main():
         print(f"[SVC] ⚠ {FPRINT_ERR}")
         print("[SVC] El servicio levanta igual (HTTP/status responde), pero el lector NO funcionará hasta instalar libfprint.")
     ensure_dirs()
+    _retirar_servicio_viejo()
 
     # Inicialización del lector: si falla, NO matamos el servicio — el watchdog
     # lo recupera cuando se reconecte. Así el /status siempre responde.

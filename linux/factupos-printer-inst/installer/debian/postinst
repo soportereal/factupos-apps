@@ -12,4 +12,17 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl reload polkit 2>/dev/null || true
 fi
 
+# #3420: impresoras virtuales (COM). Las que ya existian se reinician con el vport.py nuevo.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload 2>/dev/null || true
+    for f in /etc/factupos-printer-inst/vport/COM*.json; do
+        [ -f "$f" ] || continue
+        n="$(basename "$f" .json | sed 's/^COM//')"
+        systemctl enable "factupos-vport@$n.service" 2>/dev/null || true
+        systemctl restart "factupos-vport@$n.service" 2>/dev/null || true
+    done
+    # 1.4.1: cada virtual tambien como impresora del sistema (la ve el navegador).
+    python3 /usr/lib/factupos-printer-inst/helper.py vport-sync || true
+fi
+
 exit 0

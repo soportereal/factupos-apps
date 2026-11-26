@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
+  "version": "1.2.0",
   "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-Printer-Inst.deb",
   "py": "https://soportereal.com/software/factupos-app/linux/factupos-printer-inst.py",
-  "notes": "Asistente de impresoras USB/Serial (tickets). Auto-update: botón 'Verificar versión' + chequeo cada 6h."
+  "notes": "1.2.0 (#2831): pantalla Impresoras de este equipo (desinstalar, predeterminada, prueba) y asistente de instalacion nuevo."
 }

@@ -37,12 +37,12 @@ android {
         create("factusuper") {
             dimension = "app"
             applicationId = "com.factupos.factusuper"
-            resValue("string", "app_name", "FactuSuper")
+            manifestPlaceholders["appName"] = "FactuSuper"
         }
         create("factumovil") {
             dimension = "app"
             applicationId = "com.factupos.factumovil"
-            resValue("string", "app_name", "FactuMóvil")
+            manifestPlaceholders["appName"] = "FactuMóvil"
         }
     }
 

@@ -7,7 +7,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"        # carpeta recortes/
 PKG="factupos-recortes"
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.0.2}"   # 1.0.2: revisor arreglado para PCs en espanol (#2831)
 OUT="${2:-$HERE/installer/Output}"
 
 STAGE="$(mktemp -d)"
@@ -41,6 +41,11 @@ for s in preinst postinst postrm; do
     install -m755 "$HERE/installer/debian/$s" "$STAGE/DEBIAN/$s"
 done
 echo "/etc/dconf/db/local.d/00-factupos-recortes" > "$STAGE/DEBIAN/conffiles"
+
+# Actualización propia: revisor + temporizador de ESTA app (#2698). No depende de
+# FactuPOS Apps ni del Actualizador.
+source "$HERE/../_comun/autoupdate.sh"
+agregar_autoupdate "$STAGE" "$PKG"
 
 chmod 755 "$STAGE"
 mkdir -p "$OUT"
