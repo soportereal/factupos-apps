@@ -423,6 +423,8 @@ Future<(String, String)?> dialogoProformas(
     return '${x(d.day)}/${x(d.month)}/${d.year} ${x(d.hour)}:${x(d.minute)}';
   }
 
+  // En pantalla angosta (celular) el total y el basurero dejaban el nombre en una columna de una letra (#3957, foto 12).
+  final angosto = MediaQuery.sizeOf(context).width < 600;
   return showDialog<(String, String)>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -491,19 +493,20 @@ Future<(String, String)?> dialogoProformas(
                             ),
                           ),
                           subtitle: Text(
-                            '$id · ${hora(p['fecha'])} · ${p['lineas']} líneas',
+                            '$id · ${hora(p['fecha'])} · ${p['lineas']} líneas${angosto ? ' · ₡${fmt((p['total'] as num?) ?? 0)}' : ''}',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                '₡${fmt((p['total'] as num?) ?? 0)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
+                              if (!angosto)
+                                Text(
+                                  '₡${fmt((p['total'] as num?) ?? 0)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
+                              if (!angosto) const SizedBox(width: 12),
                               Tooltip(
                                 message: puedeBorrar
                                     ? 'Eliminar esta proforma del equipo'

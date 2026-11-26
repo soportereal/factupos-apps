@@ -37,6 +37,7 @@ import '../ui/vista_lineas.dart';
 part 'caja_movil.dart';
 part 'cobro_movil.dart';
 part 'editar_movil.dart';
+part 'cotizaciones_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
@@ -1263,12 +1264,22 @@ class _EstadoCaja extends State<PantallaCaja> {
     _cerrarOpciones();
     await _pintarEspera();
     if (!mounted) return;
-    final accion = await dialogoProformas(
-      context,
-      _espera,
-      puedeBorrar: doc.tienePermiso('060'),
-      actual: doc.proformaOrigen,
-    );
+    final accion = sabor.esMovil
+        ? await Navigator.of(context).push<(String, String)>(
+            MaterialPageRoute(
+              builder: (_) => _CotizacionesMovil(
+                lista: _espera,
+                puedeBorrar: doc.tienePermiso('060'),
+                actual: doc.proformaOrigen,
+              ),
+            ),
+          )
+        : await dialogoProformas(
+            context,
+            _espera,
+            puedeBorrar: doc.tienePermiso('060'),
+            actual: doc.proformaOrigen,
+          );
     if (accion == null) return _foco();
     if (accion.$1 == 'abrir') return _retomar(accion.$2);
     if (accion.$1 == 'borrar' && mounted) {

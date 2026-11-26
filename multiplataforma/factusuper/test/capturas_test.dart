@@ -188,6 +188,7 @@ DatosCaja datosEjemplo() {
       ],
       'permisos_usuario': [
         {'usuario': '00006', 'permiso': '653'},
+        {'usuario': '00006', 'permiso': '104'},
         {'usuario': '00007', 'permiso': '653'},
       ],
     },
@@ -508,6 +509,47 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     await foto(t, '21-factumovil-editar-desc');
     await t.tap(find.text('Cancelar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    // Cotizaciones (foto 12: en el celular salía en una columna de letras)
+    Future<void> disco() async {
+      for (var i = 0; i < 4; i++) {
+        await t.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await t.pump(const Duration(milliseconds: 300));
+      }
+    }
+
+    await t.tap(find.text('Guardar').last);
+    await disco();
+    if (find.byType(AlertDialog).evaluate().isNotEmpty) {
+      await t.enterText(find.byType(TextField).last, 'FIORELLA');
+      await t.testTextInput.receiveAction(TextInputAction.done);
+      await t.pump(const Duration(seconds: 2));
+    }
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar();
+    await t.pump(const Duration(milliseconds: 500));
+    await disco();
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar();
+    await t.pump(const Duration(milliseconds: 500));
+    await disco();
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .clearSnackBars();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '22a-factumovil-vacia');
+    await t.tap(find.text('Cotizaciones'));
+    await disco();
+    await disco();
+    await disco();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '22-factumovil-cotizaciones');
+    await t.tap(find.text('Regresar').last);
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     sabor = saborFactuSuper;
