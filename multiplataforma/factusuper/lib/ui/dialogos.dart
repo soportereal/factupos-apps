@@ -994,7 +994,18 @@ Future<bool> dialogoLinea(
     ),
   );
   if (r == null || !context.mounted) return false;
-  // Reglas, en orden; cada permiso que falta lo puede autorizar un supervisor.
+  return aplicarCambiosLinea(context, doc, cajeros, l, r);
+}
+
+/// Las reglas de MV-108, en orden (FactuSuper y el editor de FactuMóvil MFM-EDIT): cada permiso que falta lo puede
+/// autorizar un supervisor; «SI» para monto alto o bajo el costo. → true si la línea cambió.
+Future<bool> aplicarCambiosLinea(
+  BuildContext context,
+  Documento doc,
+  Cajeros cajeros,
+  Linea l,
+  CambiosLinea r,
+) async {
   var cambios = r;
   final auth = <String, String>{};
   for (var vuelta = 0; vuelta < 12; vuelta++) {

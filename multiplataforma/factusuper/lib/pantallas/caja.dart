@@ -36,6 +36,7 @@ import '../ui/vista_lineas.dart';
 
 part 'caja_movil.dart';
 part 'cobro_movil.dart';
+part 'editar_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
@@ -602,6 +603,7 @@ class _EstadoCaja extends State<PantallaCaja> {
 
   Future<void> _editar(int i) async {
     if (i < 0 || i >= doc.lineas.length) return;
+    if (sabor.esMovil) return _fmEditar(i); // MFM-EDIT, la pantalla de la web
     final antes = doc.lineas[i].nivel;
     // FactuMóvil cambia la lista de precio AL INSTANTE dentro del diálogo: aunque se cancele, la línea ya cambió.
     if (await dialogoLinea(context, doc, widget.cajeros, i) ||

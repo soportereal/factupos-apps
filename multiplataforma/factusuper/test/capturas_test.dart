@@ -143,6 +143,11 @@ DatosCaja datosEjemplo() {
           'tipo_precio': 1,
         },
       ],
+      'tarifas_iva': [
+        {'codigo': '01', 'nombre': 'Exento', 'porcentaje': 0},
+        {'codigo': '04', 'nombre': 'IVA reducido 4%', 'porcentaje': 4},
+        {'codigo': '08', 'nombre': 'IVA general 13%', 'porcentaje': 13},
+      ],
       'medios_pago': [
         {'codigo': '01', 'descripcion': 'Efectivo', 'mostrar': 1},
         {
@@ -486,6 +491,22 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 8));
     await foto(t, '19-factumovil-credito');
+    await t.tap(find.text('Cancelar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    // MFM-EDIT: editar una línea
+    await t.tap(find.text('Arroz Tío Pelón 1,8 kg').first);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '20-factumovil-editar');
+    await t.enterText(
+      find
+          .byWidgetPredicate((w) => w is TextField && w.controller?.text == '0')
+          .first,
+      '5',
+    );
+    await t.pump(const Duration(milliseconds: 300));
+    await foto(t, '21-factumovil-editar-desc');
     await t.tap(find.text('Cancelar'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
