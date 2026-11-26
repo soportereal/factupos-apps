@@ -412,27 +412,105 @@ extension _VistaMovil on _EstadoCaja {
   // ── Las líneas (fm_cotizacion_lineas_render) ──
   Widget _fmLista() {
     if (doc.lineas.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      // Como la web (foto 5): caja vacía, «Ver últimas compras del cliente» y «Ayuda rápida».
+      Widget tip(IconData ico, String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              size: 46,
-              color: Color(0x809AB0CB),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Sin artículos',
-              style: TextStyle(fontSize: 14, color: Color(0xFF9AB0CB)),
-            ),
-            SizedBox(height: 4),
-            Text(
-              'Toque «Agregar artículo» para empezar',
-              style: TextStyle(fontSize: 12, color: Color(0xFFB6C6DA)),
+            Icon(ico, size: 18, color: _Fm.acento),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(t, style: const TextStyle(color: _Fm.tinta)),
             ),
           ],
         ),
+      );
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(12, 28, 12, 70),
+        children: [
+          const Icon(
+            Icons.inventory_2_outlined,
+            size: 64,
+            color: Color(0x809AB0CB),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Sin artículos',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, color: Color(0xFF9AB0CB)),
+          ),
+          const SizedBox(height: 18),
+          Tooltip(
+            message: 'Próximamente en la app',
+            child: Container(
+              height: 50,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _Fm.borde),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.history, color: Color(0xFFB6C6DA)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Ver últimas compras del cliente',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFB6C6DA),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _Fm.borde),
+            ),
+            child: Theme(
+              data: Theme.of(context)
+                  .copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                leading: const Icon(Icons.info_outline, color: _Fm.navy1),
+                title: const Text(
+                  'Ayuda rápida',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: _Fm.navy1,
+                  ),
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                children: [
+                  tip(
+                    Icons.person_search,
+                    '«Seleccionar cliente» arriba: el precio y el crédito salen del cliente.',
+                  ),
+                  tip(
+                    Icons.add_circle_outline,
+                    '«Agregar artículo»: busque, elija bodega, lista de precio y cantidad, y «+ Agregar».',
+                  ),
+                  tip(
+                    Icons.touch_app_outlined,
+                    'Toque una línea para editar precio, descuento o bodega; deslícela para quitarla.',
+                  ),
+                  tip(
+                    Icons.save_outlined,
+                    '«Guardar» deja la cotización; «Procesar» factura de contado, a crédito o la envía.',
+                  ),
+                  tip(
+                    Icons.cloud_off_outlined,
+                    'Sin internet también vende: las facturas quedan en cola y salen solas con «Refrescar».',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
     return ListView.builder(
