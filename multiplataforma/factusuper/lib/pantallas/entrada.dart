@@ -13,12 +13,14 @@ import '../datos/almacen.dart';
 import '../ui/tema.dart';
 
 class PantallaEntrada extends StatefulWidget {
+  final Almacen almacen;
   final ConfigCaja config;
   final Cajeros cajeros;
   final void Function(Cajero) alEntrar;
   final VoidCallback alConfigurar;
   const PantallaEntrada({
     super.key,
+    required this.almacen,
     required this.config,
     required this.cajeros,
     required this.alEntrar,
@@ -37,10 +39,22 @@ class _EstadoEntrada extends State<PantallaEntrada> {
   bool _ocupado = false;
   VersionNueva? _nueva;
   String _avanceAct = '';
+  bool _recordar = false;
 
   @override
   void initState() {
     super.initState();
+    widget.almacen.leerRecordado(widget.config.empresa).then((r) {
+      if (!mounted || r == null) return;
+      // Solo si ese usuario sigue en la lista (con clave y permiso).
+      final sigue = widget.cajeros.conPermiso().any((c) => c.usuario == r.$1);
+      if (!sigue) return;
+      setState(() {
+        _recordar = true;
+        _usuario = r.$1;
+        _clave.text = r.$2;
+      });
+    });
     buscarVersionNueva().then((v) {
       if (mounted && v != null) setState(() => _nueva = v);
     });
@@ -97,6 +111,16 @@ class _EstadoEntrada extends State<PantallaEntrada> {
       _foco.requestFocus();
       return;
     }
+    if (_recordar) {
+      await widget.almacen.guardarRecordado(
+        widget.config.empresa,
+        _usuario!,
+        _clave.text,
+      );
+    } else {
+      await widget.almacen.borrarRecordado(widget.config.empresa);
+    }
+    if (!mounted) return;
     widget.alEntrar(widget.cajeros.buscar(_usuario!)!);
   }
 
@@ -157,6 +181,10 @@ class _EstadoEntrada extends State<PantallaEntrada> {
                       )
                     else ...[
                       DropdownButtonFormField<String>(
+                        // La key lo rehace cuando llega el usuario recordado (initialValue solo se lee al crearlo).
+                        key: ValueKey(
+                          'usuario-${_recordar && _usuario != null}',
+                        ),
                         initialValue: _usuario,
                         isExpanded: true,
                         decoration: const InputDecoration(
@@ -186,7 +214,20 @@ class _EstadoEntrada extends State<PantallaEntrada> {
                         ),
                         onSubmitted: (_) => _ocupado ? null : _entrar(),
                       ),
-                      const SizedBox(height: 22),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        dense: true,
+                        value: _recordar,
+                        onChanged: (v) =>
+                            setState(() => _recordar = v ?? false),
+                        title: const Text('Recordar usuario y clave'),
+                        subtitle: const Text(
+                          'Solo en este equipo. No lo marque si otras personas usan el mismo equipo.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       SizedBox(
                         height: 54,
                         child: FilledButton.icon(

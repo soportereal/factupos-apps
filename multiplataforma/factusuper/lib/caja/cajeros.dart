@@ -56,11 +56,7 @@ class Cajeros {
   }
 
   /// null = entró; si no, el motivo (sin decir cuál de los dos datos falló).
-  String? validar(
-    String usuario,
-    String clave, [
-    String? permisoPedido,
-  ]) {
+  String? validar(String usuario, String clave, [String? permisoPedido]) {
     final permiso = permisoPedido ?? permisoFacturar;
     usuario = usuario.trim().toUpperCase();
     if (usuario.isEmpty) return 'Elija su nombre';

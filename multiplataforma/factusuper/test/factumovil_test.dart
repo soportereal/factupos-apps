@@ -133,19 +133,22 @@ void main() {
     });
   });
 
-  test('FactuSuper: con 021 NO pide «SI» (la regla es solo de FactuMóvil)', () {
-    sabor = saborFactuSuper;
-    final doc = _doc(_datos(permisos: ['004', '023', '006', '021']));
-    final l = doc.lineas.first;
-    expect(
-      doc
-          .validarLinea(
-            l,
-            CambiosLinea(cantidad: 1, precio: l.precio, valor: 60),
-            const {},
-          )
-          .ok,
-      isTrue,
-    );
-  });
+  test(
+    'FactuSuper: con 021 TAMBIÉN pide «SI» (dueño, 26-nov: para las dos)',
+    () {
+      sabor = saborFactuSuper;
+      final doc = _doc(_datos(permisos: ['004', '023', '006', '021']));
+      final l = doc.lineas.first;
+      expect(
+        doc
+            .validarLinea(
+              l,
+              CambiosLinea(cantidad: 1, precio: l.precio, valor: 60),
+              const {},
+            )
+            .confirma,
+        'costo',
+      );
+    },
+  );
 }

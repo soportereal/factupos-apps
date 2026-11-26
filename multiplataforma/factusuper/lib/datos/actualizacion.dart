@@ -53,7 +53,10 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
     final r = await c
         .get(
           Uri.parse(_jsonVersion),
-          headers: {'User-Agent': '${sabor.esMovil ? 'FactuMovil' : 'FactuSuper'}-App/$actual'},
+          headers: {
+            'User-Agent':
+                '${sabor.esMovil ? 'FactuMovil' : 'FactuSuper'}-App/$actual',
+          },
         )
         .timeout(const Duration(seconds: 15));
     if (r.statusCode != 200) return null;

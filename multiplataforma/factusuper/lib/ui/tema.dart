@@ -165,7 +165,9 @@ class Logo extends StatelessWidget {
           borderRadius: BorderRadius.circular(tam * 0.45),
         ),
         child: Icon(
-          sabor.esMovil ? Icons.phone_iphone_rounded : Icons.shopping_cart_rounded,
+          sabor.esMovil
+              ? Icons.phone_iphone_rounded
+              : Icons.shopping_cart_rounded,
           color: Colors.white,
           size: tam,
         ),

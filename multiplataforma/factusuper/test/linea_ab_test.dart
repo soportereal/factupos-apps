@@ -49,6 +49,8 @@ void main() {
         valor: _n(c0['valor']),
         bonificacion: c0['bonificacion'] == true,
         montoConfirmado: c0['montoConfirmado'] == true,
+        // El «SI» bajo el costo con 021 es de la app (dueño, 26-nov); la web de FactuSuper no lo pide.
+        costoConfirmado: true,
       );
       final r = doc.validarLinea(
         l,

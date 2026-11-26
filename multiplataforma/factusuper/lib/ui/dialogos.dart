@@ -746,9 +746,8 @@ Future<bool> dialogoLinea(
   String error = '';
   final verUtil = doc.tienePermiso('064'),
       editaPrecio = doc.tienePermiso('024');
-  // FactuMóvil: bodega y lista de precio POR LÍNEA (editar.js: 033 / 034 / param 251).
-  final movil = sabor.esMovil;
-  final bodegas = movil ? doc.datos.bodegas : const <Map<String, dynamic>>[];
+  // FactuSuper y FactuMóvil (dueño, 26-nov): bodega y lista de precio POR LÍNEA (editar.js: 033 / 034 / param 251).
+  final bodegas = doc.datos.bodegas;
   var bodega = doc.bodegaDe(l);
   final atada = doc.datos.bodegaAtadaEstacion,
       cambiaNivel = doc.tienePermiso('034');
@@ -767,7 +766,7 @@ Future<bool> dialogoLinea(
             modo: modo,
             valor: v,
             bonificacion: bonif,
-            bodega: movil && bodegas.isNotEmpty ? bodega : null,
+            bodega: bodegas.isNotEmpty ? bodega : null,
           );
         }
 
@@ -807,7 +806,7 @@ Future<bool> dialogoLinea(
                   '${l.codigo}${l.barra.isEmpty ? '' : ' · ${l.barra}'} · precio ${l.nivel}',
                   style: const TextStyle(color: Marca.tintaSuave, fontSize: 13),
                 ),
-                if (movil) ...[
+                ...[
                   const SizedBox(height: 12),
                   _selectoresMovil(
                     doc: doc,
@@ -1029,7 +1028,7 @@ Future<bool> dialogoLinea(
   return false;
 }
 
-/// FactuMóvil (MV-108): Bodega (033 · param 251) y Lista de precio P1…Pn (034) de la línea, deshabilitados (no ocultos) sin permiso.
+/// MV-108 (FactuSuper y FactuMóvil): Bodega (033 · param 251) y Lista de precio P1…Pn (034) de la línea, deshabilitados (no ocultos) sin permiso.
 Widget _selectoresMovil({
   required Documento doc,
   required Linea l,

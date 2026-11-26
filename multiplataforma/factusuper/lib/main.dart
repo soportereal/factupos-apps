@@ -149,6 +149,7 @@ class _EstadoApp extends State<FactuSuperApp> {
     final cajero = _cajero;
     if (cajero == null) {
       return PantallaEntrada(
+        almacen: widget.almacen,
         config: cfg,
         cajeros: cajeros,
         alEntrar: _entrar,

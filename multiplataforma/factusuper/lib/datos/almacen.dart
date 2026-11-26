@@ -79,6 +79,47 @@ class Almacen {
     if (await _config.exists()) await _config.delete();
   }
 
+  // ── «Recordar usuario y clave» en la entrada (dueño, 26-nov-2026, #3957) ──
+  // Va en la carpeta privada de la app (como la llave) y con permisos 600. La clave se sigue VALIDANDO cada vez
+  // contra la lista local (bcrypt): si la cambian o le quitan el permiso, la recordada deja de servir.
+  File _recordar(String empresa) =>
+      File('${_empresa(empresa).path}${Platform.pathSeparator}recordar.json');
+
+  Future<(String, String)?> leerRecordado(String empresa) async {
+    try {
+      final f = _recordar(empresa);
+      if (!await f.exists()) return null;
+      final m = jsonDecode(await f.readAsString());
+      if (m is! Map) return null;
+      final u = '${m['usuario'] ?? ''}', c = '${m['clave'] ?? ''}';
+      return u.isEmpty ? null : (u, c);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> guardarRecordado(
+    String empresa,
+    String usuario,
+    String clave,
+  ) async {
+    final f = _recordar(empresa);
+    await f.parent.create(recursive: true);
+    await _escribir(f, jsonEncode({'usuario': usuario, 'clave': clave}));
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['600', f.path]);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> borrarRecordado(String empresa) async {
+    try {
+      final f = _recordar(empresa);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
+
   Directory _empresa(String empresa) => Directory(
     '${raiz.path}${Platform.pathSeparator}${empresa.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}',
   );

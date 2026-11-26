@@ -201,6 +201,7 @@ void main() {
     await t.pumpWidget(
       app(
         PantallaEntrada(
+          almacen: almacen,
           config: cfg,
           cajeros: cajeros,
           alEntrar: (_) {},

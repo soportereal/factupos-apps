@@ -6,8 +6,6 @@ library;
 
 import 'dart:math' as math;
 
-import '../app/sabor.dart';
-
 import '../motor/linea.dart';
 import '../motor/redondeo.dart';
 import 'cajeros.dart';
@@ -555,20 +553,8 @@ class Documento {
               'El precio neto (${_fmt(neto)}) queda bajo el costo (${_fmt(l.costo)}): requiere el permiso 021.',
         );
       }
-      // FactuMóvil (editar.js, confirmarUtilidadNegativa): CON el 021 igual se pide «SI», por cada línea.
-      if (sabor.esMovil &&
-          l.costo > 0 &&
-          neto < l.costo - 1e-9 &&
-          !c.costoConfirmado) {
-        return Validacion(
-          confirmarSi: true,
-          confirma: 'costo',
-          motivo:
-              'El precio neto (${_fmt(neto)}) queda bajo el costo (${_fmt(l.costo)}): utilidad negativa. Tiene el permiso 021; escriba SI para confirmar.',
-        );
-      }
     }
-    // FactuMóvil: bodega de la línea (033; con el param 251 queda atada a la estación).
+    // Bodega de la línea (033; con el param 251 queda atada a la estación).
     final bodegaNueva = c.bodega;
     if (bodegaNueva != null && bodegaNueva != bodegaDe(l)) {
       if (datos.bodegaAtadaEstacion)
@@ -590,6 +576,19 @@ class Documento {
         confirmarSi: true,
         motivo: 'La línea suma ${_fmt(bruto)}. Escriba SI para confirmar.',
       );
+    // (al final: los errores y los permisos que faltan van antes que el «SI»)
+    // FactuSuper y FactuMóvil (editar.js, confirmarUtilidadNegativa): CON el 021 igual se pide «SI», por cada línea.
+    if (!bonif &&
+        l.costo > 0 &&
+        precio * (1 - desc / 100) < l.costo - 1e-9 &&
+        !c.costoConfirmado) {
+      return Validacion(
+        confirmarSi: true,
+        confirma: 'costo',
+        motivo:
+            'El precio neto (${_fmt(precio * (1 - desc / 100))}) queda bajo el costo (${_fmt(l.costo)}): utilidad negativa. Tiene el permiso 021; escriba SI para confirmar.',
+      );
+    }
     return const Validacion(ok: true);
   }
 

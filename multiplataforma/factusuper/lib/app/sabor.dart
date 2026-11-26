@@ -6,7 +6,13 @@ library;
 
 class Sabor {
   final String id, nombre, permiso, queHace, apk;
-  const Sabor({required this.id, required this.nombre, required this.permiso, required this.queHace, required this.apk});
+  const Sabor({
+    required this.id,
+    required this.nombre,
+    required this.permiso,
+    required this.queHace,
+    required this.apk,
+  });
   bool get esMovil => id == 'factumovil';
 }
 

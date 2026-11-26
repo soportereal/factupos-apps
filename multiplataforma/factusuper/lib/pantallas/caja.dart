@@ -883,7 +883,11 @@ class _EstadoCaja extends State<PantallaCaja> {
                   ]),
                   grupo('PRECIO', [
                     for (final n in widget.datos.nivelesPrecio)
-                      chip('P$n', () => _nivelLote(n)),
+                      chip(
+                        'P$n',
+                        doc.tienePermiso('034') ? () => _nivelLote(n) : null,
+                        tip: doc.tienePermiso('034') ? null : 'Sin permiso para cambiar la lista de precio (034)',
+                      ),
                   ]),
                   if (widget.datos.tarifasIva.isNotEmpty)
                     grupo('IVA', [
@@ -2274,28 +2278,22 @@ class _EstadoCaja extends State<PantallaCaja> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: sabor.esMovil
-                ? Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
-                      ),
-                      // Chips de la web (fm-chip-precio / fm-chip-bod): lista de precio y bodega de la línea.
-                      _chipLinea('P${l.nivel}', Marca.azul),
-                      _chipLinea(
-                        'B${doc.bodegaDe(l)}',
-                        l.bodega.isEmpty
-                            ? Marca.tintaSuave
-                            : const Color(0xFFB45309),
-                      ),
-                    ],
-                  )
-                : Text(
-                    '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
-                  ),
+            subtitle: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
+                ),
+                // Chips de la web (fm-chip-precio / fm-chip-bod): lista de precio y bodega de la línea.
+                _chipLinea('P${l.nivel}', Marca.azul),
+                _chipLinea(
+                  'B${doc.bodegaDe(l)}',
+                  l.bodega.isEmpty ? Marca.tintaSuave : const Color(0xFFB45309),
+                ),
+              ],
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2680,6 +2678,7 @@ class _EstadoCaja extends State<PantallaCaja> {
             'Tipo precio',
             'P${l.nivel} · lista ${fmt(l.precioLista, d.precio)}',
           ),
+          c('Bodega', widget.datos.nombreBodega(doc.bodegaDe(l))),
           c('CABYS', l.cabys.isEmpty ? '—' : l.cabys),
           c(
             'Actividad',
