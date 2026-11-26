@@ -6,10 +6,6 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database -q /usr/share/applications || true
 fi
 
-# Icono de Soporte Remoto FactuPOS (#2942): refrescar el cache de iconos y el lanzador.
-gtk-update-icon-cache -q -f /usr/share/icons/hicolor 2>/dev/null || true
-update-desktop-database -q /usr/local/share/applications 2>/dev/null || true
-
 # Arrancar (o reiniciar) el panel en la sesion grafica del usuario, sin esperar
 # al proximo login. Mejor esfuerzo: si falla, el autostart lo levanta luego.
 GUIUSER="${SUDO_USER:-$(logname 2>/dev/null || true)}"

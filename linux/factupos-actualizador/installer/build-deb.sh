@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"; PKG="factupos-actualizador"
-VERSION="${1:-2.1.2}"; OUT="${2:-$HERE/installer/Output}"   # 2.1.2: no reinstala lo quitado desde FactuPOS Apps (#3037)
+VERSION="${1:-1.0.0}"; OUT="${2:-$HERE/installer/Output}"
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 install -d "$STAGE/usr/lib/$PKG"
 install -m755 "$HERE/$PKG.sh" "$STAGE/usr/lib/$PKG/$PKG.sh"
@@ -9,11 +9,6 @@ install -d "$STAGE/lib/systemd/system"
 install -m644 "$HERE/$PKG.service" "$STAGE/lib/systemd/system/$PKG.service"
 install -m644 "$HERE/$PKG.timer" "$STAGE/lib/systemd/system/$PKG.timer"
 # lista editable de apps base (conffile: apt respeta ediciones del tecnico)
-# parches de SEGURIDAD del sistema, sin reiniciar (#2942)
-install -m755 "$HERE/seguridad.sh" "$STAGE/usr/lib/$PKG/seguridad.sh"
-install -m644 "$HERE/factupos-seguridad.service" "$STAGE/lib/systemd/system/factupos-seguridad.service"
-install -d "$STAGE/etc/apt/apt.conf.d"
-install -m644 "$HERE/52factupos-seguridad" "$STAGE/etc/apt/apt.conf.d/52factupos-seguridad"
 install -d "$STAGE/etc/factupos-actualizador"
 install -m644 "$HERE/apps-base.txt" "$STAGE/etc/factupos-actualizador/apps-base.txt"
 # el propio deb CONFIGURA el repo APT de FactuPOS (auto-migracion de la

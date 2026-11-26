@@ -63,11 +63,7 @@ dpkg-deb --build --root-owner-group "$ROOT/packaging/kiosk-deb-root" "$KIO_DEB"
 # que trae adentro. (Antes estaba quemado en "1.0.0" y no cambiaba nunca -> imposible
 # distinguir dos combinados distintos.)
 CMB_VER="${KVER}+svc${SVER}"
-# #2698 — El instalador ÚNICO se llama «FactuPOS Huella» (paquete factupos-huella) y es lo
-# ÚNICO que se ofrece en la tienda. 🪤 NO puede llamarse «factupos-fingerprint»: ese nombre
-# lo usó el paquete VIEJO de junio (2.4.5) y apt creería que el viejo es más nuevo
-# (2.4.5 > 1.8.x) → no lo reemplazaba. Reemplaza a los tres paquetes anteriores.
-CMB_DEB="$OUT/Factupos-Huella.deb"
+CMB_DEB="$OUT/Factupos-FingerPrint.deb"
 CMB="$OUT/combined-root"
 echo "[build] armando combinado -> $CMB_DEB"
 rm -rf "$CMB"; mkdir -p "$CMB/DEBIAN"
@@ -76,33 +72,25 @@ rm -rf "$CMB"; mkdir -p "$CMB/DEBIAN"
 ( cd "$ROOT/packaging/kiosk-deb-root" && tar --exclude=./DEBIAN -cf - . ) | ( cd "$CMB" && tar -xf - )
 # control: Architecture amd64 (libfprint nativo); REEMPLAZA a los paquetes sueltos
 cat > "$CMB/DEBIAN/control" <<CTL
-Package: factupos-huella
+Package: factupos-fingerprint
 Version: $CMB_VER
 Section: utils
 Priority: optional
 Architecture: amd64
 Depends: python3 (>= 3.10), python3-gi, gir1.2-fprint-2.0, libfprint-2-2, python3-pil, openssl, default-jre | java11-runtime | openjdk-17-jre | openjdk-21-jre
 Recommends: curl, zenity, policykit-1 | polkit
-Conflicts: factupos-fingerprint, factupos-fingerprint-servicio, factupos-fingerprint-kiosko
-Replaces: factupos-fingerprint, factupos-fingerprint-servicio, factupos-fingerprint-kiosko
-Provides: factupos-fingerprint-servicio, factupos-fingerprint-kiosko
+Conflicts: factupos-fingerprint-servicio, factupos-fingerprint-kiosko
+Replaces: factupos-fingerprint-servicio, factupos-fingerprint-kiosko
 Maintainer: FactuPOS Dev <dev@factupos.com>
-Description: Huella digital: marcaje de asistencia (kiosko $KVER + servicio $SVER)
- Instalador unico de huella digital FactuPOS para Linux: la ventana de marcaje
- (Java/Swing) y el servicio del lector (Python + libfprint, systemd), juntos.
- Reemplaza a los instaladores sueltos y al paquete viejo de junio. Cada
- componente se auto-actualiza por su cuenta.
+Description: FactuPOS FingerPrint (servicio $SVER + kiosko $KVER)
+ Instalador unico de huella digital FactuPOS para Linux: servicio del lector
+ (Python + libfprint, systemd) y kiosko de marcaje (Java/Swing). Se instalan y
+ desinstalan JUNTOS. Cada componente se auto-actualiza por su cuenta.
 CTL
 # postinst = cuerpo del servicio + cuerpo del kiosko (best-effort, sin set -e para
 # que un paso que falle no aborte el resto del instalador)
 { echo '#!/bin/bash'
   echo '# ===== SERVICIO ====='; grep -vE '^#!|^set -e$|^exit 0$' "$ROOT/packaging/deb-root/DEBIAN/postinst"
-  # 🪤 Al reemplazar al kiosko suelto, SU postrm borra la regla sudo (que también trae este
-  # paquete). Por eso viaja una copia y se repone si falta.
-  echo '# ===== REGLA SUDO DEL KIOSKO (se repone si el paquete reemplazado la borró) ====='
-  echo 'if [ ! -f /etc/sudoers.d/factupos-fingerprint-kiosko ] && [ -f /opt/factupos-fingerprint-kiosko/sudoers.plantilla ]; then'
-  echo '    install -m 0440 -o root -g root /opt/factupos-fingerprint-kiosko/sudoers.plantilla /etc/sudoers.d/factupos-fingerprint-kiosko'
-  echo 'fi'
   echo '# ===== KIOSKO ====='; grep -vE '^#!|^set -e$|^exit 0$' "$ROOT/packaging/kiosk-deb-root/DEBIAN/postinst"
   echo 'exit 0'; } > "$CMB/DEBIAN/postinst"
 # prerm = parar/deshabilitar el servicio
@@ -114,8 +102,6 @@ cp "$ROOT/packaging/deb-root/DEBIAN/prerm" "$CMB/DEBIAN/prerm"
   echo 'exit 0'; } > "$CMB/DEBIAN/postrm"
 chmod 0755 "$CMB/DEBIAN/postinst" "$CMB/DEBIAN/prerm" "$CMB/DEBIAN/postrm"
 chmod 0440 "$CMB/etc/sudoers.d/factupos-fingerprint-kiosko" 2>/dev/null || true
-cp -f "$CMB/etc/sudoers.d/factupos-fingerprint-kiosko" "$CMB/opt/factupos-fingerprint-kiosko/sudoers.plantilla"
-chmod 0644 "$CMB/opt/factupos-fingerprint-kiosko/sudoers.plantilla"
 dpkg-deb --build --root-owner-group "$CMB" "$CMB_DEB"
 
 echo ""
@@ -124,22 +110,32 @@ ls -la "$SVC_DEB" "$KIO_DEB" "$CMB_DEB"
 
 # --- 4) publicar (opcional) ---
 if [ "$1" = "--publicar" ]; then
-    # #2698 — Se publica SOLO «FactuPOS Huella» (Factupos-Huella.deb) en el repo APT (lo que
-    # ofrece la tienda) + los crudos del auto-update (.jar, .py y sus manifiestos), que
-    # usan los kioskos YA instalados para actualizarse solos. Los .deb sueltos ya no se
-    # publican. Después: bash /var/www/soportereal.com/apt/actualizar-repo.sh + Deploy.
-    POOL=/var/www/soportereal.com/apt/pool
-    echo "[build] publicando en $POOL y $WEB ..."
-    cp -f "$CMB_DEB" "$POOL/Factupos-Huella.deb"
-    ln -sfn ../../../apt/pool/Factupos-Huella.deb "$WEB/Factupos-Huella.deb"
+    echo "[build] publicando en $WEB ..."
+    cp -f "$SVC_DEB" "$KIO_DEB" "$CMB_DEB" "$WEB/"
+    # crudos que descargan los auto-updates (nombre fijo)
     cp -f "$ROOT/packaging/deb-root/opt/factupos-fingerprint-servicio/fingerprint_service.py" "$WEB/fingerprint_service.py"
     cp -f "$ROOT/kiosk-java/build/FactuposKioskoHuella.jar" "$WEB/FactuposKioskoHuella.jar"
-    DEB_URL="https://soportereal.com/software/factupos-app/linux/Factupos-Huella.deb"
-    printf '{\n  "version": "%s",\n  "py": "https://soportereal.com/software/factupos-app/linux/fingerprint_service.py",\n  "deb": "%s"\n}\n' "$SVER" "$DEB_URL" > "$WEB/factupos-fingerprint-servicio_version.json"
-    printf '{\n  "version": "%s",\n  "jar": "https://soportereal.com/software/factupos-app/linux/FactuposKioskoHuella.jar",\n  "deb": "%s"\n}\n' "$KVER" "$DEB_URL" > "$WEB/factupos-fingerprint-kiosko_version.json"
-    # alias en MAYÚSCULA: los kioskos <=1.8.3 todavía leen ese nombre
-    cp -f "$WEB/factupos-fingerprint-servicio_version.json" "$WEB/Factupos-FingerPrint-Servicio_version.json"
-    cp -f "$WEB/factupos-fingerprint-kiosko_version.json" "$WEB/Factupos-FingerPrint-Kiosko_version.json"
-    echo "[build] publicado (huella $CMB_VER). Falta: actualizar-repo.sh + Deploy."
+    # manifiestos de versión (auto-generados desde el control)
+    # Nombre NUEVO = nombre de la app. Se genera tambien el nombre VIEJO como
+    # ALIAS temporal para las instalaciones que aun leen la URL anterior.
+    cat > "$WEB/Factupos-FingerPrint-Servicio_version.json" <<JSON
+{
+  "version": "$SVER",
+  "py": "https://soportereal.com/software/factupos-app/linux/fingerprint_service.py",
+  "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-FingerPrint-Servicio.deb"
+}
+JSON
+    cp -f "$WEB/Factupos-FingerPrint-Servicio_version.json" "$WEB/factupos-fingerprint-servicio_version.json"
+    cat > "$WEB/Factupos-FingerPrint-Kiosko_version.json" <<JSON
+{
+  "version": "$KVER",
+  "jar": "https://soportereal.com/software/factupos-app/linux/FactuposKioskoHuella.jar",
+  "deb": "https://soportereal.com/software/factupos-app/linux/Factupos-FingerPrint-Kiosko.deb"
+}
+JSON
+    cp -f "$WEB/Factupos-FingerPrint-Kiosko_version.json" "$WEB/factupos-fingerprint-kiosko_version.json"
+    # limpiar .deb viejos (nombres anteriores + cualquier variante versionada)
+    rm -f "$WEB/factupos-fingerprint_"*.deb "$WEB/factupos-kiosko-huella_"*.deb \
+          "$WEB/Factupos-FingerPrint-Servicio_"*.deb "$WEB/Factupos-FingerPrint-Kiosko_"*.deb 2>/dev/null || true
+    echo "[build] publicado (v servicio=$SVER, v kiosko=$KVER). Recorda: bash /var/www/deploy.sh para prod."
 fi
-

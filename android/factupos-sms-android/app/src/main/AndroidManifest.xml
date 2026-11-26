@@ -10,18 +10,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!-- Instalar la versión nueva de la app desde la propia app (#3035) -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:label="FactuposSMS"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@android:style/Theme.Material.Light.DarkActionBar">
 
         <activity
             android:name=".MainActivity"
@@ -49,12 +45,7 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Resultado del instalador de Android al actualizar la app (#3035) -->
-        <receiver
-            android:name=".Actualizar$Resultado"
-            android:exported="false" />
-
-        <!-- Auto-start al encender y después de actualizar la app -->
+        <!-- Auto-start al encender -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true"
@@ -62,7 +53,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

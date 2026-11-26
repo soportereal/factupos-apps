@@ -19,7 +19,7 @@ import sys
 import glob
 import subprocess
 
-VERSION = "1.1.1"                                 # fuente única de versión
+VERSION = "1.0.1"                                 # fuente única de versión
 
 CARPETA_FONDOS = "/usr/share/backgrounds"
 EXTENSIONES = ("*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG")
@@ -208,56 +208,6 @@ CSS = """
     border: none; box-shadow: none; min-width: 26px; min-height: 26px;
 }
 .fp-titlebar button:hover { background: rgba(255,255,255,0.18); border-radius: 6px; }
-
-/* ===== PIEL NAVY (#2698, 13-oct-2026) — mismo lenguaje que el kiosko y la barra 1.6.x.
-   Va AL FINAL del CSS: con igual especificidad, la ultima regla gana. Copiada dentro de
-   cada app a proposito (cada una es independiente, no comparte archivos). ===== */
-.fpf-win { background: #0b1533; color: #e2e8f0; }
-.fpf-win scrolledwindow, .fpf-win viewport { background: #0b1533; }
-.fpf-header { background: linear-gradient(135deg, #1e1b4b, #1e3a8a); border-bottom: 2px solid #7c3aed; }
-.fpf-header-title, .fpf-title { color: #ffffff; }
-.fpf-header-resumen { color: #a5b4fc; }
-.fpf-text, .fpf-nombre, .fpf-seccion { color: #e2e8f0; }
-.fpf-seccion-titulo { background: #14224d; color: #a5b4fc; }
-.fpf-nota { color: #b4c2e0; }
-.fpf-estado { color: #38bdf8; }
-.fpf-error { color: #fb7185; }
-.fpf-tarjeta {
-    background: linear-gradient(to bottom, #182a5c, #14224d);
-    border: 1px solid rgba(255,255,255,0.10); border-top-color: rgba(255,255,255,0.20);
-    border-bottom-color: rgba(0,0,0,0.55); border-radius: 14px;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.45);
-}
-.fpf-aplicar {
-    background: linear-gradient(135deg, #7c3aed, #2563eb); color: #ffffff; font-weight: bold;
-    border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-.fpf-aplicar:hover { background: linear-gradient(135deg, #8b5cf6, #3b82f6); }
-.fpf-aplicar label { color: #ffffff; }
-.fpf-elegir, .fpf-identificar {
-    background: rgba(255,255,255,0.08); color: #e2e8f0;
-    border: 1px solid rgba(255,255,255,0.25); border-radius: 12px;
-}
-.fpf-elegir:hover, .fpf-identificar:hover { background: rgba(255,255,255,0.16); }
-.fpf-elegir label, .fpf-identificar label { color: #e2e8f0; }
-.fpf-miniatura { border: 2px solid rgba(255,255,255,0.10); border-radius: 10px; }
-.fpf-miniatura-sel { border: 3px solid #38bdf8; border-radius: 10px; }
-.fpf-win entry { background: #14224d; color: #ffffff; border: 1px solid #4f63a8; border-radius: 12px; }
-.fpf-win entry:focus { border-color: #38bdf8; }
-.fpf-win combobox button { background: #14224d; color: #ffffff; border: 1px solid #4f63a8; border-radius: 10px; }
-.fpf-win combobox button label, .fpf-win combobox arrow { color: #ffffff; }
-.fpf-win switch { background: #334155; border: 1px solid rgba(255,255,255,0.25); border-radius: 14px; }
-.fpf-win switch:checked { background: #16a34a; }
-.fpf-win switch slider { background: #ffffff; border-radius: 12px; }
-.fpf-win checkbutton label { color: #e2e8f0; }
-.fpf-win checkbutton check { background: #14224d; border: 1px solid #7184ad; }
-.fpf-win checkbutton check:checked { background: #7c3aed; border-color: #a78bfa; color: #ffffff; }
-.fpf-win treeview { background-color: #0f1a3a; color: #e2e8f0; }
-.fpf-win treeview:selected { background-color: #7c3aed; color: #ffffff; }
-.fpf-win treeview header button { background: #14224d; color: #a5b4fc; font-weight: bold;
-    border: none; border-bottom: 1px solid rgba(255,255,255,0.12); }
-.fpf-win separator { background: rgba(255,255,255,0.12); }
-.fp-titlebar { background: linear-gradient(to right, #0b1533, #14224d 55%, #1e1b4b); }
 """
 
 

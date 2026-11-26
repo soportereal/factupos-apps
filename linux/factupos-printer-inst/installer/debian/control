@@ -3,12 +3,11 @@ Version: __VERSION__
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3, python3-gi, gir1.2-gtk-3.0, python3-serial, cups, cups-client, cups-filters, pkexec | policykit-1
-Suggests: printer-driver-cups-pdf
+Depends: python3, python3-gi, gir1.2-gtk-3.0, python3-serial, cups, cups-client, pkexec | policykit-1
 Maintainer: Soporte Real <soporte@soportereal.com>
 Homepage: https://soportereal.com
-Description: FactuPOS - Gestion de Impresoras
- Instala, prueba y desinstala impresoras USB y Serial (tickets ESC/POS,
+Description: FactuPOS - Instalador de Impresoras
+ Asistente grafico para instalar impresoras USB y Serial (tickets ESC/POS,
  por ejemplo Epson TM-U220) como cola RAW en CUPS. Detecta el adaptador
  USB-Serie, hace barrido de velocidad (baud), imprime una prueba y crea la
  cola sin necesidad de usar la terminal.

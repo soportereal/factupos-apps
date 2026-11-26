@@ -28,11 +28,6 @@ install -m644 "$HERE/$PKG.desktop" "$STAGE/usr/share/applications/$PKG.desktop"
 install -d "$STAGE/DEBIAN"
 sed "s/__VERSION__/$VERSION/" "$HERE/installer/debian/control" > "$STAGE/DEBIAN/control"
 
-# Actualización propia: revisor + temporizador de ESTA app (#2698). No depende de
-# FactuPOS Apps ni del Actualizador.
-source "$HERE/../_comun/autoupdate.sh"
-agregar_autoupdate "$STAGE" "$PKG"
-
 chmod 755 "$STAGE"
 mkdir -p "$OUT"
 DEB="$OUT/${PKG}_${VERSION}_all.deb"

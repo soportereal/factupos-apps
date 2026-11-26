@@ -1,0 +1,2414 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+FactuPOS Panel — barra de tareas con comportamiento tipo Windows para FactuPOS OS.
+
+Componentes (de izquierda a derecha):
+  [Inicio]  ...botones de programas abiertos (Wnck)...  [Red/WiFi] [Reloj/Fecha] [Mostrar escritorio]
+
+Comportamiento "tipo Windows":
+  - Botón Inicio -> menú Programas / Utilidades (+ apagar/reiniciar/cerrar sesión).
+  - Programas abiertos visibles como botones (clic = enfocar/minimizar,
+    clic derecho = Minimizar/Maximizar/Cerrar) vía Wnck.Tasklist.
+  - Clic derecho en zona vacía de la barra -> Administrador de tareas /
+    Mostrar el escritorio / Configuración.
+  - Ctrl+Shift+Esc -> Administrador de tareas (atajo igual que Windows).
+  - Tecla Súper (⊞) -> abre Inicio (best-effort; en Cinnamon la tecla la
+    suele tener el menú nativo y la grab puede fallar -> se ignora).
+
+Uso:
+  factupos-panel [--edge bottom|top] [--height N]
+
+Solo X11 (LMDE 7 / Cinnamon usa X11).
+"""
+import os
+import re
+import sys
+import json
+import shlex
+import shutil
+import argparse
+import datetime
+import subprocess
+import urllib.request
+import getpass
+import socket
+import threading
+
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkX11", "3.0")
+gi.require_version("Wnck", "3.0")
+from gi.repository import Gtk, Gdk, GdkX11, GdkPixbuf, GLib, Gio, Wnck, Pango  # noqa: E402
+
+# Xlib es opcional: si no está, el panel funciona pero no reserva espacio
+# (strut) ni captura el atajo global Ctrl+Shift+Esc.
+try:
+    from Xlib import X, XK, Xatom
+    from Xlib.display import Display as XDisplay
+    from Xlib.protocol import event as Xevent
+    HAVE_XLIB = True
+except Exception:
+    HAVE_XLIB = False
+
+APP_ID = "com.soportereal.factupos.panel"
+VERSION = "1.3.5"                                # fuente única de versión
+ASSETS = "/usr/share/factupos-os"               # íconos de marca del FactuPOS OS
+START_ICON = os.path.join(ASSETS, "start-icon.png")
+CONFIG_MENU = "/etc/factupos-panel/menu.json"   # menú Inicio personalizable
+OS_VERSION_FILE = "/etc/factupos-os-version"     # versión de la distro (1 línea, ej: 5.1)
+OS_VERSION_DEFAULT = ""                          # respaldo si no hay archivo ni os-release
+
+# Auto-actualización: archivo de versiones publicado en la misma carpeta de
+# descargas. El panel lo lee, y si hay versión nueva baja el .py a una carpeta
+# del usuario (sin root) y se reinicia solo.
+UPDATE_BASE = "https://soportereal.com/software/factupos-app/linux"
+UPDATE_MANIFEST = UPDATE_BASE + "/factupos-panel_version.json"
+UPDATE_PY_LOCAL = os.path.expanduser("~/.local/share/factupos-panel/factupos-panel.py")
+UPDATE_INTERVAL = 6 * 3600                       # re-chequeo cada 6 horas
+
+DEFAULT_HEIGHT = 44
+
+
+def _vtuple(v):
+    """'1.2.10' -> (1,2,10) para comparar versiones."""
+    try:
+        return tuple(int(x) for x in str(v).strip().split("."))
+    except Exception:
+        return (0,)
+
+# Administradores de tareas a probar, en orden (el primero que exista).
+TASK_MANAGERS = [
+    "gnome-system-monitor", "mate-system-monitor", "xfce4-taskmanager",
+    "plasma-systemmonitor", "ksysguard", "lxtask",
+]
+
+# Menú Inicio por defecto (si no hay /etc/factupos-panel/menu.json).
+# Cada item: (etiqueta, comando, icono). Solo se muestran los comandos cuyo
+# binario exista (los lanzadores .desktop / urls se muestran siempre).
+DEFAULT_MENU = {
+    "Programas": [
+        ["FactuPOS", "xdg-open https://factupos.com", "applications-internet"],
+        ["Google Chrome", "google-chrome-stable", "google-chrome"],
+        ["Firefox", "firefox", "firefox"],
+        ["LibreOffice Calc", "libreoffice --calc", "libreoffice-calc"],
+        ["LibreOffice Writer", "libreoffice --writer", "libreoffice-writer"],
+        ["Archivos", "nemo", "system-file-manager"],
+    ],
+    "Utilidades": [
+        ["Impresoras", "system-config-printer", "printer"],
+        ["Instalador de Impresoras", "factupos-printer-inst", "printer"],
+        ["Configurar red / WiFi", "nm-connection-editor", "network-wireless"],
+        ["Soporte Remoto", "rustdesk", "video-display"],
+        ["Panel de Control", "cinnamon-settings", "preferences-system"],
+        ["Administrador de tareas", "@taskmgr", "utilities-system-monitor"],
+        ["Terminal", "x-terminal-emulator", "utilities-terminal"],
+    ],
+}
+
+CSS = b"""
+/* Paleta navy moderna FactuPOS */
+.fp-panel { background-color: #0e1b33; }
+.fp-start {
+    background: linear-gradient(to bottom, #244a8a, #16305c);
+    color: #ffffff; font-weight: bold; border: none; padding: 0 14px; margin: 0;
+}
+.fp-start:hover { background: #2d5aa6; }
+.fp-clock { color: #dce6f5; padding: 0 12px; }
+.fp-clock:hover { background-color: #18294a; }
+.fp-net { color: #dce6f5; padding: 0 8px; border: none; background: transparent; }
+.fp-net:hover { background-color: #18294a; }
+.fp-showdesk { background: transparent; border: none; border-left: 1px solid #24395f; min-width: 8px; }
+.fp-showdesk:hover { background-color: #18294a; }
+
+/* Popups (menu, red, calendario, volumen, equipo): esquema claro de alto contraste */
+.fp-startmenu { background-color: #ffffff; border: 1px solid #2d5aa6; }
+.fp-startmenu label { color: #14233f; }
+.fp-startmenu separator { background-color: #c9d6ea; min-width: 1px; min-height: 1px; }
+.fp-startmenu button { background-image: none; background-color: #e8eff9; color: #14233f;
+                       border: 1px solid #b9cae6; box-shadow: none; text-shadow: none; }
+.fp-startmenu button:hover { background-color: #d2e1f7; }
+.fp-startmenu button:disabled { color: #8a97ad; }
+.fp-startmenu entry { background-image: none; background-color: #ffffff; color: #14233f; border: 1px solid #b9cae6; }
+.fp-startmenu combobox, .fp-startmenu combobox button { background-color: #ffffff; color: #14233f; }
+.fp-startmenu calendar { background-color: #ffffff; color: #14233f; border: 1px solid #c9d6ea; }
+.fp-startmenu calendar:selected { background-color: #2d5aa6; color: #ffffff; }
+.fp-startmenu calendar.header, .fp-startmenu calendar.button { background-color: #eef3fb; color: #14233f; }
+.fp-startmenu scale trough { background-color: #cdddf2; }
+.fp-startmenu scale highlight, .fp-startmenu scale progress { background-color: #2d5aa6; }
+.fp-startmenu scale slider { background-color: #ffffff; border: 1px solid #2d5aa6; }
+.fp-banner { background: linear-gradient(to top, #0a1730, #1f3f78); border-right: 1px solid #2d5aa6; }
+.fp-banner label { color: #ffffff; }
+.fp-startmenu button.fp-mitem { background-color: transparent; border: none; padding: 11px 18px; margin: 3px 4px; border-radius: 4px; }
+.fp-startmenu button.fp-mitem:hover { background-color: #d6e4fb; }
+.fp-mitem label { font-size: 1.05em; color: #14233f; }
+.fp-startmenu button.fp-item { background-color: transparent; border: none; padding: 7px 10px; margin: 2px; border-radius: 4px; }
+.fp-startmenu button.fp-item:hover { background-color: #d6e4fb; }
+.fp-menu-header { color: #1f4f9c; font-weight: bold; padding: 6px 10px 2px 10px; }
+.fp-menu-right, .fp-menu-foot { background-color: #eef3fb; }
+.fp-flyout { background-color: #ffffff; }
+.fp-flyout menuitem { padding: 8px 16px; color: #14233f; }
+.fp-flyout menuitem:hover { background-color: #d6e4fb; }
+.fp-flyout label { color: #14233f; }
+"""
+
+# Categorías freedesktop -> nombre en español, en orden de aparición.
+CATEGORIES = [
+    ("Office", "Oficina"),
+    ("Network", "Internet"),
+    ("Graphics", "Gráficos"),
+    ("AudioVideo", "Sonido y Video"),
+    ("Development", "Programación"),
+    ("Game", "Juegos"),
+    ("Education", "Educación"),
+    ("Science", "Ciencia"),
+    ("System", "Herramientas del sistema"),
+    ("Settings", "Configuración"),
+    ("Utility", "Accesorios"),
+]
+
+# División curada Utilidades vs Herramientas (por nombre de ejecutable).
+# Herramientas = apps del sistema / administración.
+FORCE_TOOLS = {
+    "gnome-terminal", "x-terminal-emulator", "xterm", "mate-terminal", "xfce4-terminal",
+    "qterminal", "konsole", "tilix",
+    "gnome-system-monitor", "mate-system-monitor", "xfce4-taskmanager", "ksysguard",
+    "plasma-systemmonitor", "htop", "btop",
+    "gparted", "gnome-disks", "gnome-disk-utility", "baobab", "gnome-logs",
+    "synaptic", "mintupdate", "mintinstall", "mintdrivers", "mintsources",
+    "software-properties-gtk", "timeshift", "timeshift-gtk", "hardinfo", "cpu-x",
+    "system-config-printer", "gnome-system-log", "users-admin",
+}
+# Utilidades = accesorios de usuario.
+FORCE_UTILS = {
+    "gnome-calculator", "galculator", "kcalc", "mate-calc",
+    "xed", "gedit", "gnome-text-editor", "org.gnome.TextEditor", "mousepad", "kate", "pluma",
+    "file-roller", "xarchiver", "ark", "engrampa",
+    "gnome-screenshot", "flameshot", "mate-screenshot", "ksnip",
+    "gnome-characters", "gucharmap", "kcharselect",
+    "xreader", "evince", "atril", "okular", "sticky", "gnote", "xpad",
+    "gnome-font-viewer", "gnome-clocks", "deja-dup",
+}
+
+# Icono por título de sección/categoría del menú Inicio.
+SECTION_ICONS = {
+    "Programas": "applications-other",
+    "Utilidades": "applications-utilities",
+    "Oficina": "applications-office",
+    "Internet": "applications-internet",
+    "Gráficos": "applications-graphics",
+    "Sonido y Video": "applications-multimedia",
+    "Programación": "applications-development",
+    "Juegos": "applications-games",
+    "Educación": "applications-science",
+    "Ciencia": "applications-science",
+    "Herramientas del sistema": "applications-system",
+    "Configuración": "preferences-system",
+    "Accesorios": "applications-accessories",
+    "Otros": "applications-other",
+}
+
+
+def detached_run(cmd):
+    """Lanza un comando desligado del panel (no muere si cerramos el panel)."""
+    if not cmd:
+        return
+    if cmd.startswith("@taskmgr"):
+        tm = task_manager_cmd()
+        if not tm:
+            _error_dialog("No se encontró un Administrador de tareas.\n"
+                          "Instalá 'gnome-system-monitor'.")
+            return
+        cmd = tm
+    try:
+        subprocess.Popen(shlex.split(cmd), start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        _error_dialog("No se pudo abrir:\n%s\n\n%s" % (cmd, e))
+
+
+def task_manager_cmd():
+    for t in TASK_MANAGERS:
+        if shutil.which(t):
+            return t
+    return None
+
+
+def cmd_available(cmd):
+    """True si el binario del comando existe (o si es una url/xdg-open)."""
+    if not cmd or cmd.startswith("@"):
+        return True
+    parts = shlex.split(cmd)
+    if not parts:
+        return False
+    if parts[0] in ("xdg-open", "x-terminal-emulator"):
+        return True
+    return shutil.which(parts[0]) is not None
+
+
+def _error_dialog(msg):
+    d = Gtk.MessageDialog(transient_for=None, modal=True,
+                          message_type=Gtk.MessageType.ERROR,
+                          buttons=Gtk.ButtonsType.OK, text="FactuPOS Panel")
+    d.format_secondary_text(msg)
+    d.run()
+    d.destroy()
+
+
+def load_menu():
+    if os.path.exists(CONFIG_MENU):
+        try:
+            with open(CONFIG_MENU, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return DEFAULT_MENU
+
+
+def os_version():
+    """Versión de FactuPOS OS: archivo /etc/factupos-os-version, o VERSION_ID."""
+    try:
+        if os.path.exists(OS_VERSION_FILE):
+            with open(OS_VERSION_FILE) as f:
+                v = f.read().strip()
+                if v:
+                    return v
+    except Exception:
+        pass
+    try:
+        with open("/etc/os-release") as f:
+            for ln in f:
+                if ln.startswith("VERSION_ID="):
+                    return ln.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return OS_VERSION_DEFAULT
+
+
+class Panel(Gtk.Window):
+    def __init__(self, edge="bottom", height=DEFAULT_HEIGHT, monitor=None, primary=True):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.edge = edge
+        self.vertical = edge in ("left", "right")
+        self.height = height            # grosor de la barra (alto si horizontal, ancho si vertical)
+        self.monitor_index = monitor   # None = monitor primario
+        self.primary = primary          # solo el panel primario maneja atajos y auto-update
+        self._xhotkey = None
+
+        self.set_title("FactuPOS Panel")
+        self.set_decorated(False)
+        self.set_resizable(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_keep_above(True)
+        self.stick()
+        self.get_style_context().add_class("fp-panel")
+
+        self._apply_css()
+        self._geometry()
+        self._build_ui()
+
+        self.connect("destroy", Gtk.main_quit)
+        self.connect("realize", self._on_realize)
+        self.connect("button-press-event", self._on_panel_click)
+        self.connect("size-allocate", self._fit_start_icon)
+
+    # ---------- estilo / geometría ----------
+    def _apply_css(self):
+        prov = Gtk.CssProvider()
+        prov.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), prov,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def _monitor_geo(self):
+        disp = Gdk.Display.get_default()
+        n = disp.get_n_monitors()
+        mon = None
+        if self.monitor_index is not None and 0 <= self.monitor_index < n:
+            mon = disp.get_monitor(self.monitor_index)
+        if mon is None and hasattr(disp, "get_primary_monitor"):
+            mon = disp.get_primary_monitor()
+        if mon is None:
+            mon = disp.get_monitor(0)
+        return mon.get_geometry()
+
+    def _geometry(self):
+        geo = self._monitor_geo()
+        self._geo = geo
+        if self.vertical:
+            self.set_size_request(self.height, geo.height)
+            self.resize(self.height, geo.height)
+            x = geo.x if self.edge == "left" else geo.x + geo.width - self.height
+            self.move(x, geo.y)
+        else:
+            self.set_size_request(geo.width, self.height)
+            self.resize(geo.width, self.height)
+            self.move(geo.x, geo.y if self.edge == "top"
+                      else geo.y + geo.height - self.height)
+
+    def _primary_index(self):
+        disp = Gdk.Display.get_default()
+        prim = disp.get_primary_monitor() if hasattr(disp, "get_primary_monitor") else None
+        for i in range(disp.get_n_monitors()):
+            if prim is not None and disp.get_monitor(i) == prim:
+                return i
+        return 0
+
+    def move_to_monitor(self, index):
+        """Mueve la barra a otro monitor (en caliente) y re-reserva el espacio."""
+        self.monitor_index = index
+        self._geometry()
+        if HAVE_XLIB and self.get_window() is not None:
+            try:
+                self._reserve_strut()
+            except Exception as e:
+                sys.stderr.write("strut: %s\n" % e)
+
+    def _set_edge(self, edge):
+        """Cambia el borde/orientación de la barra en caliente (reconstruye)."""
+        self.edge = edge
+        self.vertical = edge in ("left", "right")
+        child = self.get_child()
+        if child is not None:
+            child.destroy()
+        self._geometry()
+        self._build_ui()
+        self.show_all()
+        if HAVE_XLIB and self.get_window() is not None:
+            try:
+                self._reserve_strut()
+            except Exception as e:
+                sys.stderr.write("strut: %s\n" % e)
+            # La barra se reconstruyó: re-anunciar la bandeja para que las apps
+            # (AnyDesk, RustDesk...) vuelvan a colocar su icono.
+            if self.primary and getattr(self, "_traywin", None) is not None:
+                try:
+                    self._traywin.change_property(
+                        self._traydisp.intern_atom("_NET_SYSTEM_TRAY_ORIENTATION"),
+                        Xatom.CARDINAL, 32, [1 if self.vertical else 0])
+                    self._tray_announce()
+                except Exception as e:
+                    sys.stderr.write("tray re-announce: %s\n" % e)
+
+    def _start_icon(self):
+        """Crea el Gtk.Image del botón Inicio. Se reescala solo al alto real
+        de la barra en _fit_start_icon() (conectado a size-allocate)."""
+        self._start_src = None
+        if os.path.exists(START_ICON):
+            try:
+                self._start_src = GdkPixbuf.Pixbuf.new_from_file(START_ICON)
+            except Exception:
+                self._start_src = None
+        img = Gtk.Image()
+        if self._start_src is None:
+            img.set_from_icon_name("start-here", Gtk.IconSize.LARGE_TOOLBAR)
+        return img
+
+    def _fit_start_icon(self, _widget, alloc):
+        """Ajusta el logo de Inicio al alto real de la barra (con un margen)."""
+        if self._start_src is None:
+            return
+        target = max(16, alloc.height - 12)
+        cur = self.start_img.get_pixbuf()
+        if cur is not None and cur.get_height() == target:
+            return   # ya está al tamaño correcto (evita bucle de size-allocate)
+        sw, sh = self._start_src.get_width(), self._start_src.get_height()
+        w = max(1, int(sw * target / sh))
+        scaled = self._start_src.scale_simple(w, target, GdkPixbuf.InterpType.BILINEAR)
+        self.start_img.set_from_pixbuf(scaled)
+
+    # ---------- construcción de la barra ----------
+    def _build_ui(self):
+        orient = (Gtk.Orientation.VERTICAL if self.vertical
+                  else Gtk.Orientation.HORIZONTAL)
+        root = Gtk.Box(orientation=orient, spacing=0)
+        self.add(root)
+
+        # --- Botón Inicio ---
+        self.start_btn = Gtk.Button()
+        self.start_btn.get_style_context().add_class("fp-start")
+        self.start_btn.set_relief(Gtk.ReliefStyle.NONE)
+        hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hb.set_halign(Gtk.Align.CENTER)
+        self.start_img = self._start_icon()
+        hb.pack_start(self.start_img, False, False, 0)
+        if not self.vertical:
+            hb.pack_start(Gtk.Label(label="Inicio"), False, False, 0)
+        self.start_btn.add(hb)
+        self.start_btn.connect("clicked", self.toggle_start_menu)
+        root.pack_start(self.start_btn, False, False, 0)
+
+        # --- Lista de programas abiertos (Wnck) ---
+        self.wnck_screen = Wnck.Screen.get_default()
+        self.wnck_screen.force_update()
+        self.tasklist = Wnck.Tasklist.new()
+        self.tasklist.set_grouping(Wnck.TasklistGroupingType.NEVER_GROUP)
+        self.tasklist.set_include_all_workspaces(False)
+        if self.vertical:
+            try:
+                self.tasklist.set_orientation(Gtk.Orientation.VERTICAL)
+            except Exception:
+                pass
+        try:
+            self.tasklist.set_button_relief(Gtk.ReliefStyle.NONE)
+        except Exception:
+            pass
+        root.pack_start(self.tasklist, True, True, 4)
+
+        # --- Bandeja del sistema (XEmbed: AnyDesk, RustDesk, Telegram, etc.) ---
+        self._tray_box = Gtk.Box(orientation=orient, spacing=2)
+        root.pack_start(self._tray_box, False, False, 4)
+
+        # --- Red / WiFi ---
+        self.net_btn = Gtk.Button()
+        self.net_btn.get_style_context().add_class("fp-net")
+        self.net_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.net_img = Gtk.Image.new_from_icon_name(
+            "network-offline-symbolic", Gtk.IconSize.LARGE_TOOLBAR)
+        self.net_btn.add(self.net_img)
+        self.net_btn.set_tooltip_text("Red / WiFi")
+        self.net_btn.connect("clicked", self.open_network)
+        root.pack_start(self.net_btn, False, False, 0)
+
+        # --- Volumen (campanita de audio) ---
+        self.vol_btn = Gtk.Button()
+        self.vol_btn.get_style_context().add_class("fp-net")
+        self.vol_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.vol_img = Gtk.Image.new_from_icon_name(
+            "audio-volume-medium-symbolic", Gtk.IconSize.LARGE_TOOLBAR)
+        self.vol_btn.add(self.vol_img)
+        self.vol_btn.set_tooltip_text("Volumen")
+        self.vol_btn.connect("clicked", self.open_volume)
+        root.pack_start(self.vol_btn, False, False, 0)
+
+        # --- Reloj / Fecha ---
+        self.clock_btn = Gtk.Button()
+        self.clock_btn.get_style_context().add_class("fp-clock")
+        self.clock_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.clock_lbl = Gtk.Label()
+        self.clock_lbl.set_justify(Gtk.Justification.CENTER)
+        self.clock_btn.add(self.clock_lbl)
+        self.clock_btn.connect("clicked", self.open_calendar)
+        self.clock_btn.set_tooltip_text("Calendario, fecha/hora, zona horaria y teclado")
+        root.pack_start(self.clock_btn, False, False, 0)
+
+        # --- Mostrar escritorio (extremo derecho, como Windows) ---
+        self.showdesk = Gtk.Button()
+        self.showdesk.get_style_context().add_class("fp-showdesk")
+        self.showdesk.set_relief(Gtk.ReliefStyle.NONE)
+        self.showdesk.set_tooltip_text("Mostrar el escritorio")
+        self.showdesk.connect("clicked", self.toggle_show_desktop)
+        root.pack_start(self.showdesk, False, False, 0)
+
+        self._tick()
+        self._update_net()
+        self._update_vol()
+        if not getattr(self, "_timers_started", False):
+            self._timers_started = True
+            GLib.timeout_add_seconds(1, self._tick)
+            GLib.timeout_add_seconds(5, self._update_net)
+            GLib.timeout_add_seconds(3, self._update_vol)
+            # Auto-actualización solo en el panel primario (evita reinicios múltiples).
+            if self.primary:
+                GLib.timeout_add_seconds(20, self._check_update_once)
+                GLib.timeout_add_seconds(UPDATE_INTERVAL, self._check_update_loop)
+
+    # ---------- reloj ----------
+    def _tick(self):
+        now = datetime.datetime.now()
+        hora = now.strftime("%H:%M")
+        if self.vertical:
+            fecha = now.strftime("%d/%m")
+            sz = "x-small"
+        else:
+            fecha = now.strftime("%d/%m/%Y")
+            sz = "small"
+        self.clock_lbl.set_markup(
+            "<b>%s</b>\n<span size='%s'>%s</span>" % (hora, sz, fecha))
+        self.clock_btn.set_tooltip_text(now.strftime("%A %d de %B de %Y"))
+        return True
+
+    # ---------- red ----------
+    def _update_net(self):
+        icon, tip = self._net_state()
+        ips = [ip for (_t, _n, ip, _s) in self._net_details() if ip]
+        if ips:
+            tip = tip + "\nIP: " + ", ".join(ips)
+        self.net_img.set_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR)
+        self.net_btn.set_tooltip_text(tip)
+        return True
+
+    def _net_state(self):
+        try:
+            out = subprocess.run(
+                ["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"],
+                capture_output=True, text=True, timeout=4).stdout
+        except Exception:
+            return "network-offline-symbolic", "Red: estado desconocido"
+        wifi = eth = False
+        for line in out.splitlines():
+            parts = line.split(":")
+            if len(parts) < 2:
+                continue
+            typ, state = parts[0], parts[1]
+            if state != "connected":
+                continue
+            if typ == "wifi":
+                wifi = True
+            elif typ == "ethernet":
+                eth = True
+        if eth:
+            return "network-wired-symbolic", "Red: cableada conectada"
+        if wifi:
+            return "network-wireless-signal-good-symbolic", "WiFi conectado"
+        return "network-offline-symbolic", "Sin conexión de red"
+
+    def _net_details(self):
+        """Lista de conexiones activas: (tipo, nombre/SSID, ip, señal)."""
+        rows = []
+        try:
+            out = subprocess.run(
+                ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"],
+                capture_output=True, text=True, timeout=4).stdout
+        except Exception:
+            return rows
+        # señal del WiFi en uso
+        signal = ""
+        try:
+            w = subprocess.run(["nmcli", "-t", "-f", "IN-USE,SIGNAL,SSID", "device", "wifi"],
+                               capture_output=True, text=True, timeout=4).stdout
+            for ln in w.splitlines():
+                if ln.startswith("*"):
+                    parts = ln.split(":")
+                    if len(parts) >= 2:
+                        signal = parts[1]
+                    break
+        except Exception:
+            pass
+        for line in out.splitlines():
+            p = line.split(":")
+            if len(p) < 4:
+                continue
+            dev, typ, state, conn = p[0], p[1], p[2], p[3]
+            if typ in ("loopback", "") or state != "connected":
+                continue
+            ip = ""
+            try:
+                ipout = subprocess.run(["nmcli", "-g", "IP4.ADDRESS", "device", "show", dev],
+                                       capture_output=True, text=True, timeout=4).stdout.strip()
+                ip = ipout.split("\n")[0].split("/")[0] if ipout else ""
+            except Exception:
+                pass
+            rows.append((typ, conn or dev, ip, signal if typ == "wifi" else ""))
+        return rows
+
+    def _open_net_config(self):
+        for cmd in ("nm-connection-editor", "cinnamon-settings network",
+                    "gnome-control-center wifi"):
+            if cmd_available(cmd):
+                detached_run(cmd)
+                return
+        _error_dialog("No se encontró un configurador de red.")
+
+    def open_network(self, *_):
+        if getattr(self, "_netwin", None) is not None:
+            self._close_net_win()
+            return
+        win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        win.set_keep_above(True)
+        win.set_resizable(False)
+        win.set_size_request(400, 560)
+        win.get_style_context().add_class("fp-startmenu")
+        self._net_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        win.add(self._net_content)
+        self._netwin = win
+        self._wifi_networks = None
+        self._build_net_ui()
+        win.show_all()
+        geo = self._geo
+        w, h = win.get_size_request()
+        if self.edge == "left":
+            x, y = geo.x + self.height, geo.y + geo.height - h
+        elif self.edge == "right":
+            x, y = geo.x + geo.width - self.height - w, geo.y + geo.height - h
+        elif self.edge == "top":
+            x, y = geo.x + geo.width - w - 4, geo.y + self.height
+        else:  # bottom
+            x, y = geo.x + geo.width - w - 4, geo.y + geo.height - self.height - h
+        win.move(max(geo.x, x), max(geo.y, y))
+        win.connect("button-press-event", self._net_click_outside)
+        win.connect("key-press-event", self._net_key)
+        win.connect("destroy", lambda *_: setattr(self, "_netwin", None))
+        GLib.idle_add(self._grab_net_win, win)
+        self._wifi_rescan()
+
+    def _section_label(self, text):
+        l = Gtk.Label()
+        l.set_markup("<small><b>%s</b></small>" % GLib.markup_escape_text(text))
+        l.set_xalign(0)
+        l.get_style_context().add_class("fp-menu-header")
+        return l
+
+    def _build_net_ui(self):
+        box = self._net_content
+        for c in box.get_children():
+            box.remove(c)
+
+        hdr = Gtk.Box(spacing=8)
+        hdr.set_border_width(10)
+        hdr.get_style_context().add_class("fp-menu-right")
+        t = Gtk.Label()
+        t.set_markup("<b>Red y WiFi</b>")
+        t.set_xalign(0)
+        hdr.pack_start(t, True, True, 0)
+        hdr.pack_start(Gtk.Label(label="WiFi"), False, False, 0)
+        self._wifi_switch = Gtk.Switch()
+        self._wifi_switch.set_active(self._wifi_enabled())
+        self._wifi_switch.connect("notify::active", self._on_wifi_toggle)
+        hdr.pack_start(self._wifi_switch, False, False, 0)
+        box.pack_start(hdr, False, False, 0)
+        box.pack_start(Gtk.Separator(), False, False, 0)
+
+        sc = Gtk.ScrolledWindow()
+        sc.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        content.set_border_width(8)
+        sc.add(content)
+        box.pack_start(sc, True, True, 0)
+
+        conn, dev = self._active_conn()
+
+        rows = self._net_details()
+        st = Gtk.Label()
+        if rows:
+            typ, name, ip, _sig = rows[0]
+            tipo = "WiFi" if typ == "wifi" else ("Cableada" if typ == "ethernet" else typ)
+            st.set_markup("Conectado: <b>%s</b> (%s)\nIP: <b>%s</b>"
+                          % (GLib.markup_escape_text(name), tipo, ip or "—"))
+        else:
+            st.set_markup("<i>Sin conexión de red</i>")
+        st.set_xalign(0)
+        content.pack_start(st, False, False, 4)
+
+        # --- redes WiFi ---
+        content.pack_start(self._section_label("Redes WiFi disponibles"), False, False, 2)
+        scl = Gtk.ScrolledWindow()
+        scl.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scl.set_min_content_height(150)
+        self._wifi_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        scl.add(self._wifi_list)
+        content.pack_start(scl, False, False, 0)
+        rb = Gtk.Button(label="Actualizar redes")
+        rb.connect("clicked", lambda *_: self._wifi_rescan())
+        content.pack_start(rb, False, False, 2)
+        self._populate_wifi()
+
+        content.pack_start(Gtk.Separator(), False, False, 6)
+
+        # --- configuración IP (manual o DHCP) ---
+        content.pack_start(self._section_label(
+            "Configuración IP  ·  %s" % (conn or "sin conexión")), False, False, 2)
+        cfg = self._ip_config(dev)
+        grid = Gtk.Grid()
+        grid.set_row_spacing(4)
+        grid.set_column_spacing(8)
+
+        def field(rowi, label, value):
+            l = Gtk.Label(label=label)
+            l.set_xalign(0)
+            e = Gtk.Entry()
+            e.set_text(value or "")
+            e.set_hexpand(True)
+            grid.attach(l, 0, rowi, 1, 1)
+            grid.attach(e, 1, rowi, 1, 1)
+            return e
+
+        self._e_ip = field(0, "IP", cfg["ip"])
+        self._e_mask = field(1, "Máscara", cfg["mask"])
+        self._e_gw = field(2, "Gateway", cfg["gw"])
+        self._e_dns = field(3, "DNS", cfg["dns"])
+        content.pack_start(grid, False, False, 0)
+        hint = Gtk.Label()
+        hint.set_markup("<small>Máscara: 24 o 255.255.255.0 · DNS separados por coma</small>")
+        hint.set_xalign(0)
+        content.pack_start(hint, False, False, 0)
+
+        btns = Gtk.Box(spacing=6)
+        ap = Gtk.Button(label="Aplicar IP fija")
+        ap.connect("clicked", lambda *_: self._apply_static_ip())
+        dh = Gtk.Button(label="Automático (DHCP)")
+        dh.connect("clicked", lambda *_: self._apply_dhcp())
+        btns.pack_start(ap, True, True, 0)
+        btns.pack_start(dh, True, True, 0)
+        content.pack_start(btns, False, False, 4)
+
+        box.show_all()
+
+    # ----- WiFi (nmcli por dentro) -----
+    def _wifi_dev(self):
+        try:
+            out = subprocess.run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"],
+                                 capture_output=True, text=True, timeout=4).stdout
+            for ln in out.splitlines():
+                p = ln.split(":")
+                if len(p) >= 2 and p[1] == "wifi":
+                    return p[0]
+        except Exception:
+            pass
+        return None
+
+    def _wifi_enabled(self):
+        try:
+            out = subprocess.run(["nmcli", "-t", "-f", "WIFI", "radio"],
+                                 capture_output=True, text=True, timeout=4).stdout.strip()
+            return out.lower() == "enabled"
+        except Exception:
+            return False
+
+    def _on_wifi_toggle(self, sw, _p):
+        on = sw.get_active()
+        try:
+            subprocess.Popen(["nmcli", "radio", "wifi", "on" if on else "off"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        GLib.timeout_add_seconds(2, lambda: (self._wifi_rescan(), False)[1])
+
+    def _wifi_rescan(self):
+        if self._wifi_dev() is None:
+            self._wifi_networks = []
+            self._populate_wifi()
+            return
+
+        def work():
+            try:
+                subprocess.run(["nmcli", "device", "wifi", "rescan"],
+                               capture_output=True, timeout=12)
+            except Exception:
+                pass
+            try:
+                out = subprocess.run(
+                    ["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
+                    capture_output=True, text=True, timeout=10).stdout
+            except Exception:
+                out = ""
+            nets, seen = [], set()
+            for ln in out.splitlines():
+                parts = ln.split(":")
+                if len(parts) < 4:
+                    continue
+                inuse, ssid, signal = parts[0], parts[1], parts[2]
+                sec = ":".join(parts[3:])
+                if not ssid or ssid in seen:
+                    continue
+                seen.add(ssid)
+                nets.append({"ssid": ssid, "signal": signal, "sec": sec,
+                             "inuse": inuse.strip() == "*"})
+            nets.sort(key=lambda n: (not n["inuse"], -int(n["signal"] or 0)))
+            GLib.idle_add(self._set_networks, nets)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _set_networks(self, nets):
+        self._wifi_networks = nets
+        self._populate_wifi()
+        return False
+
+    def _populate_wifi(self):
+        if not hasattr(self, "_wifi_list"):
+            return
+        box = self._wifi_list
+        for c in box.get_children():
+            box.remove(c)
+        nets = getattr(self, "_wifi_networks", None)
+        if nets is None:
+            box.pack_start(Gtk.Label(label="Buscando redes..."), False, False, 6)
+        elif not nets:
+            box.pack_start(Gtk.Label(label="No hay redes WiFi"), False, False, 6)
+        else:
+            for n in nets:
+                box.pack_start(self._wifi_row(n), False, False, 0)
+        box.show_all()
+
+    def _wifi_row(self, n):
+        b = Gtk.Button()
+        b.set_relief(Gtk.ReliefStyle.NONE)
+        b.get_style_context().add_class("fp-item")
+        row = Gtk.Box(spacing=8)
+        sig = int(n["signal"] or 0)
+        ico = ("network-wireless-signal-excellent-symbolic" if sig >= 75 else
+               "network-wireless-signal-good-symbolic" if sig >= 50 else
+               "network-wireless-signal-ok-symbolic" if sig >= 25 else
+               "network-wireless-signal-weak-symbolic")
+        row.pack_start(Gtk.Image.new_from_icon_name(ico, Gtk.IconSize.MENU), False, False, 0)
+        l = Gtk.Label(label=n["ssid"] + ("   ✓ conectado" if n["inuse"] else ""))
+        l.set_xalign(0)
+        row.pack_start(l, True, True, 0)
+        if n["sec"].strip():
+            row.pack_start(Gtk.Image.new_from_icon_name(
+                "network-wireless-encrypted-symbolic", Gtk.IconSize.MENU), False, False, 0)
+        b.add(row)
+        b.connect("clicked", lambda *_: self._wifi_clicked(n))
+        return b
+
+    def _wifi_clicked(self, n):
+        if n["inuse"]:
+            return
+        if n["sec"].strip():
+            self._ask_wifi_password(n)
+        else:
+            self._do_wifi_connect(n["ssid"], None)
+
+    def _ask_wifi_password(self, n):
+        try:
+            self._netwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        d = Gtk.Dialog(title="Conectar a %s" % n["ssid"],
+                       transient_for=self._netwin, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button("Conectar", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        ca = d.get_content_area()
+        ca.set_border_width(10)
+        ca.set_spacing(6)
+        ca.add(Gtk.Label(label="Contraseña de %s:" % n["ssid"]))
+        e = Gtk.Entry()
+        e.set_visibility(False)
+        e.set_activates_default(True)
+        ca.add(e)
+        show = Gtk.CheckButton(label="Mostrar contraseña")
+        show.connect("toggled", lambda c: e.set_visibility(c.get_active()))
+        ca.add(show)
+        d.show_all()
+        resp = d.run()
+        pwd = e.get_text()
+        d.destroy()
+        if resp == Gtk.ResponseType.OK and pwd:
+            self._do_wifi_connect(n["ssid"], pwd)
+        elif getattr(self, "_netwin", None) is not None:
+            GLib.idle_add(self._grab_net_win, self._netwin)
+
+    def _do_wifi_connect(self, ssid, pwd):
+        self._notify("Conectando a %s..." % ssid)
+
+        def work():
+            cmd = ["nmcli", "device", "wifi", "connect", ssid]
+            if pwd:
+                cmd += ["password", pwd]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+                ok = r.returncode == 0
+                msg = ("Conectado a %s" % ssid if ok
+                       else (r.stderr.strip() or "No se pudo conectar"))
+            except Exception as e:
+                ok, msg = False, str(e)
+            GLib.idle_add(self._after_netchange, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    # ----- IP fija / DHCP -----
+    def _active_conn(self):
+        try:
+            out = subprocess.run(
+                ["nmcli", "-t", "-f", "NAME,DEVICE,TYPE", "connection", "show", "--active"],
+                capture_output=True, text=True, timeout=4).stdout
+            best = (None, None)
+            for ln in out.splitlines():
+                p = ln.split(":")
+                if len(p) < 3:
+                    continue
+                name, dev, typ = p[0], p[1], p[2]
+                if "ethernet" in typ:
+                    return name, dev
+                if best == (None, None) and "wireless" in typ:
+                    best = (name, dev)
+            return best
+        except Exception:
+            return (None, None)
+
+    def _ip_config(self, dev):
+        res = {"ip": "", "mask": "", "gw": "", "dns": ""}
+        if not dev:
+            return res
+        try:
+            a = subprocess.run(["nmcli", "-g", "IP4.ADDRESS", "device", "show", dev],
+                               capture_output=True, text=True, timeout=4).stdout.strip()
+            first = a.split("\n")[0] if a else ""
+            if "/" in first:
+                res["ip"], res["mask"] = first.split("/")[0], first.split("/")[1]
+            else:
+                res["ip"] = first
+            res["gw"] = subprocess.run(["nmcli", "-g", "IP4.GATEWAY", "device", "show", dev],
+                                       capture_output=True, text=True, timeout=4).stdout.strip().split("\n")[0]
+            dns = subprocess.run(["nmcli", "-g", "IP4.DNS", "device", "show", dev],
+                                 capture_output=True, text=True, timeout=4).stdout.strip()
+            res["dns"] = ", ".join([x for x in dns.split("\n") if x][:3])
+        except Exception:
+            pass
+        return res
+
+    def _mask_to_prefix(self, m):
+        m = (m or "").strip()
+        if not m:
+            return 24
+        if "." not in m:
+            try:
+                return int(m)
+            except Exception:
+                return 24
+        try:
+            return sum(bin(int(o)).count("1") for o in m.split("."))
+        except Exception:
+            return 24
+
+    def _run_priv(self, args):
+        """Corre nmcli; si falla por permisos, reintenta con pkexec (diálogo)."""
+        try:
+            r = subprocess.run(args, capture_output=True, text=True, timeout=45)
+            if r.returncode == 0:
+                return True, (r.stdout or "").strip()
+            err = (r.stderr or "").strip()
+            if any(k in err.lower() for k in ("not authorized", "permission", "insufficient")):
+                if shutil.which("pkexec"):
+                    r2 = subprocess.run(["pkexec"] + args, capture_output=True, text=True, timeout=90)
+                    return r2.returncode == 0, (r2.stderr or r2.stdout or "").strip()
+            return False, err
+        except Exception as e:
+            return False, str(e)
+
+    def _apply_static_ip(self):
+        conn, _dev = self._active_conn()
+        if not conn:
+            self._notify("No hay conexión activa para configurar")
+            return
+        ip = self._e_ip.get_text().strip()
+        prefix = self._mask_to_prefix(self._e_mask.get_text())
+        gw = self._e_gw.get_text().strip()
+        dns = " ".join(self._e_dns.get_text().replace(",", " ").split())
+        if not ip:
+            self._notify("Ingresá una IP")
+            return
+        try:
+            self._netwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._notify("Aplicando IP fija %s/%s..." % (ip, prefix))
+
+        def work():
+            args = ["nmcli", "connection", "modify", conn,
+                    "ipv4.method", "manual",
+                    "ipv4.addresses", "%s/%s" % (ip, prefix),
+                    "ipv4.gateway", gw,
+                    "ipv4.dns", dns,
+                    "ipv4.ignore-auto-dns", "yes"]
+            ok, msg = self._run_priv(args)
+            if ok:
+                ok, msg = self._run_priv(["nmcli", "connection", "up", conn])
+                if ok:
+                    msg = "IP configurada: %s/%s" % (ip, prefix)
+            GLib.idle_add(self._after_netchange, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_dhcp(self):
+        conn, _dev = self._active_conn()
+        if not conn:
+            self._notify("No hay conexión activa")
+            return
+        try:
+            self._netwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._notify("Cambiando a automático (DHCP)...")
+
+        def work():
+            args = ["nmcli", "connection", "modify", conn,
+                    "ipv4.method", "auto", "ipv4.addresses", "",
+                    "ipv4.gateway", "", "ipv4.dns", "", "ipv4.ignore-auto-dns", "no"]
+            ok, msg = self._run_priv(args)
+            if ok:
+                ok, msg = self._run_priv(["nmcli", "connection", "up", conn])
+                if ok:
+                    msg = "Configuración automática (DHCP) aplicada"
+            GLib.idle_add(self._after_netchange, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_netchange(self, ok, msg):
+        self._notify(msg or ("Listo" if ok else "Error de red"))
+        if getattr(self, "_netwin", None) is not None:
+            self._build_net_ui()
+            GLib.idle_add(self._grab_net_win, self._netwin)
+        self._update_net()
+        return False
+
+    # ----- ventana de red: grab / cierre -----
+    def _grab_net_win(self, win):
+        gw = win.get_window()
+        if gw is None:
+            return False
+        try:
+            win.get_display().get_default_seat().grab(
+                gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        except Exception:
+            pass
+        return False
+
+    def _net_click_outside(self, win, event):
+        a = win.get_allocation()
+        if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
+            self._close_net_win()
+            return True
+        return False
+
+    def _net_key(self, win, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self._close_net_win()
+            return True
+        return False
+
+    def _close_net_win(self):
+        win = getattr(self, "_netwin", None)
+        if win is None:
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._netwin = None
+        win.destroy()
+
+    # ---------- calendario + fecha/hora/zona/teclado ----------
+    def open_calendar(self, *_):
+        if getattr(self, "_calwin", None) is not None:
+            self._close_cal_win()
+            return
+        win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        win.set_keep_above(True)
+        win.set_resizable(False)
+        win.get_style_context().add_class("fp-startmenu")
+        self._calwin = win
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(12)
+        win.add(box)
+
+        self._cal_time = Gtk.Label()
+        box.pack_start(self._cal_time, False, False, 0)
+
+        self._cal = Gtk.Calendar()
+        box.pack_start(self._cal, False, False, 0)
+
+        # Hora manual + aplicar
+        hb = Gtk.Box(spacing=6)
+        hb.pack_start(Gtk.Label(label="Hora:"), False, False, 0)
+        self._cal_hh = Gtk.Entry()
+        self._cal_hh.set_width_chars(6)
+        self._cal_hh.set_max_length(5)
+        hb.pack_start(self._cal_hh, False, False, 0)
+        apb = Gtk.Button(label="Aplicar fecha y hora")
+        apb.connect("clicked", lambda *_: self._apply_datetime())
+        hb.pack_start(apb, True, True, 0)
+        box.pack_start(hb, False, False, 0)
+
+        # Hora automática (NTP)
+        nb = Gtk.Box(spacing=6)
+        nb.pack_start(Gtk.Label(label="Hora automática (Internet)"), True, True, 0)
+        self._ntp_sw = Gtk.Switch()
+        self._ntp_sw.set_active(self._ntp_enabled())
+        self._ntp_sw.connect("notify::active", self._on_ntp_toggle)
+        nb.pack_start(self._ntp_sw, False, False, 0)
+        box.pack_start(nb, False, False, 0)
+
+        box.pack_start(self._section_label("Zona horaria"), False, False, 0)
+        self._tz_combo = Gtk.ComboBoxText()
+        tzs = self._tz_list()
+        cur_tz = self._tz_current()
+        for i, tz in enumerate(tzs):
+            self._tz_combo.append_text(tz)
+            if tz == cur_tz:
+                self._tz_combo.set_active(i)
+        self._tz_combo.connect("changed", self._on_tz_changed)
+        box.pack_start(self._tz_combo, False, False, 0)
+
+        box.pack_start(self._section_label("Distribución del teclado"), False, False, 0)
+        self._kbd_combo = Gtk.ComboBoxText()
+        cur_kbd = self._kbd_current()
+        self._kbd_layouts = [("latam", "Español (Latinoamérica)"),
+                             ("es", "Español (España)"),
+                             ("us", "Inglés (EE.UU.)")]
+        for i, (code, label) in enumerate(self._kbd_layouts):
+            self._kbd_combo.append_text(label)
+            if code == cur_kbd:
+                self._kbd_combo.set_active(i)
+        self._kbd_combo.connect("changed", self._on_kbd_changed)
+        box.pack_start(self._kbd_combo, False, False, 0)
+
+        cfg = Gtk.Button(label="Configuración completa")
+        cfg.connect("clicked", lambda *_: (self._close_cal_win(),
+                    detached_run("cinnamon-settings calendar" if cmd_available("cinnamon-settings")
+                                 else "gnome-control-center datetime")))
+        box.pack_start(cfg, False, False, 4)
+
+        now = datetime.datetime.now()
+        self._cal.select_month(now.month - 1, now.year)
+        self._cal.select_day(now.day)
+        self._cal_hh.set_text(now.strftime("%H:%M"))
+        self._cal_tick()
+
+        win.show_all()
+        geo = self._geo
+        _m, nat = win.get_preferred_size()
+        w, h = nat.width, nat.height
+        if self.vertical:
+            x = (geo.x + self.height) if self.edge == "left" else (geo.x + geo.width - self.height - w)
+            y = geo.y + geo.height - h
+        else:
+            x = geo.x + geo.width - w - 4
+            y = geo.y + self.height if self.edge == "top" else geo.y + geo.height - self.height - h
+        win.move(max(geo.x, x), max(geo.y, y))
+        win.connect("button-press-event", self._cal_click_outside)
+        win.connect("key-press-event", self._cal_key)
+        win.connect("destroy", lambda *_: setattr(self, "_calwin", None))
+        GLib.idle_add(self._grab_cal_win, win)
+        GLib.timeout_add_seconds(1, self._cal_tick)
+
+    def _cal_tick(self):
+        if getattr(self, "_calwin", None) is None:
+            return False
+        self._cal_time.set_markup("<span size='xx-large'><b>%s</b></span>"
+                                  % datetime.datetime.now().strftime("%H:%M:%S"))
+        return True
+
+    # --- fecha/hora (timedatectl, root vía pkexec) ---
+    def _ntp_enabled(self):
+        try:
+            out = subprocess.run(["timedatectl", "show", "-p", "NTP", "--value"],
+                                 capture_output=True, text=True, timeout=4).stdout.strip()
+            return out.lower() == "yes"
+        except Exception:
+            return False
+
+    def _on_ntp_toggle(self, sw, _p):
+        on = sw.get_active()
+        try:
+            self._calwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._notify("Hora automática " + ("activada" if on else "desactivada"))
+
+        def work():
+            ok, msg = self._run_priv(["timedatectl", "set-ntp", "true" if on else "false"])
+            GLib.idle_add(self._after_cal, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_datetime(self):
+        y, mo, d = self._cal.get_date()   # mo es 0-based
+        hhmm = self._cal_hh.get_text().strip() or "00:00"
+        try:
+            hh, mm = hhmm.split(":")[:2]
+            stamp = "%04d-%02d-%02d %02d:%02d:00" % (y, mo + 1, d, int(hh), int(mm))
+        except Exception:
+            self._notify("Hora inválida (usá HH:MM)")
+            return
+        try:
+            self._calwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._notify("Aplicando %s..." % stamp)
+
+        def work():
+            self._run_priv(["timedatectl", "set-ntp", "false"])
+            ok, msg = self._run_priv(["timedatectl", "set-time", stamp])
+            if ok:
+                msg = "Fecha y hora actualizada"
+            GLib.idle_add(self._after_cal, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_cal(self, ok, msg):
+        self._notify(msg or ("Listo" if ok else "Error"))
+        self._tick()
+        if getattr(self, "_calwin", None) is not None:
+            GLib.idle_add(self._grab_cal_win, self._calwin)
+        return False
+
+    # --- zona horaria ---
+    def _tz_list(self):
+        try:
+            out = subprocess.run(["timedatectl", "list-timezones"],
+                                 capture_output=True, text=True, timeout=6).stdout
+            return [t for t in out.splitlines() if t]
+        except Exception:
+            return ["America/Costa_Rica", "UTC"]
+
+    def _tz_current(self):
+        try:
+            return subprocess.run(["timedatectl", "show", "-p", "Timezone", "--value"],
+                                  capture_output=True, text=True, timeout=4).stdout.strip()
+        except Exception:
+            return ""
+
+    def _on_tz_changed(self, combo):
+        tz = combo.get_active_text()
+        if not tz:
+            return
+        try:
+            self._calwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._notify("Zona horaria: %s" % tz)
+
+        def work():
+            ok, msg = self._run_priv(["timedatectl", "set-timezone", tz])
+            if ok:
+                msg = "Zona horaria: %s" % tz
+            GLib.idle_add(self._after_cal, ok, msg)
+        threading.Thread(target=work, daemon=True).start()
+
+    # --- teclado (setxkbmap, sin root) ---
+    def _kbd_current(self):
+        try:
+            out = subprocess.run(["setxkbmap", "-query"],
+                                 capture_output=True, text=True, timeout=4).stdout
+            for ln in out.splitlines():
+                if ln.startswith("layout:"):
+                    return ln.split(":", 1)[1].strip().split(",")[0]
+        except Exception:
+            pass
+        return ""
+
+    def _on_kbd_changed(self, combo):
+        idx = combo.get_active()
+        if idx < 0 or idx >= len(self._kbd_layouts):
+            return
+        code = self._kbd_layouts[idx][0]
+        try:
+            subprocess.Popen(["setxkbmap", code],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self._notify("Teclado: %s" % self._kbd_layouts[idx][1])
+        except Exception:
+            pass
+
+    def _grab_cal_win(self, win):
+        gw = win.get_window()
+        if gw is None:
+            return False
+        try:
+            win.get_display().get_default_seat().grab(
+                gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        except Exception:
+            pass
+        return False
+
+    def _cal_click_outside(self, win, event):
+        a = win.get_allocation()
+        if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
+            self._close_cal_win()
+            return True
+        return False
+
+    def _cal_key(self, win, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self._close_cal_win()
+            return True
+        return False
+
+    def _close_cal_win(self):
+        win = getattr(self, "_calwin", None)
+        if win is None:
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._calwin = None
+        win.destroy()
+
+    # ---------- volumen (salida + micrófono, vía pactl) ----------
+    def _pa_get(self, kind):
+        """kind='sink' (salida) o 'source' (micrófono) -> (porcentaje, muteado)."""
+        dev = "@DEFAULT_SINK@" if kind == "sink" else "@DEFAULT_SOURCE@"
+        pct, muted = 0, False
+        try:
+            m = subprocess.run(["pactl", "get-%s-mute" % kind, dev],
+                               capture_output=True, text=True, timeout=3).stdout
+            muted = "yes" in m.lower()
+            v = subprocess.run(["pactl", "get-%s-volume" % kind, dev],
+                               capture_output=True, text=True, timeout=3).stdout
+            mm = re.search(r"(\d+)%", v)
+            if mm:
+                pct = int(mm.group(1))
+        except Exception:
+            pass
+        return pct, muted
+
+    def _pa_set(self, kind, pct):
+        dev = "@DEFAULT_SINK@" if kind == "sink" else "@DEFAULT_SOURCE@"
+        try:
+            subprocess.Popen(["pactl", "set-%s-volume" % kind, dev, "%d%%" % pct],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def _pa_mute(self, kind):
+        dev = "@DEFAULT_SINK@" if kind == "sink" else "@DEFAULT_SOURCE@"
+        try:
+            subprocess.run(["pactl", "set-%s-mute" % kind, dev, "toggle"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+        except Exception:
+            pass
+
+    def _vol_icon(self, pct, muted):
+        if muted or pct == 0:
+            return "audio-volume-muted-symbolic"
+        if pct < 34:
+            return "audio-volume-low-symbolic"
+        if pct < 67:
+            return "audio-volume-medium-symbolic"
+        return "audio-volume-high-symbolic"
+
+    def _update_vol(self):
+        pct, muted = self._pa_get("sink")
+        self.vol_img.set_from_icon_name(self._vol_icon(pct, muted), Gtk.IconSize.LARGE_TOOLBAR)
+        self.vol_btn.set_tooltip_text(
+            "Volumen: %d%%%s" % (pct, "  (silenciado)" if muted else ""))
+        return True
+
+    def open_volume(self, *_):
+        if getattr(self, "_volwin", None) is not None:
+            self._close_vol_win()
+            return
+        win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        win.set_keep_above(True)
+        win.set_resizable(False)
+        win.get_style_context().add_class("fp-startmenu")
+        self._volwin = win
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(12)
+        win.add(box)
+
+        box.pack_start(self._vol_row("Salida (altavoces)", "sink"), False, False, 0)
+        box.pack_start(Gtk.Separator(), False, False, 4)
+        box.pack_start(self._vol_row("Micrófono (entrada)", "source"), False, False, 0)
+
+        cfg = Gtk.Button(label="Configuración de sonido")
+        cfg.connect("clicked", lambda *_: (self._close_vol_win(),
+                    detached_run("cinnamon-settings sound" if cmd_available("cinnamon-settings")
+                                 else "pavucontrol")))
+        box.pack_start(cfg, False, False, 4)
+
+        win.show_all()
+        geo = self._geo
+        _m, nat = win.get_preferred_size()
+        w, h = nat.width, nat.height
+        if self.vertical:
+            x = (geo.x + self.height) if self.edge == "left" else (geo.x + geo.width - self.height - w)
+            y = geo.y + geo.height - h
+        else:
+            x = geo.x + geo.width - w - 4
+            y = geo.y + self.height if self.edge == "top" else geo.y + geo.height - self.height - h
+        win.move(max(geo.x, x), max(geo.y, y))
+        win.connect("button-press-event", self._vol_click_outside)
+        win.connect("key-press-event", self._vol_key)
+        win.connect("destroy", lambda *_: setattr(self, "_volwin", None))
+        GLib.idle_add(self._grab_vol_win, win)
+
+    def _vol_row(self, titulo, kind):
+        pct, muted = self._pa_get(kind)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        outer.pack_start(self._section_label(titulo), False, False, 0)
+        row = Gtk.Box(spacing=8)
+        mb = Gtk.Button()
+        mb.set_relief(Gtk.ReliefStyle.NONE)
+        mimg = Gtk.Image.new_from_icon_name(self._vol_icon(pct, muted), Gtk.IconSize.LARGE_TOOLBAR)
+        mb.add(mimg)
+        sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        sc.set_value(pct)
+        sc.set_hexpand(True)
+        sc.set_size_request(220, -1)
+        sc.set_draw_value(True)
+        sc.set_value_pos(Gtk.PositionType.RIGHT)
+        sc.connect("value-changed", lambda s: self._pa_set(kind, int(s.get_value())))
+        mb.connect("clicked", lambda *_: (self._pa_mute(kind),
+                   mimg.set_from_icon_name(self._vol_icon(int(sc.get_value()),
+                                           self._pa_get(kind)[1]), Gtk.IconSize.LARGE_TOOLBAR),
+                   self._update_vol()))
+        row.pack_start(mb, False, False, 0)
+        row.pack_start(sc, True, True, 0)
+        outer.pack_start(row, False, False, 0)
+        return outer
+
+    def _grab_vol_win(self, win):
+        gw = win.get_window()
+        if gw is None:
+            return False
+        try:
+            win.get_display().get_default_seat().grab(
+                gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        except Exception:
+            pass
+        return False
+
+    def _vol_click_outside(self, win, event):
+        a = win.get_allocation()
+        if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
+            self._close_vol_win()
+            return True
+        return False
+
+    def _vol_key(self, win, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self._close_vol_win()
+            return True
+        return False
+
+    def _close_vol_win(self):
+        win = getattr(self, "_volwin", None)
+        if win is None:
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._volwin = None
+        win.destroy()
+
+    # ---------- Equipo (info del sistema) ----------
+    def _os_pretty(self):
+        try:
+            with open("/etc/os-release") as f:
+                for ln in f:
+                    if ln.startswith("PRETTY_NAME="):
+                        return ln.split("=", 1)[1].strip().strip('"')
+        except Exception:
+            pass
+        return "Linux"
+
+    def _ram_info(self):
+        total = avail = 0
+        try:
+            with open("/proc/meminfo") as f:
+                for ln in f:
+                    if ln.startswith("MemTotal:"):
+                        total = int(ln.split()[1])
+                    elif ln.startswith("MemAvailable:"):
+                        avail = int(ln.split()[1])
+        except Exception:
+            pass
+        g = 1048576.0
+        return total / g, (total - avail) / g, avail / g   # total, usado, libre (GB)
+
+    def _disks(self):
+        out = []
+        try:
+            r = subprocess.run(
+                ["df", "-h", "--output=source,target,size,used,avail,pcent",
+                 "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay"],
+                capture_output=True, text=True, timeout=5).stdout
+            for ln in r.splitlines()[1:]:
+                p = ln.split()
+                if len(p) >= 6 and p[0].startswith("/dev"):
+                    out.append(tuple(p[:6]))
+        except Exception:
+            pass
+        return out
+
+    def _open_system_update(self):
+        for cmd in ("mintupdate", "update-manager", "gnome-software --mode=updates", "pkupdate"):
+            if cmd_available(cmd):
+                detached_run(cmd)
+                return
+        detached_run("x-terminal-emulator -e sh -c "
+                     "'sudo apt update; sudo apt full-upgrade; echo; echo Listo; read x'")
+
+    def open_equipo(self, *_):
+        if getattr(self, "_eqwin", None) is not None:
+            self._close_eq_win()
+            return
+        win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        win.set_keep_above(True)
+        win.set_resizable(False)
+        win.set_size_request(440, -1)
+        win.get_style_context().add_class("fp-startmenu")
+        self._eqwin = win
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(14)
+        win.add(box)
+
+        head = Gtk.Box(spacing=10)
+        head.pack_start(Gtk.Image.new_from_icon_name("computer", Gtk.IconSize.DIALOG), False, False, 0)
+        ht = Gtk.Label()
+        ht.set_markup("<span size='large'><b>Equipo</b></span>")
+        ht.set_xalign(0)
+        head.pack_start(ht, True, True, 0)
+        box.pack_start(head, False, False, 4)
+        box.pack_start(Gtk.Separator(), False, False, 4)
+
+        nb = Gtk.Box(spacing=8)
+        nl = Gtk.Label()
+        nl.set_markup("Nombre del equipo:  <b>%s</b>" % GLib.markup_escape_text(socket.gethostname()))
+        nl.set_xalign(0)
+        nb.pack_start(nl, True, True, 0)
+        cb = Gtk.Button(label="Cambiar nombre")
+        cb.connect("clicked", lambda *_: self._change_hostname())
+        nb.pack_start(cb, False, False, 0)
+        box.pack_start(nb, False, False, 0)
+
+        sl = Gtk.Label()
+        sl.set_markup("Sistema:  <b>%s</b>" % GLib.markup_escape_text(self._os_pretty()))
+        sl.set_xalign(0)
+        box.pack_start(sl, False, False, 0)
+        kl = Gtk.Label()
+        kl.set_markup("Kernel:  <b>%s</b>" % GLib.markup_escape_text(os.uname().release))
+        kl.set_xalign(0)
+        box.pack_start(kl, False, False, 0)
+
+        total, used, free = self._ram_info()
+        rl = Gtk.Label()
+        rl.set_markup("Memoria RAM:  total <b>%.1f GB</b> · en uso <b>%.1f GB</b> · libre <b>%.1f GB</b>"
+                      % (total, used, free))
+        rl.set_xalign(0)
+        box.pack_start(rl, False, False, 0)
+
+        box.pack_start(self._section_label("Espacio en discos"), False, False, 4)
+        for src, tgt, size, used_d, avail, pct in self._disks():
+            dl = Gtk.Label()
+            dl.set_markup("<b>%s</b> (%s):  total %s · usado %s · libre %s  (%s)"
+                          % (GLib.markup_escape_text(tgt), GLib.markup_escape_text(src),
+                             size, used_d, avail, pct))
+            dl.set_xalign(0)
+            box.pack_start(dl, False, False, 0)
+
+        box.pack_start(Gtk.Separator(), False, False, 6)
+        btns = Gtk.Box(spacing=6)
+        ub = Gtk.Button(label="Buscar actualizaciones del sistema")
+        ub.connect("clicked", lambda *_: (self._close_eq_win(), self._open_system_update()))
+        btns.pack_start(ub, True, True, 0)
+        fb = Gtk.Button(label="Explorar archivos")
+        fb.connect("clicked", lambda *_: (self._close_eq_win(),
+                   detached_run("nemo computer:///" if cmd_available("nemo") else "xdg-open computer:///")))
+        btns.pack_start(fb, False, False, 0)
+        box.pack_start(btns, False, False, 0)
+
+        win.show_all()
+        geo = self._geo
+        _m, nat = win.get_preferred_size()
+        w, h = nat.width, nat.height
+        x = geo.x + (geo.width - w) // 2
+        y = geo.y + (geo.height - h) // 2
+        win.move(max(geo.x, x), max(geo.y, y))
+        win.connect("button-press-event", self._eq_click_outside)
+        win.connect("key-press-event", self._eq_key)
+        win.connect("destroy", lambda *_: setattr(self, "_eqwin", None))
+        GLib.idle_add(self._grab_eq_win, win)
+
+    def _change_hostname(self):
+        try:
+            self._eqwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        d = Gtk.Dialog(title="Cambiar nombre del equipo", transient_for=self._eqwin, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button("Aplicar", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        ca = d.get_content_area()
+        ca.set_border_width(10)
+        ca.set_spacing(6)
+        ca.add(Gtk.Label(label="Nuevo nombre del equipo (sin espacios):"))
+        e = Gtk.Entry()
+        e.set_text(socket.gethostname())
+        e.set_activates_default(True)
+        ca.add(e)
+        d.show_all()
+        resp = d.run()
+        name = re.sub(r"[^A-Za-z0-9-]", "-", e.get_text().strip())
+        d.destroy()
+        if resp == Gtk.ResponseType.OK and name and name != socket.gethostname():
+            self._notify("Cambiando nombre del equipo a %s..." % name)
+
+            def work():
+                ok, msg = self._run_priv(["hostnamectl", "set-hostname", name])
+                GLib.idle_add(self._after_hostname, ok, msg)
+            threading.Thread(target=work, daemon=True).start()
+        elif getattr(self, "_eqwin", None) is not None:
+            GLib.idle_add(self._grab_eq_win, self._eqwin)
+
+    def _after_hostname(self, ok, msg):
+        self._notify("Nombre del equipo actualizado" if ok else (msg or "Error"))
+        if getattr(self, "_eqwin", None) is not None:
+            self._close_eq_win()
+            self.open_equipo()
+        return False
+
+    def _grab_eq_win(self, win):
+        gw = win.get_window()
+        if gw is None:
+            return False
+        try:
+            win.get_display().get_default_seat().grab(
+                gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        except Exception:
+            pass
+        return False
+
+    def _eq_click_outside(self, win, event):
+        a = win.get_allocation()
+        if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
+            self._close_eq_win()
+            return True
+        return False
+
+    def _eq_key(self, win, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self._close_eq_win()
+            return True
+        return False
+
+    def _close_eq_win(self):
+        win = getattr(self, "_eqwin", None)
+        if win is None:
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._eqwin = None
+        win.destroy()
+
+    # ---------- mostrar escritorio ----------
+    def toggle_show_desktop(self, *_):
+        showing = self.wnck_screen.get_showing_desktop()
+        self.wnck_screen.toggle_showing_desktop(not showing)
+
+    # ---------- auto-actualización ----------
+    def _check_update_loop(self):
+        self._check_update_once()
+        return True   # seguir repitiendo cada UPDATE_INTERVAL
+
+    def _check_update_manual(self, *_):
+        """Disparado por el usuario (clic derecho): chequea y avisa el resultado."""
+        self._notify("Buscando actualizaciones del panel...")
+        threading.Thread(
+            target=lambda: self._check_update_once(notify_uptodate=True),
+            daemon=True).start()
+
+    def _check_update_once(self, notify_uptodate=False):
+        """Lee el archivo de versiones; si hay una nueva, baja el .py y reinicia."""
+        try:
+            req = urllib.request.Request(UPDATE_MANIFEST,
+                                         headers={"Cache-Control": "no-cache"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                man = json.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            sys.stderr.write("update: no se pudo leer manifiesto: %s\n" % e)
+            if notify_uptodate:
+                self._notify("No se pudo verificar actualizaciones (sin conexión)")
+            return False
+        newv = str(man.get("version", "")).strip()
+        if not newv or _vtuple(newv) <= _vtuple(VERSION):
+            if notify_uptodate:
+                self._notify("El panel ya está actualizado (v%s)" % VERSION)
+            return False
+        pyurl = man.get("py") or (UPDATE_BASE + "/factupos-panel.py")
+        try:
+            with urllib.request.urlopen(pyurl, timeout=25) as r:
+                data = r.read()
+        except Exception as e:
+            sys.stderr.write("update: descarga falló: %s\n" % e)
+            return False
+        # validación mínima: que sea realmente el script
+        if b"FactuPOS Panel" not in data or b"def main(" not in data:
+            sys.stderr.write("update: contenido inválido, se descarta\n")
+            return False
+        try:
+            os.makedirs(os.path.dirname(UPDATE_PY_LOCAL), exist_ok=True)
+            tmp = UPDATE_PY_LOCAL + ".new"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, UPDATE_PY_LOCAL)
+        except Exception as e:
+            sys.stderr.write("update: no se pudo guardar: %s\n" % e)
+            return False
+        sys.stderr.write("Panel %s -> %s actualizado, reiniciando...\n" % (VERSION, newv))
+        self._notify("FactuPOS Panel actualizado a la versión %s" % newv)
+        GLib.timeout_add_seconds(1, self._restart_self)
+        return False
+
+    def _restart_self(self):
+        try:
+            py = UPDATE_PY_LOCAL if os.path.exists(UPDATE_PY_LOCAL) else os.path.abspath(__file__)
+            os.execv(sys.executable, [sys.executable, py] + sys.argv[1:])
+        except Exception as e:
+            sys.stderr.write("update: no se pudo reiniciar: %s\n" % e)
+        return False
+
+    def _notify(self, msg):
+        if shutil.which("notify-send"):
+            try:
+                subprocess.Popen(["notify-send", "-i", "start-here",
+                                  "FactuPOS Panel", msg],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+    # ---------- menú Inicio (estilo Windows 2000 moderno, navy) ----------
+    def toggle_start_menu(self, *_):
+        if getattr(self, "_startwin", None) is not None:
+            self._close_start_menu()
+            return
+        win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        win.set_decorated(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        win.set_keep_above(True)
+        win.set_resizable(False)
+        win.set_size_request(340, -1)
+        win.get_style_context().add_class("fp-startmenu")
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        win.add(row)
+
+        # --- banner vertical "FactuPOS" ---
+        banner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        banner.get_style_context().add_class("fp-banner")
+        banner.set_size_request(40, -1)
+        bl = Gtk.Label()
+        bl.set_angle(90)
+        ver = os_version()
+        vtxt = ("   <span size='small'>V%s</span>" % GLib.markup_escape_text(ver)) if ver else ""
+        bl.set_markup("<span size='large'><b>FactuPOS OS</b></span>%s" % vtxt)
+        bl.set_valign(Gtk.Align.CENTER)
+        banner.pack_start(bl, True, True, 6)
+        row.pack_start(banner, False, False, 0)
+
+        # --- columna de opciones ---
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        col.set_size_request(280, -1)
+        col.set_border_width(4)
+        row.pack_start(col, True, True, 0)
+
+        ud, D = GLib.get_user_special_dir, GLib.UserDirectory
+        home = os.path.expanduser("~")
+        col.pack_start(self._mitem("Programas", "applications-other",
+            lambda w: self._open_flyout(self._programs_menu, w), arrow=True), False, False, 0)
+        col.pack_start(self._mitem("Utilidades", "applications-utilities",
+            lambda w: self._open_flyout(self._utils_menu, w), arrow=True), False, False, 0)
+        col.pack_start(self._mitem("Herramientas", "applications-system",
+            lambda w: self._open_flyout(self._tools_menu, w), arrow=True), False, False, 0)
+        col.pack_start(self._mitem("Documentos", "folder-documents", lambda *_:
+            detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_DOCUMENTS) or home))), False, False, 0)
+        col.pack_start(self._mitem("Imágenes", "folder-pictures", lambda *_:
+            detached_run("xdg-open %s" % shlex.quote(ud(D.DIRECTORY_PICTURES) or home))), False, False, 0)
+        col.pack_start(self._mitem("Equipo", "computer",
+            lambda *_: (self._close_start_menu(), self.open_equipo())), False, False, 0)
+        col.pack_start(self._msep(), False, False, 4)
+        col.pack_start(self._mitem("Configuración de sistema", "preferences-system",
+            lambda w: self._open_flyout(self._settings_menu, w), arrow=True), False, False, 0)
+        col.pack_start(self._mitem("Buscar archivos", "system-search", lambda *_:
+            detached_run("nemo" if cmd_available("nemo") else "xdg-open " + home)), False, False, 0)
+        col.pack_start(self._mitem("Ayuda y soporte", "help-browser", lambda *_:
+            detached_run("xdg-open https://soportereal.com")), False, False, 0)
+        col.pack_start(self._mitem("Ejecutar...", "system-run",
+            lambda *_: self._run_dialog()), False, False, 0)
+        col.pack_start(self._msep(), False, False, 4)
+        col.pack_start(self._mitem("Apagar", "system-shutdown",
+            lambda w: self._open_flyout(self._power_menu, w), arrow=True), False, False, 0)
+
+        win.show_all()
+        self._position_start_menu(win)
+        win.connect("button-press-event", self._start_menu_click_outside)
+        win.connect("key-press-event", self._start_menu_key)
+        win.connect("destroy", lambda *_: setattr(self, "_startwin", None))
+        self._startwin = win
+        GLib.idle_add(self._grab_start_menu, win)
+
+    # ---------- helpers del menú Inicio (Windows 2000) ----------
+    def _mitem(self, label, icon, on_click, arrow=False):
+        b = Gtk.Button()
+        b.set_relief(Gtk.ReliefStyle.NONE)
+        b.get_style_context().add_class("fp-mitem")
+        r = Gtk.Box(spacing=10)
+        r.pack_start(Gtk.Image.new_from_icon_name(icon or "application-x-executable",
+                                                  Gtk.IconSize.LARGE_TOOLBAR), False, False, 0)
+        l = Gtk.Label(label=label)
+        l.set_xalign(0)
+        r.pack_start(l, True, True, 0)
+        if arrow:
+            r.pack_start(Gtk.Image.new_from_icon_name("pan-end-symbolic", Gtk.IconSize.MENU),
+                         False, False, 0)
+        b.add(r)
+        b.connect("clicked", lambda _w: on_click(b))
+        return b
+
+    def _msep(self):
+        s = Gtk.Separator()
+        return s
+
+    def _img_menu_item(self, label, icon=None, gicon=None):
+        mi = Gtk.MenuItem()
+        box = Gtk.Box(spacing=8)
+        if gicon is not None:
+            img = Gtk.Image.new_from_gicon(gicon, Gtk.IconSize.MENU)
+        else:
+            img = Gtk.Image.new_from_icon_name(icon or "application-x-executable", Gtk.IconSize.MENU)
+        box.pack_start(img, False, False, 0)
+        l = Gtk.Label(label=label)
+        l.set_xalign(0)
+        box.pack_start(l, True, True, 0)
+        mi.add(box)
+        return mi
+
+    def _menu_header_item(self, text):
+        mi = Gtk.MenuItem()
+        mi.set_sensitive(False)
+        l = Gtk.Label()
+        l.set_markup("<b>%s</b>" % GLib.markup_escape_text(text))
+        l.set_xalign(0)
+        mi.add(l)
+        return mi
+
+    def _app_item(self, label, cmd=None, gicon=None, icon=None, appinfo=None):
+        mi = self._img_menu_item(label, icon=icon, gicon=gicon)
+        if appinfo is not None:
+            mi.connect("activate", lambda _w, a=appinfo: (self._close_start_menu(), self._launch_appinfo(a)))
+        else:
+            mi.connect("activate", lambda _w, c=cmd: (self._close_start_menu(), detached_run(c)))
+        return mi
+
+    def _programs_menu(self):
+        """Flyout único de 2 niveles: favoritos 'Programas' + apps por categoría
+        (con encabezados), SIN Utilidades/Herramientas (esos van en su propio menú)."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        added = False
+        for item in load_menu().get("Programas", []):
+            label, cmd, ic = (item + ["", "", ""])[:3]
+            if not cmd_available(cmd):
+                continue
+            menu.append(self._app_item(label, cmd=cmd, icon=ic))
+            added = True
+        buckets, otros = self._categorize()
+        for _k, es in list(CATEGORIES) + [("Otros", "Otros")]:
+            if es in ("Herramientas del sistema", "Accesorios", "Configuración"):
+                continue
+            apps = otros if es == "Otros" else buckets.get(es, [])
+            if not apps:
+                continue
+            if added:
+                menu.append(Gtk.SeparatorMenuItem())
+            menu.append(self._menu_header_item(es))
+            for nm, ai in apps:
+                menu.append(self._app_item(nm, gicon=ai.get_icon(), appinfo=ai))
+            added = True
+        return menu
+
+    def _category_menu(self, *cats):
+        """Flyout plano con las apps de una o más categorías (sin repetir)."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        buckets, otros = self._categorize()
+        added = False
+        for es in cats:
+            apps = otros if es == "Otros" else buckets.get(es, [])
+            if not apps:
+                continue
+            if added and len(cats) > 1:
+                menu.append(Gtk.SeparatorMenuItem())
+                menu.append(self._menu_header_item(es))
+            for nm, ai in apps:
+                menu.append(self._app_item(nm, gicon=ai.get_icon(), appinfo=ai))
+            added = True
+        if not added:
+            mi = Gtk.MenuItem(label="(sin elementos)")
+            mi.set_sensitive(False)
+            menu.append(mi)
+        return menu
+
+    def _utils_menu(self):
+        return self._category_menu("Accesorios")
+
+    def _tools_menu(self):
+        return self._category_menu("Herramientas del sistema")
+
+    def _settings_menu(self):
+        """Configuración de sistema: ajustes curados + categoría Configuración,
+        sin repetir (dedup por ejecutable)."""
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        seen = set()
+        curated = (
+            ("Panel de Control", "preferences-system", lambda: detached_run("cinnamon-settings"), "cinnamon-settings"),
+            ("Configurar red / WiFi", "network-wireless", self._open_net_config, ""),
+            ("Impresoras", "printer", lambda: detached_run("system-config-printer"), "system-config-printer"),
+            ("Administrador de tareas", "utilities-system-monitor", lambda: detached_run("@taskmgr"), ""),
+        )
+        for label, icon, cb, ex in curated:
+            mi = self._img_menu_item(label, icon)
+            mi.connect("activate", lambda _w, c=cb: (self._close_start_menu(), c()))
+            menu.append(mi)
+            if ex:
+                seen.add(ex)
+        buckets, _otros = self._categorize()
+        extras = [(nm, ai) for nm, ai in buckets.get("Configuración", [])
+                  if (ai.get_executable() or "").split("/")[-1] not in seen]
+        if extras:
+            menu.append(Gtk.SeparatorMenuItem())
+            for nm, ai in extras:
+                menu.append(self._app_item(nm, gicon=ai.get_icon(), appinfo=ai))
+        return menu
+
+    def _power_menu(self):
+        menu = Gtk.Menu()
+        menu.get_style_context().add_class("fp-flyout")
+        for label, icon, cmd in (
+            ("Apagar", "system-shutdown", "systemctl poweroff"),
+            ("Reiniciar", "system-reboot", "systemctl reboot"),
+            ("Suspender", "system-suspend", "systemctl suspend"),
+            ("Cerrar sesión", "system-log-out", "cinnamon-session-quit --logout"),
+        ):
+            mi = self._img_menu_item(label, icon)
+            mi.connect("activate", lambda _w, c=cmd: (self._close_start_menu(), detached_run(c)))
+            menu.append(mi)
+        return menu
+
+    def _open_flyout(self, build_menu, widget):
+        try:
+            self._startwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        menu = build_menu()
+        menu.connect("deactivate", lambda *_: GLib.idle_add(self._regrab_start))
+        menu.show_all()
+        # La cascada se abre a la derecha; hacia ARRIBA si la barra está abajo,
+        # hacia abajo si está arriba (para no salirse de pantalla).
+        if self.edge == "top":
+            wa, ma = Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_WEST
+        else:
+            wa, ma = Gdk.Gravity.NORTH_EAST, Gdk.Gravity.SOUTH_WEST
+        menu.popup_at_widget(widget, wa, ma, None)
+
+    def _regrab_start(self):
+        if getattr(self, "_startwin", None) is not None:
+            self._grab_start_menu(self._startwin)
+        return False
+
+    def _run_dialog(self):
+        try:
+            self._startwin.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        d = Gtk.Dialog(title="Ejecutar", transient_for=self._startwin, modal=True)
+        d.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        d.add_button("Ejecutar", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        ca = d.get_content_area()
+        ca.set_border_width(10)
+        ca.set_spacing(6)
+        ca.add(Gtk.Label(label="Programa o comando a ejecutar:"))
+        e = Gtk.Entry()
+        e.set_activates_default(True)
+        ca.add(e)
+        d.show_all()
+        resp = d.run()
+        cmd = e.get_text().strip()
+        d.destroy()
+        self._close_start_menu()
+        if resp == Gtk.ResponseType.OK and cmd:
+            detached_run(cmd)
+
+    def _categorize(self):
+        """Agrupa las apps instaladas por categoría (Accesorios, Internet, ...)."""
+        buckets = {es: [] for _k, es in CATEGORIES}
+        otros = []
+        for ai in Gio.AppInfo.get_all():
+            try:
+                if not ai.should_show():
+                    continue
+            except Exception:
+                continue
+            nm = ai.get_display_name() or ai.get_name() or ""
+            cats = ""
+            try:
+                cats = ai.get_categories() or ""
+            except Exception:
+                pass
+            cset = set(c for c in cats.split(";") if c)
+            ex = (ai.get_executable() or "").split("/")[-1].split()[0] \
+                if ai.get_executable() else ""
+            # 1) División curada Utilidades/Herramientas por ejecutable
+            if ex in FORCE_TOOLS:
+                buckets["Herramientas del sistema"].append((nm, ai))
+                continue
+            if ex in FORCE_UTILS:
+                buckets["Accesorios"].append((nm, ai))
+                continue
+            # 2) Categoría freedesktop (System gana sobre Utility por el orden)
+            placed = False
+            for key, es in CATEGORIES:
+                if key in cset:
+                    buckets[es].append((nm, ai))
+                    placed = True
+                    break
+            if not placed:
+                otros.append((nm, ai))
+        for es in buckets:
+            buckets[es].sort(key=lambda x: x[0].lower())
+        otros.sort(key=lambda x: x[0].lower())
+        return buckets, otros
+
+    def _launch_appinfo(self, ai):
+        try:
+            ai.launch(None, None)
+        except Exception as e:
+            _error_dialog("No se pudo abrir:\n%s" % e)
+
+    def _position_start_menu(self, win):
+        geo = self._geo
+        _m, nat = win.get_preferred_size()
+        ww = max(nat.width, 300)
+        wh = max(nat.height, 200)
+        if self.edge == "left":
+            x, y = geo.x + self.height, geo.y
+        elif self.edge == "right":
+            x, y = geo.x + geo.width - self.height - ww, geo.y
+        elif self.edge == "top":
+            x, y = geo.x + 2, geo.y + self.height
+        else:  # bottom
+            x, y = geo.x + 2, geo.y + geo.height - self.height - wh
+        win.move(x, y)
+
+    def _grab_start_menu(self, win):
+        gw = win.get_window()
+        if gw is None:
+            return False
+        try:
+            seat = win.get_display().get_default_seat()
+            seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        except Exception:
+            pass
+        return False
+
+    def _start_menu_click_outside(self, win, event):
+        a = win.get_allocation()
+        if event.x < 0 or event.y < 0 or event.x > a.width or event.y > a.height:
+            self._close_start_menu()
+            return True
+        return False
+
+    def _start_menu_key(self, win, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self._close_start_menu()
+            return True
+        return False
+
+    def _close_start_menu(self):
+        win = getattr(self, "_startwin", None)
+        if win is None:
+            return
+        try:
+            win.get_display().get_default_seat().ungrab()
+        except Exception:
+            pass
+        self._startwin = None
+        win.destroy()
+
+    # ---------- clic derecho en la barra (menú contextual tipo Windows) ----------
+    def _on_panel_click(self, widget, event):
+        if event.button != 3:
+            return False
+        menu = Gtk.Menu()
+
+        mi = Gtk.MenuItem(label="Administrador de tareas")
+        mi.connect("activate", lambda *_: detached_run("@taskmgr"))
+        menu.append(mi)
+
+        mi = Gtk.MenuItem(label="Mostrar el escritorio")
+        mi.connect("activate", self.toggle_show_desktop)
+        menu.append(mi)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # Submenú: mover la barra a otro monitor (útil con 2-3 pantallas)
+        disp = Gdk.Display.get_default()
+        n = disp.get_n_monitors()
+        if n > 1:
+            mover = Gtk.MenuItem(label="Mover la barra a")
+            sub = Gtk.Menu()
+            for i in range(n):
+                g = disp.get_monitor(i).get_geometry()
+                prim = ""
+                try:
+                    if disp.get_monitor(i).is_primary():
+                        prim = " · primario"
+                except Exception:
+                    pass
+                actual = " ✓" if i == (self.monitor_index
+                                       if self.monitor_index is not None
+                                       else self._primary_index()) else ""
+                it = Gtk.MenuItem(
+                    label="Monitor %d  (%dx%d)%s%s" % (i + 1, g.width, g.height, prim, actual))
+                it.connect("activate", lambda _w, idx=i: self.move_to_monitor(idx))
+                sub.append(it)
+            mover.set_submenu(sub)
+            menu.append(mover)
+
+        # Submenú: posición / orientación de la barra
+        pos = Gtk.MenuItem(label="Posición de la barra")
+        psub = Gtk.Menu()
+        for lbl, e in (("Arriba", "top"), ("Abajo", "bottom"),
+                       ("Izquierda (vertical)", "left"), ("Derecha (vertical)", "right")):
+            it = Gtk.MenuItem(label=lbl + ("  ✓" if e == self.edge else ""))
+            it.connect("activate", lambda _w, ed=e: self._set_edge(ed))
+            psub.append(it)
+        pos.set_submenu(psub)
+        menu.append(pos)
+        menu.append(Gtk.SeparatorMenuItem())
+
+        mi = Gtk.MenuItem(label="Buscar actualizaciones del panel")
+        mi.connect("activate", self._check_update_manual)
+        menu.append(mi)
+
+        mi = Gtk.MenuItem(label="Configuración del sistema")
+        mi.connect("activate", lambda *_: detached_run("cinnamon-settings"))
+        menu.append(mi)
+
+        mi = Gtk.MenuItem(label="Cerrar el panel de FactuPOS")
+        mi.connect("activate", lambda *_: Gtk.main_quit())
+        menu.append(mi)
+
+        menu.show_all()
+        menu.popup_at_pointer(event)
+        return True
+
+    # ---------- X11: strut + atajo global ----------
+    def _on_realize(self, *_):
+        if HAVE_XLIB:
+            try:
+                self._reserve_strut()
+            except Exception as e:
+                sys.stderr.write("strut: %s\n" % e)
+            if self.primary:   # los atajos globales se registran una sola vez
+                try:
+                    self._setup_hotkeys()
+                except Exception as e:
+                    sys.stderr.write("hotkey: %s\n" % e)
+                try:
+                    self._setup_tray()
+                except Exception as e:
+                    sys.stderr.write("tray: %s\n" % e)
+
+    def _reserve_strut(self):
+        xid = self.get_window().get_xid()
+        d = XDisplay()
+        w = d.create_resource_object("window", xid)
+        geo = self._geo
+        sh = d.screen().height_in_pixels
+        sw = d.screen().width_in_pixels
+        th = self.height
+        x1, x2 = geo.x, geo.x + geo.width - 1
+        y1, y2 = geo.y, geo.y + geo.height - 1
+        if self.edge == "top":
+            v = geo.y + th
+            strut = [0, 0, v, 0]
+            partial = [0, 0, v, 0, 0, 0, x1, x2, 0, 0, 0, 0]
+        elif self.edge == "bottom":
+            v = sh - (geo.y + geo.height) + th
+            strut = [0, 0, 0, v]
+            partial = [0, 0, 0, v, 0, 0, 0, 0, 0, 0, x1, x2]
+        elif self.edge == "left":
+            v = geo.x + th
+            strut = [v, 0, 0, 0]
+            partial = [v, 0, 0, 0, y1, y2, 0, 0, 0, 0, 0, 0]
+        else:  # right
+            v = sw - (geo.x + geo.width) + th
+            strut = [0, v, 0, 0]
+            partial = [0, v, 0, 0, 0, 0, y1, y2, 0, 0, 0, 0]
+        CARD = d.intern_atom("CARDINAL")
+        w.change_property(d.intern_atom("_NET_WM_STRUT"), CARD, 32, strut)
+        w.change_property(d.intern_atom("_NET_WM_STRUT_PARTIAL"), CARD, 32, partial)
+        d.flush()
+
+    def _setup_hotkeys(self):
+        d = XDisplay()
+        root = d.screen().root
+        root.change_attributes(event_mask=X.KeyPressMask)
+        combos = []
+        # Ctrl+Shift+Esc -> administrador de tareas
+        combos.append((XK.XK_Escape, X.ControlMask | X.ShiftMask, "@taskmgr"))
+        # Súper -> Inicio (best-effort; suele estar tomada por el WM)
+        combos.append((XK.XK_Super_L, 0, "@start"))
+        masks_extra = (0, X.Mod2Mask, X.LockMask, X.Mod2Mask | X.LockMask)
+        self._hotkey_map = {}
+        for keysym, mod, action in combos:
+            kc = d.keysym_to_keycode(keysym)
+            if not kc:
+                continue
+            self._hotkey_map[(kc, mod)] = action
+            for extra in masks_extra:
+                try:
+                    root.grab_key(kc, mod | extra, True,
+                                  X.GrabModeAsync, X.GrabModeAsync)
+                except Exception:
+                    pass
+        d.sync()
+        self._xhotkey = d
+        GLib.io_add_watch(d.fileno(), GLib.IO_IN, self._on_xevent)
+
+    def _on_xevent(self, source, condition):
+        d = self._xhotkey
+        while d.pending_events():
+            ev = d.next_event()
+            if ev.type != X.KeyPress:
+                continue
+            mod = ev.state & (X.ControlMask | X.ShiftMask | X.Mod4Mask)
+            # buscar acción ignorando Lock/Mod2
+            action = None
+            for (kc, m), a in self._hotkey_map.items():
+                if ev.detail == kc:
+                    action = a
+                    break
+            if action == "@start":
+                GLib.idle_add(self.toggle_start_menu)
+            elif action:
+                GLib.idle_add(lambda a=action: detached_run(a))
+            _ = mod
+        return True
+
+    # ---------- bandeja del sistema (XEmbed) ----------
+    def _setup_tray(self):
+        """Se vuelve el 'System Tray manager': las apps (AnyDesk, RustDesk,
+        Telegram...) piden meter su icono y los embebemos en la barra."""
+        d = XDisplay()
+        self._traydisp = d
+        screen = d.screen()
+        root = screen.root
+        sn = d.get_default_screen()
+        self._tray_sel = d.intern_atom("_NET_SYSTEM_TRAY_S%d" % sn)
+        self._atom_opcode = d.intern_atom("_NET_SYSTEM_TRAY_OPCODE")
+        self._tray_manager_atom = d.intern_atom("MANAGER")
+        orient_atom = d.intern_atom("_NET_SYSTEM_TRAY_ORIENTATION")
+        win = root.create_window(
+            -1, -1, 1, 1, 0, screen.root_depth,
+            window_class=X.InputOutput, visual=X.CopyFromParent,
+            background_pixel=screen.black_pixel,
+            event_mask=X.StructureNotifyMask | X.PropertyChangeMask)
+        self._traywin = win
+        win.change_property(orient_atom, Xatom.CARDINAL, 32,
+                            [1 if self.vertical else 0])
+        d.set_selection_owner(self._tray_sel, win, X.CurrentTime)
+        d.sync()
+        self._tray_announce()
+        GLib.io_add_watch(d.fileno(), GLib.IO_IN, self._on_tray_event)
+
+    def _tray_announce(self):
+        """Avisa al sistema que ya hay un tray manager -> las apps re-aparecen."""
+        d = self._traydisp
+        root = d.screen().root
+        ev = Xevent.ClientMessage(
+            window=root, client_type=self._tray_manager_atom,
+            data=(32, [X.CurrentTime, self._tray_sel, self._traywin.id, 0, 0]))
+        root.send_event(ev, event_mask=X.StructureNotifyMask)
+        d.sync()
+
+    def _on_tray_event(self, source, condition):
+        d = self._traydisp
+        while d.pending_events():
+            ev = d.next_event()
+            if ev.type == X.ClientMessage and ev.client_type == self._atom_opcode:
+                try:
+                    fmt, data = ev.data
+                except Exception:
+                    continue
+                if fmt == 32 and data[1] == 0:        # SYSTEM_TRAY_REQUEST_DOCK
+                    GLib.idle_add(self._tray_embed, data[2])
+        return True
+
+    def _tray_embed(self, xid):
+        box = getattr(self, "_tray_box", None)
+        if box is None:
+            return False
+        try:
+            sock = Gtk.Socket()
+            box.pack_start(sock, False, False, 0)
+            sock.show()
+            sock.add_id(xid)
+        except Exception as e:
+            sys.stderr.write("tray embed: %s\n" % e)
+        return False
+
+
+def main():
+    ap = argparse.ArgumentParser(description="FactuPOS Panel")
+    ap.add_argument("--edge", choices=["bottom", "top", "left", "right"], default="bottom",
+                    help="borde de la pantalla: bottom/top (horizontal) o left/right (vertical)")
+    ap.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
+    ap.add_argument("--monitor", default=None,
+                    help="índice de monitor (0,1,2...), 'all' para TODOS, o vacío = primario")
+    ap.add_argument("--list-monitors", action="store_true",
+                    help="lista los monitores detectados y sale")
+    args = ap.parse_args()
+
+    if args.list_monitors:
+        disp = Gdk.Display.get_default()
+        for i in range(disp.get_n_monitors()):
+            m = disp.get_monitor(i)
+            g = m.get_geometry()
+            prim = " (primario)" if (hasattr(disp, "get_primary_monitor")
+                                     and disp.get_monitor(i) == disp.get_primary_monitor()) else ""
+            model = ""
+            try:
+                model = m.get_model() or ""
+            except Exception:
+                pass
+            print("Monitor %d: %dx%d en (%d,%d) %s%s"
+                  % (i, g.width, g.height, g.x, g.y, model, prim))
+        return
+
+    # Wnck necesita un nombre de aplicación.
+    try:
+        Wnck.set_client_type(Wnck.ClientType.PAGER)
+    except Exception:
+        pass
+
+    # ¿En qué monitores? "all" = todos; un número = ese; vacío = primario.
+    if args.monitor is None:
+        monitors = [None]
+    elif str(args.monitor).lower() == "all":
+        monitors = list(range(Gdk.Display.get_default().get_n_monitors()))
+    else:
+        try:
+            monitors = [int(args.monitor)]
+        except ValueError:
+            monitors = [None]
+
+    # Una barra por monitor (en UN solo proceso). Solo la 1a es "primaria"
+    # (maneja atajos globales y auto-actualización; las demás solo se muestran).
+    panels = []
+    for idx, m in enumerate(monitors):
+        p = Panel(edge=args.edge, height=args.height, monitor=m, primary=(idx == 0))
+        p.show_all()
+        panels.append(p)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

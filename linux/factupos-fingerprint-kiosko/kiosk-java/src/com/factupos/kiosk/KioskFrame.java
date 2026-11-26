@@ -19,24 +19,18 @@ import javax.swing.plaf.basic.BasicButtonUI;
  */
 public final class KioskFrame {
 
-    // Paleta — TEMA NAVY (#2698): fondo azul marino, texto claro y acentos vivos.
-    // Los botones son redondeados con borde (RoundButton) y no dependen del L&F.
-    static final Color BG        = hex("#0b1533");   // fondo principal (navy)
-    static final Color HDR       = hex("#14224d");   // header / tarjetas
-    static final Color FG_DIM    = hex("#b4c2e0");   // texto secundario
-    static final Color FG_MUTE   = hex("#7184ad");   // texto tenue / desconectado
-    static final Color FG_LIGHT  = hex("#e2e8f0");   // texto principal
-    static final Color FG_WHITE  = hex("#ffffff");   // texto destacado (nombre)
-    static final Color GREEN     = hex("#22c55e");
-    static final Color BLUE      = hex("#38bdf8");
-    static final Color RED       = hex("#f43f5e");
-    static final Color AMBER     = hex("#fbbf24");
-    static final Color SLATE     = hex("#334155");   // fondo de botón secundario
-    // Acentos de los botones
-    static final Color VIOLET    = hex("#7c3aed");
-    static final Color ROYAL     = hex("#2563eb");
-    static final Color CYAN      = hex("#0891b2");
-    static final Color ROSE      = hex("#e11d48");
+    // Paleta — TEMA BLANCO (texto oscuro sobre fondo blanco)
+    static final Color BG        = hex("#ffffff");   // fondo principal
+    static final Color HDR       = hex("#eef2f7");   // header / botones suaves
+    static final Color FG_DIM    = hex("#475569");   // texto secundario
+    static final Color FG_MUTE   = hex("#94a3b8");   // texto tenue / desconectado
+    static final Color FG_LIGHT  = hex("#1e293b");   // texto principal
+    static final Color FG_WHITE  = hex("#0f172a");   // texto destacado (nombre)
+    static final Color GREEN     = hex("#16a34a");
+    static final Color BLUE      = hex("#0284c7");
+    static final Color RED       = hex("#dc2626");
+    static final Color AMBER     = hex("#d97706");
+    static final Color SLATE     = hex("#e2e8f0");   // fondo de botón secundario (claro)
     // Escala global de tipografía (letra grande)
     static final double FSCALE   = 1.40;
     static final DateTimeFormatter HMS = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -64,7 +58,7 @@ public final class KioskFrame {
 
     // UI
     private JFrame frame;
-    private JLabel led, lblStatus, lblClock, lblFecha, lblCompany, lblDb, lblFp, lblMsg;
+    private JLabel led, lblStatus, lblClock, lblCompany, lblDb, lblFp, lblMsg;
     private JLabel lblResAction, lblResName, lblResTime;
     private boolean isFullscreen;
     private TrayIcon trayIcon;
@@ -108,11 +102,6 @@ public final class KioskFrame {
         frame.setAlwaysOnTop(true);
         frame.setAlwaysOnTop(false);   // pulso para forzar el foco en algunos WM
         frame.requestFocus();
-        // Segundo empujon (#2698): muffin a veces ignora el primer toFront() de una
-        // ventana recien mapeada y la deja detras -> "le doy Abrir y no abre".
-        Timer t = new Timer(250, e -> { frame.toFront(); frame.requestFocus(); });
-        t.setRepeats(false);
-        t.start();
     }
 
     // ---------------- UI ----------------
@@ -143,27 +132,22 @@ public final class KioskFrame {
         root.setBackground(BG);
         root.setLayout(new BorderLayout());
 
-        // ── Diseño navy (#2698) ─────────────────────────────────────────────
-        // Encabezado con degradado (estado + reloj grande + fecha), tarjeta central
-        // con la huella dentro de un anillo que toma el color del estado, y los
-        // botones en cuadrícula 2×2 para que quepan los cuatro en la ventana angosta.
-        JPanel hdr = new GradientPanel(hex("#1e1b4b"), hex("#1e3a8a"));
+        // Header (apilado vertical: 1) nombre del lector  2) reloj DEBAJO — sin solaparse)
+        JPanel hdr = new JPanel();
+        hdr.setBackground(HDR);
         hdr.setLayout(new BoxLayout(hdr, BoxLayout.Y_AXIS));
-        hdr.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 3, 0, VIOLET),
-                BorderFactory.createEmptyBorder(10, 14, 12, 14)));
-        RoundPanel pill = new RoundPanel(new Color(255, 255, 255, 28), new Color(255, 255, 255, 60));
-        pill.setLayout(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        led = new JLabel("●"); led.setForeground(FG_MUTE); led.setFont(font(11));
-        lblStatus = new JLabel("Conectando..."); lblStatus.setForeground(FG_LIGHT); lblStatus.setFont(font(10, true));
-        pill.add(led); pill.add(lblStatus);
-        JPanel pillRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        pillRow.setOpaque(false); pillRow.add(pill);
-        pillRow.setAlignmentX(Component.CENTER_ALIGNMENT);
-        hdr.add(pillRow);
-        hdr.add(Box.createVerticalStrut(6));
-        lblClock = label("--:--:--", FG_WHITE, mono(26, true)); addCentered(hdr, lblClock);
-        lblFecha = label(fechaHoy(), hex("#c7d2fe"), font(10)); addCentered(hdr, lblFecha);
+        hdr.setBorder(BorderFactory.createEmptyBorder(8, 14, 8, 14));
+        JPanel hl = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        hl.setOpaque(false); hl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        led = new JLabel("●"); led.setForeground(FG_MUTE); led.setFont(font(14));
+        lblStatus = new JLabel("Conectando..."); lblStatus.setForeground(FG_DIM); lblStatus.setFont(font(12));
+        hl.add(led); hl.add(lblStatus);
+        hdr.add(hl);
+        JPanel cl = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        cl.setOpaque(false); cl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblClock = new JLabel("--:--:--"); lblClock.setForeground(FG_LIGHT); lblClock.setFont(mono(15, true));
+        cl.add(lblClock);
+        hdr.add(cl);
         root.add(hdr, BorderLayout.NORTH);
 
         // Centro
@@ -174,73 +158,58 @@ public final class KioskFrame {
 
         JPanel tituloRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
         tituloRow.setOpaque(false);
-        lblCompany = new JLabel(cfg.titulo); lblCompany.setForeground(FG_WHITE); lblCompany.setFont(font(15, true));
-        RoundPanel verPill = new RoundPanel(hex("#facc15"), null);
-        verPill.setLayout(new FlowLayout(FlowLayout.CENTER, 6, 1));
-        JLabel verTxt = new JLabel("v" + Main.APP_VERSION);
-        verTxt.setForeground(hex("#1e1b4b")); verTxt.setFont(font(9, true));
-        verPill.add(verTxt);
+        lblCompany = new JLabel(cfg.titulo); lblCompany.setForeground(hex("#cbd5e1")); lblCompany.setFont(font(15, true));
+        JLabel verPill = new JLabel(" v" + Main.APP_VERSION + " ");
+        verPill.setOpaque(true); verPill.setBackground(hex("#ffff00")); verPill.setForeground(Color.BLACK); verPill.setFont(font(10, true));
         tituloRow.add(lblCompany); tituloRow.add(verPill);
-        // Sin tope de alto, BoxLayout le reparte el espacio sobrante y deja un hueco
-        tituloRow.setMaximumSize(new Dimension(9999, tituloRow.getPreferredSize().height));
         addCentered(mid, tituloRow);
 
         String ident = !cfg.token.isEmpty() ? ("Token: " + serverdb)
                      : (!cfg.db.isEmpty() ? ("Empresa: " + cfg.db) : "(sin configurar)");
         lblDb = label(ident, FG_MUTE, font(10)); addCentered(mid, lblDb);
-        mid.add(Box.createVerticalStrut(10));
 
-        // Tarjeta: anillo con la huella + mensaje + resultado de la marca
-        RoundPanel card = new RoundPanel(HDR, hex("#2e3f78"));
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(BorderFactory.createEmptyBorder(16, 12, 14, 12));
-        lblFp = new JLabel("🖊"); lblFp.setForeground(FG_MUTE); lblFp.setFont(font(44));
-        lblFp.setHorizontalAlignment(SwingConstants.CENTER);
-        RingPanel ring = new RingPanel(lblFp);
-        addCentered(card, ring);
-        card.add(Box.createVerticalStrut(10));
-        lblMsg = label("Coloque su dedo en el lector", FG_LIGHT, font(13, true));
+        mid.add(Box.createVerticalStrut(10));
+        lblFp = new JLabel("🖊"); lblFp.setForeground(FG_MUTE); lblFp.setFont(font(56));
+        addCentered(mid, lblFp);
+        lblMsg = label("Coloque su dedo en el lector", FG_DIM, font(13));
         lblMsg.setHorizontalAlignment(SwingConstants.CENTER);
-        addCentered(card, lblMsg);
+        addCentered(mid, lblMsg);
 
         // Botón que aparece SOLO cuando el lector no está detectado
         btnReconnect = flatButton("↻ Reiniciar servicio del lector", hex("#0284c7"), Color.WHITE);
-        btnReconnect.setFont(font(12, true));
+        btnReconnect.setFont(font(13, true));
         btnReconnect.addActionListener(e -> serviceAction("restart"));
         btnReconnect.setVisible(false);
-        card.add(Box.createVerticalStrut(8));
-        addCentered(card, btnReconnect);
+        mid.add(Box.createVerticalStrut(8));
+        addCentered(mid, btnReconnect);
 
-        card.add(Box.createVerticalStrut(4));
-        lblResAction = label("", FG_LIGHT, font(12, true)); addCentered(card, lblResAction);
-        lblResName = label("", FG_WHITE, font(20, true)); addCentered(card, lblResName);
-        lblResTime = label("", FG_DIM, font(10)); addCentered(card, lblResTime);
-        card.setMaximumSize(new Dimension(9999, 9999));
-        addCentered(mid, card);
+        mid.add(Box.createVerticalStrut(6));
+        lblResAction = label("", FG_LIGHT, font(12, true)); addCentered(mid, lblResAction);
+        lblResName = label("", FG_WHITE, font(20, true)); addCentered(mid, lblResName);
+        lblResTime = label("", FG_DIM, font(10)); addCentered(mid, lblResTime);
+        mid.add(Box.createVerticalGlue());
         root.add(mid, BorderLayout.CENTER);
 
-        // Footer: botones en 2×2
+        // Footer
         JPanel ftr = new JPanel();
         ftr.setBackground(BG);
         ftr.setLayout(new BoxLayout(ftr, BoxLayout.Y_AXIS));
-        ftr.setBorder(BorderFactory.createEmptyBorder(0, 16, 8, 16));
-        JPanel btns = new JPanel(new GridLayout(2, 2, 8, 8));
+        ftr.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
         btns.setOpaque(false);
-        JButton btnEnroll = flatButton("✋ Registrar huella", VIOLET, Color.WHITE);
+        JButton btnEnroll = flatButton("✋ Registrar huella", HDR, FG_LIGHT);
         btnEnroll.addActionListener(e -> openEnroll());
-        JButton btnCfg = flatButton("⚙ Config", ROYAL, Color.WHITE);
+        JButton btnCfg = flatButton("⚙ Config", HDR, FG_DIM);
         btnCfg.addActionListener(e -> { if (askPassword()) openTokenConfig(); });
-        JButton btnUpd = flatButton("⟳ Actualizar", CYAN, Color.WHITE);
+        JButton btnUpd = flatButton("⟳ Actualizar", HDR, FG_DIM);
         btnUpd.addActionListener(e -> checkUpdateManual());
-        JButton btnExit = flatButton("⏻ Salir", ROSE, Color.WHITE);
+        JButton btnExit = flatButton("⏻ Salir", hex("#fee2e2"), RED);
         btnExit.addActionListener(e -> exitApp());
         btns.add(btnEnroll); btns.add(btnCfg); btns.add(btnUpd); btns.add(btnExit);
-        btns.setMaximumSize(new Dimension(9999, btns.getPreferredSize().height));
         addCentered(ftr, btns);
-        ftr.add(Box.createVerticalStrut(8));
-        JLabel verLine = label("v" + Main.APP_VERSION + "  ·  build " + Main.BUILD_DATE, BLUE, font(9, true));
+        JLabel verLine = label("v" + Main.APP_VERSION + "  ·  build " + Main.BUILD_DATE, BLUE, font(10, true));
         addCentered(ftr, verLine);
-        JLabel tipLine = label("Esc = ocultar   ·   la X minimiza   ·   Salir/F10 = cerrar", FG_MUTE, font(8));
+        JLabel tipLine = label("Esc = pantalla completa   ·   la X minimiza   ·   Salir/F10 = cerrar", FG_MUTE, font(8));
         addCentered(ftr, tipLine);
         root.add(ftr, BorderLayout.SOUTH);
 
@@ -288,10 +257,7 @@ public final class KioskFrame {
     }
 
     private void startClock() {
-        Timer t = new Timer(1000, e -> {
-            lblClock.setText(LocalTime.now().format(HMS));
-            lblFecha.setText(fechaHoy());   // cambia sola a medianoche
-        });
+        Timer t = new Timer(1000, e -> lblClock.setText(LocalTime.now().format(HMS)));
         t.start();
     }
 
@@ -424,10 +390,7 @@ public final class KioskFrame {
                 // el lector puede estar perfecto y aun asi no haber bajado ninguna huella.
                 setStatus(!apiError.isEmpty()
                         ? "✗ " + apiError
-                        : "Lector listo  ·  " + usersLoaded + (usersLoaded == 1 ? " huella" : " huellas"));
-                // #2698: el nombre largo del lector («Digital Persona U.are.U 4000/4000B/4500»)
-                // no cabía en la pastilla y se cortaba: va en el tooltip.
-                if (fpDevice != null && !fpDevice.isEmpty()) ui(() -> lblStatus.setToolTipText(fpDevice));
+                        : ((fpDevice == null || fpDevice.isEmpty()) ? "Lector listo" : fpDevice) + "  ·  " + usersLoaded + " huella(s)");
                 setFpColor(GREEN);
             }
         } else {
@@ -583,32 +546,13 @@ public final class KioskFrame {
         if (trayIcon != null) return true;
         if (!SystemTray.isSupported()) return false;
         try {
-            // Menu legible (#2698): la letra por defecto de AWT salia diminuta y
-            // "Abrir/Salir" no decia que abria ni que cerraba.
             PopupMenu menu = new PopupMenu();
-            menu.setFont(new Font("SansSerif", Font.PLAIN, 16));
-            MenuItem miTit  = new MenuItem("FactuPOS - " + cfg.titulo);
-            miTit.setFont(new Font("SansSerif", Font.BOLD, 16));
-            miTit.setEnabled(false);
-            MenuItem miOpen = new MenuItem("Abrir / ver el marcaje");
-            miOpen.addActionListener(e -> showWindow());
-            MenuItem miHide = new MenuItem("Ocultar la ventana");
-            miHide.addActionListener(e -> ui(this::ocultarATray));
-            MenuItem miExit = new MenuItem("Cerrar el kiosko (pide clave)");
-            miExit.addActionListener(e -> exitApp());
-            menu.add(miTit); menu.addSeparator();
-            menu.add(miOpen); menu.add(miHide); menu.addSeparator(); menu.add(miExit);
+            MenuItem miOpen = new MenuItem("Abrir"); miOpen.addActionListener(e -> showWindow());
+            MenuItem miExit = new MenuItem("Salir");  miExit.addActionListener(e -> exitApp());
+            menu.add(miOpen); menu.addSeparator(); menu.add(miExit);
             TrayIcon ti = new TrayIcon(makeTrayImage(FG_MUTE), "FactuPOS Kiosko Huella", menu);
             ti.setImageAutoSize(true);
-            ti.addActionListener(e -> showWindow());   // doble click -> abrir
-            // Un solo clic izquierdo tambien abre (#2698): en Linux el ActionEvent
-            // del TrayIcon solo llega con doble clic, y si el segundo clic cae un
-            // poco tarde no pasa nada.
-            ti.addMouseListener(new java.awt.event.MouseAdapter() {
-                @Override public void mouseClicked(java.awt.event.MouseEvent e) {
-                    if (e.getButton() == java.awt.event.MouseEvent.BUTTON1) showWindow();
-                }
-            });
+            ti.addActionListener(e -> showWindow());   // click / doble click -> abrir normal
             SystemTray.getSystemTray().add(ti);
             trayIcon = ti;      // solo se guarda si el add() NO tiro excepcion
             lastTrayConn = null;   // que el proximo updateTray() repinte el color
@@ -636,13 +580,13 @@ public final class KioskFrame {
         }
     }
 
-    /** Abrir desde la bandeja = el mismo camino que usa la segunda instancia.
-     *  Antes ponia NORMAL con la ventana todavia oculta y recien despues la
-     *  mostraba: si se habia escondido minimizando, a veces volvia a aparecer
-     *  minimizada o detras de otra ventana (#2698). */
     private void showWindow() {
-        Log.i("Bandeja: abrir ventana");
-        ui(this::showToFront);
+        ui(() -> {
+            frame.setExtendedState(Frame.NORMAL);
+            frame.setVisible(true);
+            frame.toFront();
+            frame.requestFocus();
+        });
     }
 
     private Image makeTrayImage(Color c) {
@@ -787,9 +731,10 @@ public final class KioskFrame {
         JDialog d = baseDialog("Token / Configuracion del kiosko", 620, 620);
         JPanel body = (JPanel) d.getContentPane();
 
-        // Fondo navy (#2698): titulos en blanco y explicaciones en gris claro, grandes.
-        final Color TXT  = FG_WHITE;                // titulos de cada casilla
-        final Color HINT = FG_DIM;                  // explicaciones
+        // OJO: este dialogo tiene fondo BLANCO. Las etiquetas iban en gris claro (FG_DIM) y
+        // practicamente no se leian. Todo el texto de aqui va en NEGRO/gris oscuro y mas grande.
+        final Color TXT  = Color.BLACK;             // titulos de cada casilla
+        final Color HINT = hex("#334155");          // explicaciones (gris oscuro, legible en blanco)
 
         body.add(title("Configuracion del kiosko"));
         body.add(label("Cada dato va en su casilla. Si te equivocas, al guardar te avisa.",
@@ -817,11 +762,11 @@ public final class KioskFrame {
         body.add(Box.createVerticalStrut(12));
 
         // --- Control del servicio del lector ---
-        body.add(label("Servicio del lector:", FG_WHITE, font(13, true)));
+        body.add(label("Servicio del lector:", Color.BLACK, font(13, true)));
         JPanel svcRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0)); svcRow.setOpaque(false);
         JButton btnRestart = flatButton("↻ Reiniciar servicio", hex("#0284c7"), Color.WHITE);
-        JButton btnStop    = flatButton("■ Detener servicio", ROSE, Color.WHITE);
-        JButton btnStart   = flatButton("▶ Iniciar servicio", hex("#16a34a"), Color.WHITE);
+        JButton btnStop    = flatButton("■ Detener servicio", hex("#fee2e2"), RED);
+        JButton btnStart   = flatButton("▶ Iniciar servicio", hex("#dcfce7"), hex("#166534"));
         btnRestart.addActionListener(e -> serviceAction("restart"));
         btnStop.addActionListener(e -> serviceAction("stop"));
         btnStart.addActionListener(e -> serviceAction("start"));
@@ -882,14 +827,14 @@ public final class KioskFrame {
         body.add(label(serverdb != null && !serverdb.isEmpty() ? ("Empresa: " + serverdb) : "", FG_MUTE, font(9)));
         body.add(Box.createVerticalStrut(10));
 
-        body.add(label("Empleado:", FG_LIGHT, font(11)));
-        JComboBox<String> cmb = new JComboBox<>(); cmb.setFont(font(12)); comboClaro(cmb); cmb.setMaximumSize(new Dimension(9999, 36));
+        body.add(label("Empleado:", hex("#cbd5e1"), font(11)));
+        JComboBox<String> cmb = new JComboBox<>(); cmb.setFont(font(12)); cmb.setMaximumSize(new Dimension(9999, 36));
         cmb.setMaximumRowCount(18);   // mostrar más usuarios en la lista desplegable
         body.add(cmb);
         body.add(Box.createVerticalStrut(6));
-        body.add(label("Dedo:", FG_LIGHT, font(11)));
+        body.add(label("Dedo:", hex("#cbd5e1"), font(11)));
         JComboBox<String> dedo = new JComboBox<>(new String[]{"right-index", "right-thumb", "right-middle", "left-index", "left-thumb"});
-        dedo.setSelectedItem(cfg.dedoDefault); dedo.setFont(font(11)); comboClaro(dedo); dedo.setMaximumSize(new Dimension(9999, 30));
+        dedo.setSelectedItem(cfg.dedoDefault); dedo.setFont(font(11)); dedo.setMaximumSize(new Dimension(9999, 30));
         body.add(dedo);
         body.add(Box.createVerticalStrut(8));
         JLabel state = label("Cargando empleados...", FG_DIM, font(10)); body.add(state);
@@ -1117,10 +1062,10 @@ public final class KioskFrame {
 
     private JTextField darkField(String val) {
         JTextField tf = new JTextField(val == null ? "" : val);
-        tf.setBackground(HDR); tf.setForeground(FG_WHITE); tf.setCaretColor(FG_WHITE);
+        tf.setBackground(BG); tf.setForeground(FG_LIGHT); tf.setCaretColor(FG_LIGHT);
         tf.setFont(font(11));
         tf.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(hex("#4f63a8"), 1, true),
+                BorderFactory.createLineBorder(hex("#475569")),
                 BorderFactory.createEmptyBorder(5, 6, 5, 6)));
         tf.setMaximumSize(new Dimension(9999, 34));
         tf.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -1148,132 +1093,21 @@ public final class KioskFrame {
         }
     }
 
-    /** Boton redondeado con borde (#2698). Lo pinta el mismo: el L&F GTK ignora
-     *  los colores de los JButton y Metal los dibuja cuadrados. El borde es el mismo
-     *  color de fondo aclarado (u oscurecido si el fondo es claro), y el fondo se
-     *  aclara al pasar el mouse y se oscurece al apretar. Toma getBackground() en
-     *  cada pintada, asi que setBackground() despues de creado sigue funcionando. */
     private static JButton flatButton(String text, Color bg, Color fg) {
-        JButton b = new JButton(text) {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color base = getBackground();
-                ButtonModel m = getModel();
-                Color fill = !isEnabled() ? mezclar(base, BG, 0.55)
-                           : m.isPressed() ? mezclar(base, Color.BLACK, 0.18)
-                           : m.isRollover() ? mezclar(base, Color.WHITE, 0.12) : base;
-                boolean claro = (base.getRed() * 299 + base.getGreen() * 587 + base.getBlue() * 114) / 1000 > 170;
-                Color borde = claro ? mezclar(base, Color.BLACK, 0.30) : mezclar(base, Color.WHITE, 0.45);
-                int w = getWidth(), h = getHeight(), arc = Math.min(h, 22);
-                g2.setColor(fill);
-                g2.fillRoundRect(1, 1, w - 2, h - 2, arc, arc);
-                g2.setStroke(new BasicStroke(2f));
-                g2.setColor(borde);
-                g2.drawRoundRect(1, 1, w - 3, h - 3, arc, arc);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        b.setUI(new BasicButtonUI() {
-            // Deshabilitado, BasicButtonUI grabaría el texto con sombra del mismo
-            // color del fondo y quedaba ilegible: se atenúa en vez de esconderse.
-            @Override protected void paintText(Graphics g, AbstractButton ab, Rectangle r, String t) {
-                g.setColor(ab.isEnabled() ? ab.getForeground() : mezclar(ab.getForeground(), BG, 0.40));
-                g.setFont(ab.getFont());
-                javax.swing.plaf.basic.BasicGraphicsUtils.drawStringUnderlineCharAt(
-                        ab, (Graphics2D) g, t, -1, r.x, r.y + g.getFontMetrics().getAscent());
-            }
-        });
+        JButton b = new JButton(text);
+        // CLAVE: el L&F GTK (Linux) ignora setBackground/setForeground en los
+        // JButton y los pinta con el tema nativo (oscuro en FactuPOS OS) => texto
+        // invisible. BasicButtonUI + opaque hace que el botón pinte SUS colores.
+        b.setUI(new BasicButtonUI());
         b.setBackground(bg); b.setForeground(fg);
-        b.setOpaque(false); b.setContentAreaFilled(false);
-        b.setFocusPainted(false); b.setBorderPainted(false);
-        b.setRolloverEnabled(true);
-        b.setFont(font(11, true)); b.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        b.setBorder(BorderFactory.createEmptyBorder(9, 16, 9, 16));
+        b.setOpaque(true); b.setContentAreaFilled(true);
+        b.setFocusPainted(false); b.setBorderPainted(true);
+        b.setFont(font(11)); b.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        // borde sutil para que el botón se delimite incluso si su fondo es claro
+        b.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(hex("#cbd5e1"), 1, true),
+            BorderFactory.createEmptyBorder(7, 12, 7, 12)));
         return b;
-    }
-
-    /** Lista desplegable blanca con letra navy: legible sobre el fondo oscuro. */
-    private static void comboClaro(JComboBox<?> c) {
-        c.setBackground(Color.WHITE);
-        c.setForeground(BG);
-    }
-
-    private static Color mezclar(Color a, Color b, double t) {
-        return new Color((int) Math.round(a.getRed()   + (b.getRed()   - a.getRed())   * t),
-                         (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
-                         (int) Math.round(a.getBlue()  + (b.getBlue()  - a.getBlue())  * t));
-    }
-
-    private static final DateTimeFormatter FECHA =
-            DateTimeFormatter.ofPattern("EEEE d 'de' MMMM 'de' yyyy", new java.util.Locale("es", "CR"));
-
-    private static String fechaHoy() {
-        String f = java.time.LocalDate.now().format(FECHA);
-        return f.isEmpty() ? f : Character.toUpperCase(f.charAt(0)) + f.substring(1);
-    }
-
-    /** Panel con degradado diagonal (encabezado). */
-    private static final class GradientPanel extends JPanel {
-        private final Color a, b;
-        GradientPanel(Color a, Color b) { this.a = a; this.b = b; setOpaque(true); }
-        @Override protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setPaint(new GradientPaint(0, 0, a, getWidth(), getHeight(), b));
-            g2.fillRect(0, 0, getWidth(), getHeight());
-            g2.dispose();
-        }
-    }
-
-    /** Panel redondeado con relleno y borde opcional (tarjeta, pastillas). */
-    private static final class RoundPanel extends JPanel {
-        private final Color fill, border;
-        RoundPanel(Color fill, Color border) { this.fill = fill; this.border = border; setOpaque(false); }
-        @Override protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int arc = Math.min(getHeight(), 28);
-            g2.setColor(fill);
-            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, arc, arc);
-            if (border != null) {
-                g2.setStroke(new BasicStroke(1.5f));
-                g2.setColor(border);
-                g2.drawRoundRect(1, 1, getWidth() - 3, getHeight() - 3, arc, arc);
-            }
-            g2.dispose();
-        }
-    }
-
-    /** Círculo con anillo alrededor del ícono de la huella. Toma el color del
-     *  ícono (gris = sin lector, verde = listo, ámbar = trabajando, rojo = error),
-     *  así que nadie tiene que acordarse de pintarlo aparte. */
-    private static final class RingPanel extends JPanel {
-        private final JLabel icon;
-        RingPanel(JLabel icon) {
-            this.icon = icon;
-            setOpaque(false);
-            setLayout(new BorderLayout());
-            add(icon, BorderLayout.CENTER);
-            int d = (int) Math.round(118 * FSCALE / 1.4);
-            Dimension dim = new Dimension(d, d);
-            setPreferredSize(dim); setMinimumSize(dim); setMaximumSize(dim);
-            icon.addPropertyChangeListener("foreground", e -> repaint());
-        }
-        @Override protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            Color c = icon.getForeground();
-            int s = Math.min(getWidth(), getHeight()) - 8, x = (getWidth() - s) / 2, y = (getHeight() - s) / 2;
-            g2.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 40));
-            g2.fillOval(x - 3, y - 3, s + 6, s + 6);   // halo
-            g2.setColor(BG);
-            g2.fillOval(x, y, s, s);
-            g2.setStroke(new BasicStroke(4f));
-            g2.setColor(c);
-            g2.drawOval(x + 2, y + 2, s - 4, s - 4);
-            g2.dispose();
-        }
     }
 
     private static void addCentered(JComponent parent, JComponent child) {

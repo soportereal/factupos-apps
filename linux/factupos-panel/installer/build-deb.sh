@@ -44,17 +44,6 @@ chmod 755 "$STAGE/usr/bin/$PKG"
 install -d "$STAGE/usr/share/applications"
 install -m644 "$HERE/$PKG.desktop" "$STAGE/usr/share/applications/$PKG.desktop"
 
-# Soporte Remoto FactuPOS (#2942): diadema amarilla (iconos/diadema.py) + lanzador de RustDesk
-# con ese icono. Va en /usr/local/share/applications (el sistema lo lee ANTES que /usr/share):
-# no se toca el paquete de RustDesk, que sigue actualizandose normal.
-for t in 16 22 24 32 48 64 128 256; do
-    install -d "$STAGE/usr/share/icons/hicolor/${t}x${t}/apps"
-    install -m644 "$HERE/iconos/factupos-soporte-$t.png" \
-        "$STAGE/usr/share/icons/hicolor/${t}x${t}/apps/factupos-soporte.png"
-done
-install -d "$STAGE/usr/local/share/applications"
-install -m644 "$HERE/rustdesk.desktop" "$STAGE/usr/local/share/applications/rustdesk.desktop"
-
 # Keepalive: relanza el panel si se cae (un POS no debe quedar sin barra).
 install -m755 "$HERE/keepalive.sh" "$STAGE/usr/lib/$PKG/keepalive.sh"
 
@@ -72,11 +61,6 @@ install -m644 "$HERE/installer/debian/49-factupos-power.rules" \
 # para nmcli modify; en Mint/LMDE no hacia falta).
 install -m644 "$HERE/installer/debian/48-factupos-network.rules" \
     "$STAGE/etc/polkit-1/rules.d/48-factupos-network.rules"
-
-# Regla polkit: la barra arranca el Actualizador de apps FactuPOS SIN contrasena
-# (#2942: la barra pone al dia las demas apps, no solo a si misma).
-install -m644 "$HERE/installer/debian/47-factupos-actualizador.rules" \
-    "$STAGE/etc/polkit-1/rules.d/47-factupos-actualizador.rules"
 
 # --- metadatos DEBIAN ---
 install -d "$STAGE/DEBIAN"

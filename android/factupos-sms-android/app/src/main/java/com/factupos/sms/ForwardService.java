@@ -6,8 +6,6 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.net.ConnectivityManager;
-import android.net.Network;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -19,43 +17,11 @@ public class ForwardService extends Service {
 
     private static final String CH = "factupossms";
 
-    private ConnectivityManager.NetworkCallback alVolverLaRed;
-
     @Override
     public void onCreate() {
         super.onCreate();
         Notification n = buildNotification();
         startForeground(1, n);
-        vigilarConexion();
-    }
-
-    /** Cuando vuelve la conexión, manda lo que no se había podido cargar (#1307). */
-    private void vigilarConexion() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return;
-        try {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (cm == null) return;
-            alVolverLaRed = new ConnectivityManager.NetworkCallback() {
-                @Override
-                public void onAvailable(Network network) {
-                    // unos segundos de gracia: la red avisa que está antes de que ya navegue
-                    Aviso.reintentarEnFondo(getApplicationContext(), 5000);
-                }
-            };
-            cm.registerDefaultNetworkCallback(alVolverLaRed);
-        } catch (Exception e) {
-            alVolverLaRed = null;
-        }
-    }
-
-    @Override
-    public void onDestroy() {
-        if (alVolverLaRed != null) {
-            try {
-                ((ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE)).unregisterNetworkCallback(alVolverLaRed);
-            } catch (Exception ignored) { }
-        }
-        super.onDestroy();
     }
 
     @Override

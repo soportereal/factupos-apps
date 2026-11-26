@@ -25,7 +25,7 @@ import socket
 import ipaddress
 import subprocess
 
-VERSION = "1.1.1"                                 # fuente única de versión
+VERSION = "1.0.0"                                 # fuente única de versión
 
 
 # ----------------------------------------------------------------------
@@ -398,56 +398,6 @@ CSS = """
     border: none; box-shadow: none; min-width: 26px; min-height: 26px;
 }
 .fp-titlebar button:hover { background: rgba(255,255,255,0.18); border-radius: 6px; }
-
-/* ===== PIEL NAVY (#2698, 13-oct-2026) — mismo lenguaje que el kiosko y la barra 1.6.x.
-   Va AL FINAL del CSS: con igual especificidad, la ultima regla gana. Copiada dentro de
-   cada app a proposito (cada una es independiente, no comparte archivos). ===== */
-.fpc-win { background: #0b1533; color: #e2e8f0; }
-.fpc-win scrolledwindow, .fpc-win viewport { background: #0b1533; }
-.fpc-header { background: linear-gradient(135deg, #1e1b4b, #1e3a8a); border-bottom: 2px solid #7c3aed; }
-.fpc-header-title, .fpc-title { color: #ffffff; }
-.fpc-header-resumen { color: #a5b4fc; }
-.fpc-text, .fpc-nombre, .fpc-seccion { color: #e2e8f0; }
-.fpc-seccion-titulo { background: #14224d; color: #a5b4fc; }
-.fpc-nota { color: #b4c2e0; }
-.fpc-estado { color: #38bdf8; }
-.fpc-error { color: #fb7185; }
-.fpc-tarjeta {
-    background: linear-gradient(to bottom, #182a5c, #14224d);
-    border: 1px solid rgba(255,255,255,0.10); border-top-color: rgba(255,255,255,0.20);
-    border-bottom-color: rgba(0,0,0,0.55); border-radius: 14px;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.45);
-}
-.fpc-aplicar {
-    background: linear-gradient(135deg, #7c3aed, #2563eb); color: #ffffff; font-weight: bold;
-    border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-.fpc-aplicar:hover { background: linear-gradient(135deg, #8b5cf6, #3b82f6); }
-.fpc-aplicar label { color: #ffffff; }
-.fpc-elegir, .fpc-identificar {
-    background: rgba(255,255,255,0.08); color: #e2e8f0;
-    border: 1px solid rgba(255,255,255,0.25); border-radius: 12px;
-}
-.fpc-elegir:hover, .fpc-identificar:hover { background: rgba(255,255,255,0.16); }
-.fpc-elegir label, .fpc-identificar label { color: #e2e8f0; }
-.fpc-miniatura { border: 2px solid rgba(255,255,255,0.10); border-radius: 10px; }
-.fpc-miniatura-sel { border: 3px solid #38bdf8; border-radius: 10px; }
-.fpc-win entry { background: #14224d; color: #ffffff; border: 1px solid #4f63a8; border-radius: 12px; }
-.fpc-win entry:focus { border-color: #38bdf8; }
-.fpc-win combobox button { background: #14224d; color: #ffffff; border: 1px solid #4f63a8; border-radius: 10px; }
-.fpc-win combobox button label, .fpc-win combobox arrow { color: #ffffff; }
-.fpc-win switch { background: #334155; border: 1px solid rgba(255,255,255,0.25); border-radius: 14px; }
-.fpc-win switch:checked { background: #16a34a; }
-.fpc-win switch slider { background: #ffffff; border-radius: 12px; }
-.fpc-win checkbutton label { color: #e2e8f0; }
-.fpc-win checkbutton check { background: #14224d; border: 1px solid #7184ad; }
-.fpc-win checkbutton check:checked { background: #7c3aed; border-color: #a78bfa; color: #ffffff; }
-.fpc-win treeview { background-color: #0f1a3a; color: #e2e8f0; }
-.fpc-win treeview:selected { background-color: #7c3aed; color: #ffffff; }
-.fpc-win treeview header button { background: #14224d; color: #a5b4fc; font-weight: bold;
-    border: none; border-bottom: 1px solid rgba(255,255,255,0.12); }
-.fpc-win separator { background: rgba(255,255,255,0.12); }
-.fp-titlebar { background: linear-gradient(to right, #0b1533, #14224d 55%, #1e1b4b); }
 """
 
 # columnas tabla "escuchando"

@@ -1,13 +1,13 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=FactuPOS · Gestión de Impresoras
-Name[es]=FactuPOS · Gestión de Impresoras
-Comment=Instala, prueba y desinstala impresoras USB y Serial (tickets) en CUPS
-Comment[es]=Instala, prueba y desinstala impresoras USB y Serial (tickets) en CUPS
+Name=FactuPOS · Instalador de Impresoras
+Name[es]=FactuPOS · Instalador de Impresoras
+Comment=Asistente para instalar impresoras USB y Serial (tickets) en CUPS
+Comment[es]=Asistente para instalar impresoras USB y Serial (tickets) en CUPS
 Exec=factupos-printer-inst
 Icon=printer
 Terminal=false
 Categories=System;Settings;HardwareSettings;Printing;
-Keywords=impresora;impresoras;gestion;desinstalar;printer;cups;serial;usb;ticket;epson;tm-u220;factupos;
+Keywords=impresora;printer;cups;serial;usb;ticket;epson;tm-u220;factupos;
 StartupNotify=true

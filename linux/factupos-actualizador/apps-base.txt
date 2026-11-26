@@ -14,4 +14,3 @@ factupos-fondo
 factupos-energia
 factupos-conexiones
 factupos-recortes
-factupos-navegadores
