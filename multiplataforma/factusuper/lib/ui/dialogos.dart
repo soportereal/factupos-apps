@@ -1388,6 +1388,135 @@ Future<void> dialogoVentas(
     _ => Marca.azulMedio,
   };
   final lista = ventas.reversed.toList();
+  // Una venta en tarjeta: arriba el total con su estado y la impresora; abajo el detalle A LO ANCHO. Antes era un
+  // ListTile con estado+impresora a la derecha: en el celular dejaba el texto en una columna de letras (#3957, foto 14).
+  Widget tarjeta(BuildContext ctx, Map<String, dynamic> v) {
+    final e = '${v['estado']}';
+    final fac = v['factura'] is Map ? (v['factura'] as Map) : null;
+    final loc = v['impresionLocal'] is Map ? v['impresionLocal'] as Map : null;
+    final detalle = [
+      '${v['idProceso'] ?? ''}',
+      '${(v['cliente'] as Map?)?['nombre'] ?? ''}',
+      if (fac != null) 'Factura ${fac['numero'] ?? fac['consecutivo'] ?? ''}',
+    ].where((x) => x.trim().isNotEmpty).join(' · ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD9EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '₡${fmt((v['total'] as num?) ?? 0)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: color(e).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  nombres[e] ?? e,
+                  style: TextStyle(
+                    color: color(e),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              if (fac != null && reimprimir != null)
+                IconButton(
+                  tooltip: 'Reimprimir (permiso 142)',
+                  icon: const Icon(Icons.print_outlined),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    reimprimir(v);
+                  },
+                )
+              else
+                const SizedBox(width: 8),
+            ],
+          ),
+          if (detalle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                detalle,
+                style: const TextStyle(color: Marca.tintaSuave, fontSize: 13),
+              ),
+            ),
+          if (v['error'] is Map)
+            Text(
+              '${(v['error'] as Map)['mensaje']}',
+              style: const TextStyle(color: Marca.rojo, fontSize: 12),
+            ),
+          if (loc != null)
+            Text(
+              loc['ok'] == true ? '✔ provisional' : '✖ provisional no salió',
+              style: TextStyle(
+                fontSize: 12,
+                color: loc['ok'] == true ? Marca.verde : Marca.rojo,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget cuerpo(BuildContext ctx) => lista.isEmpty
+      ? const Center(
+          child: Text(
+            'Todavía no hay ventas.',
+            style: TextStyle(color: Marca.tintaSuave),
+          ),
+        )
+      : ListView(
+          padding: const EdgeInsets.all(2),
+          children: [for (final v in lista) tarjeta(ctx, v)],
+        );
+
+  // Celular: pantalla completa (no un diálogo apretado).
+  if (MediaQuery.sizeOf(context).width < 600) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          backgroundColor: const Color(0xFFEEF3FA),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1A4D80),
+            foregroundColor: Colors.white,
+            title: const Text('Ventas de esta caja'),
+            actions: [
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  enviar();
+                },
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('Enviar ahora'),
+              ),
+            ],
+          ),
+          body: Padding(padding: const EdgeInsets.all(8), child: cuerpo(ctx)),
+        ),
+      ),
+    );
+  }
   return showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -1396,92 +1525,7 @@ Future<void> dialogoVentas(
         codigo: 'MV-107',
         icono: Icons.receipt_long_outlined,
       ),
-      content: SizedBox(
-        width: 640,
-        height: 460,
-        child: lista.isEmpty
-            ? const Center(
-                child: Text(
-                  'Todavía no hay ventas.',
-                  style: TextStyle(color: Marca.tintaSuave),
-                ),
-              )
-            : ListView.separated(
-                itemCount: lista.length,
-                separatorBuilder: (_, __) => const Divider(),
-                itemBuilder: (_, i) {
-                  final v = lista[i];
-                  final e = '${v['estado']}';
-                  final fac = v['factura'] is Map
-                      ? (v['factura'] as Map)
-                      : null;
-                  return ListTile(
-                    title: Text(
-                      '₡${fmt((v['total'] as num?) ?? 0)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      [
-                        '${v['idProceso']}',
-                        '${(v['cliente'] as Map?)?['nombre'] ?? ''}',
-                        if (fac != null)
-                          'Factura ${fac['numero'] ?? fac['consecutivo'] ?? ''}',
-                        if (v['error'] is Map)
-                          '${(v['error'] as Map)['mensaje']}',
-                      ].where((x) => x.isNotEmpty).join(' · '),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (v['impresionLocal'] is Map)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Text(
-                              (v['impresionLocal'] as Map)['ok'] == true
-                                  ? '✔ provisional'
-                                  : '✖ provisional no salió',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color:
-                                    (v['impresionLocal'] as Map)['ok'] == true
-                                    ? Marca.verde
-                                    : Marca.rojo,
-                              ),
-                            ),
-                          ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: color(e).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            nombres[e] ?? e,
-                            style: TextStyle(
-                              color: color(e),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        if (fac != null && reimprimir != null)
-                          IconButton(
-                            tooltip: 'Reimprimir (permiso 142)',
-                            icon: const Icon(Icons.print_outlined),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              reimprimir(v);
-                            },
-                          ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-      ),
+      content: SizedBox(width: 640, height: 460, child: cuerpo(ctx)),
       actions: [
         TextButton.icon(
           onPressed: () {

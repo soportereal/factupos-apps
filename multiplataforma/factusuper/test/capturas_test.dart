@@ -552,6 +552,28 @@ void main() {
     await t.tap(find.text('Regresar').last);
     await t.pump();
     await t.pump(const Duration(seconds: 1));
+    cola.ventas = [
+      {
+        'idProceso': '01-002-00027-125307-26',
+        'estado': 'procesada',
+        'total': 7205.8,
+        'cliente': {'nombre': 'FIORELLA SANCHEZ SEQUEIRA'},
+        'factura': {'numero': '00200001010000003353'},
+      },
+      {
+        'idProceso': '01-002-00027-131002-26',
+        'estado': 'pendiente',
+        'total': 12601.27,
+        'cliente': {'nombre': 'Supermercado La Esquina S.A.'},
+      },
+    ];
+    await t.tap(find.text('Ventas'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '23-factumovil-ventas');
+    await t.pageBack();
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
     sabor = saborFactuSuper;
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);
