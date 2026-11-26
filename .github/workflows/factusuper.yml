@@ -139,15 +139,18 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter pub get
-          flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk FactuSuper-Android.apk
-          # La huella del certificado (pública): tiene que ser SIEMPRE la misma.
-          keytool -printcert -jarfile FactuSuper-Android.apk | grep -E 'SHA256:|Owner:' | head -2
+          # Dos apps del mismo código (#3957): FactuSuper (la caja) y FactuMóvil (el vendedor en el celular).
+          flutter build apk --release --flavor factusuper
+          cp build/app/outputs/flutter-apk/app-factusuper-release.apk FactuSuper-Android.apk
+          flutter build apk --release --flavor factumovil -t lib/main_factumovil.dart
+          cp build/app/outputs/flutter-apk/app-factumovil-release.apk FactuMovil-Android.apk
       - name: Borrar keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
       - uses: actions/upload-artifact@v4
         with:
           name: factusuper-android
-          path: ${{ env.APP }}/FactuSuper-Android.apk
+          path: |
+            ${{ env.APP }}/FactuSuper-Android.apk
+            ${{ env.APP }}/FactuMovil-Android.apk
           if-no-files-found: error

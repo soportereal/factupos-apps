@@ -4,6 +4,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../app/sabor.dart';
+
 class Marca {
   static const azul = Color(0xFF0B2A5B);
   static const azulMedio = Color(0xFF1D4ED8);
@@ -163,7 +165,7 @@ class Logo extends StatelessWidget {
           borderRadius: BorderRadius.circular(tam * 0.45),
         ),
         child: Icon(
-          Icons.shopping_cart_rounded,
+          sabor.esMovil ? Icons.phone_iphone_rounded : Icons.shopping_cart_rounded,
           color: Colors.white,
           size: tam,
         ),
@@ -180,7 +182,7 @@ class Logo extends StatelessWidget {
               ),
             ),
             TextSpan(
-              text: 'Super',
+              text: sabor.esMovil ? 'Móvil' : 'Super',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 color: claro ? const Color(0xFF6EE7B7) : Marca.verde,

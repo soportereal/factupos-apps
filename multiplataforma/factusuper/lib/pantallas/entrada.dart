@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../app/sabor.dart';
 import '../caja/cajeros.dart';
 import '../datos/actualizacion.dart';
 import '../datos/almacen.dart';
@@ -147,8 +148,8 @@ class _EstadoEntrada extends State<PantallaEntrada> {
                     ),
                     const SizedBox(height: 24),
                     if (lista.isEmpty)
-                      const Text(
-                        'No hay usuarios con permiso para facturar (653) en la copia de esta caja. Revise los permisos en FactuPOS y vuelva a bajar los datos desde Configuración.',
+                      Text(
+                        'No hay usuarios con permiso para ${sabor.queHace} (${sabor.permiso}) en la copia de este equipo. Revise los permisos en FactuPOS y vuelva a bajar los datos desde Configuración.',
                       )
                     else ...[
                       DropdownButtonFormField<String>(

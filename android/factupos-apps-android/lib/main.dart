@@ -310,6 +310,7 @@ class _EstadoApps extends State<PantallaApps> with WidgetsBindingObserver {
   static IconData _icono(String id) => switch (id) {
     'apps' => Icons.apps,
     'factusuper' => Icons.shopping_cart_outlined,
+    'factumovil' => Icons.phone_iphone,
     'factupos' => Icons.point_of_sale,
     'print' => Icons.print_outlined,
     'sms' => Icons.sms_outlined,

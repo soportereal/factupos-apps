@@ -29,6 +29,23 @@ android {
         versionName = flutter.versionName
     }
 
+    // #3957 (25-nov-2026): DOS apps del mismo código. FactuSuper (la caja) y FactuMóvil (el vendedor en el celular).
+    // Cada una con su applicationId (se instalan juntas, cada una con sus datos), su nombre y su ícono (src/factumovil/res).
+    // Compilar: --flavor factusuper (lib/main.dart) · --flavor factumovil -t lib/main_factumovil.dart.
+    flavorDimensions += "app"
+    productFlavors {
+        create("factusuper") {
+            dimension = "app"
+            applicationId = "com.factupos.factusuper"
+            resValue("string", "app_name", "FactuSuper")
+        }
+        create("factumovil") {
+            dimension = "app"
+            applicationId = "com.factupos.factumovil"
+            resValue("string", "app_name", "FactuMóvil")
+        }
+    }
+
     // #3957: la keystore de la casa NO vive en el repo: llega por variables de entorno (secrets de GitHub en el CI).
     // Android exige la MISMA firma para actualizar encima; sin keystore (compilando a mano) sale con la debug.
     val ksPath = System.getenv("ANDROID_KEYSTORE_PATH")

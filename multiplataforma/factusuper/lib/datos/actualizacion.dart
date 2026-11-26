@@ -20,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../app/sabor.dart';
+
 const String _jsonVersion =
     'https://soportereal.com/software/factupos-app/windows/FactuSuper_version.json';
 
@@ -51,7 +53,7 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
     final r = await c
         .get(
           Uri.parse(_jsonVersion),
-          headers: {'User-Agent': 'FactuSuper-App/$actual'},
+          headers: {'User-Agent': '${sabor.esMovil ? 'FactuMovil' : 'FactuSuper'}-App/$actual'},
         )
         .timeout(const Duration(seconds: 15));
     if (r.statusCode != 200) return null;
@@ -70,8 +72,9 @@ Future<VersionNueva?> buscarVersionNueva({http.Client? cliente}) async {
   }
 }
 
-const apkAndroid =
-    'https://soportereal.com/software/factupos-app/android/FactuSuper-Android.apk';
+/// Las dos apps salen del mismo código con la MISMA versión (FactuSuper_version.json); cada una baja su APK.
+String get apkAndroid =>
+    'https://soportereal.com/software/factupos-app/android/${sabor.apk}';
 const _canalAndroid = MethodChannel('factusuper/actualizar');
 
 const paqueteLinux = 'factupos-factusuper';

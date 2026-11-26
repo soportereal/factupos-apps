@@ -8,7 +8,7 @@ const urlCatalogo = 'https://soportereal.com/descarga/catalogo_android.php';
 
 /// Sin «Mozilla»: el servidor deja bajar los APK directo a las apps (a los navegadores les pide usuario de FactuPOS).
 const agente = 'FactuPOS-Apps-Android/$versionApp';
-const versionApp = '1.0.0';
+const versionApp = '1.0.1';
 
 class AppCat {
   final String id, nombre, desc, grupo, paquete, version, url, url32, fecha;

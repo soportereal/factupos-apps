@@ -5,7 +5,10 @@ library;
 
 import 'package:bcrypt/bcrypt.dart';
 
-const String permisoFacturar = '653';
+import '../app/sabor.dart';
+
+/// 653 en FactuSuper · 654 en FactuMóvil (ver app/sabor.dart).
+String get permisoFacturar => sabor.permiso;
 
 class Cajero {
   final String usuario, nombre;
@@ -37,7 +40,8 @@ class Cajeros {
   }
 
   /// Los que pueden entrar (tienen clave y el permiso), por nombre: la gente no se sabe su código.
-  List<Cajero> conPermiso([String permiso = permisoFacturar]) {
+  List<Cajero> conPermiso([String? permisoPedido]) {
+    final permiso = permisoPedido ?? permisoFacturar;
     final l = _usuarios
         .where((u) => _t(u['hash']).isNotEmpty && _tiene(u, permiso))
         .map(
@@ -55,8 +59,9 @@ class Cajeros {
   String? validar(
     String usuario,
     String clave, [
-    String permiso = permisoFacturar,
+    String? permisoPedido,
   ]) {
+    final permiso = permisoPedido ?? permisoFacturar;
     usuario = usuario.trim().toUpperCase();
     if (usuario.isEmpty) return 'Elija su nombre';
     if (clave.isEmpty) return 'Escriba su clave';

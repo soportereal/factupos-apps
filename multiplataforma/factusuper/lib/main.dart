@@ -8,6 +8,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'app/sabor.dart';
+
 import 'caja/cajeros.dart';
 import 'caja/cola.dart';
 import 'caja/datos_caja.dart';
@@ -19,7 +21,11 @@ import 'pantallas/configuracion.dart';
 import 'pantallas/entrada.dart';
 import 'ui/tema.dart';
 
-Future<void> main() async {
+Future<void> main() => arrancar(saborFactuSuper);
+
+/// El arranque de las dos apps (FactuMóvil entra por lib/main_factumovil.dart).
+Future<void> arrancar(Sabor s) async {
+  sabor = s;
   WidgetsFlutterBinding.ensureInitialized();
   final almacen = await Almacen.abrir();
   final cfg = await almacen.leerConfig();
@@ -164,7 +170,7 @@ class _EstadoApp extends State<FactuSuperApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'FactuSuper',
+    title: sabor.nombre,
     debugShowCheckedModeBanner: false,
     theme: temaFactuSuper(),
     home: _inicio(),
