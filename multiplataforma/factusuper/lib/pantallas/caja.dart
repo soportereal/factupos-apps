@@ -35,6 +35,7 @@ import '../ui/tema.dart';
 import '../ui/vista_lineas.dart';
 
 part 'caja_movil.dart';
+part 'cobro_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
@@ -998,7 +999,14 @@ class _EstadoCaja extends State<PantallaCaja> {
   }
 
   // ── Cobrar ──
-  Future<void> _cobrar(String medioInicial) async {
+  /// [cuenta]/[directo]/[credito] son de FactuMóvil (PM-001): «Total y procesa» cobra el total con ese medio sin abrir
+  /// el cobro; [credito] abre la Venta a Crédito.
+  Future<void> _cobrar(
+    String medioInicial, {
+    String cuenta = '',
+    bool directo = false,
+    bool credito = false,
+  }) async {
     final imp = doc.impedimento();
     if (imp.isNotEmpty) {
       await avisoDialogo(context, 'No se puede cobrar', imp);
@@ -1018,18 +1026,29 @@ class _EstadoCaja extends State<PantallaCaja> {
       setState(() {});
     }
     final total = doc.totales.total;
-    final r = await dialogoCobro(
-      context,
-      total: total,
-      medios: medios,
-      medioInicial: medioInicial,
-      credito: _infoCredito(total),
-    );
+    final r = sabor.esMovil
+        ? await _fmCobro(
+            total,
+            medios,
+            medioInicial,
+            cuenta: cuenta,
+            directo: directo,
+            credito: credito,
+          )
+        : await dialogoCobro(
+            context,
+            total: total,
+            medios: medios,
+            medioInicial: medioInicial,
+            credito: _infoCredito(total),
+          );
     if (r == null) return _foco();
     final ahora = DateTime.now();
     final pq = doc.paquete(
       pagos: r.pagos,
       vuelto: r.vuelto,
+      imprimir: r.imprimir,
+      copias: r.copias,
       transaccionId: uuidV4(),
       cuando: ahora,
       tipoPago: r.tipoPago,

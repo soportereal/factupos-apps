@@ -206,7 +206,13 @@ Future<(bool, String, int)> imprimirProvisional(
     paramsFormato(datos),
     provisional: idp,
   );
-  final n = 1 + copias(datos, pq['tipoPago'] == 'credito');
+  final elegidas = _n(cfg['copias'])
+      .toInt(); // −(n+1) = n copias elegidas en el cobro (FactuMóvil VP-001)
+  final n =
+      1 +
+      (elegidas < 0
+          ? (-elegidas - 1).clamp(0, 5)
+          : copias(datos, pq['tipoPago'] == 'credito'));
   for (var i = 0; i < n; i++) {
     final hoja = base.replaceFirst(
       '{{COPIA_ETIQUETA}}',

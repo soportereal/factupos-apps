@@ -216,7 +216,10 @@ class DatosCaja {
           _t(f['descripcion']).isEmpty ? c : _t(f['descripcion']),
         ),
       );
-      if (_t(f['cuenta']).isNotEmpty) x.cuentas.add(_t(f['cuenta']));
+      if (_t(f['cuenta']).isNotEmpty) {
+        x.cuentas.add(_t(f['cuenta']));
+        x.nombres[_t(f['cuenta'])] = _t(f['cuenta_nombre']);
+      }
     }
     return m.values.toList();
   }
@@ -364,5 +367,8 @@ class DatosCaja {
 class MedioPago {
   final String codigo, descripcion;
   final List<String> cuentas = [];
+
+  /// Nombre de cada cuenta (vista_medios_pago.CuentaContableNombre): «Tarjetas BN», «Sinpe Movil Bac»…
+  final Map<String, String> nombres = {};
   MedioPago(this.codigo, this.descripcion);
 }

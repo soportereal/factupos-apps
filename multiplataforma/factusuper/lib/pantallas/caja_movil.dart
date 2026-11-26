@@ -1097,7 +1097,7 @@ extension _VistaMovil on _EstadoCaja {
               ficha(
                 icoTexto(Icons.send_outlined, 'Procesar'),
                 const Color(0xFF10B981),
-                vacia ? null : () => _cobrar('01'),
+                vacia ? null : _fmProcesar,
                 borde: const Color(0xFF047857),
               ),
             ],

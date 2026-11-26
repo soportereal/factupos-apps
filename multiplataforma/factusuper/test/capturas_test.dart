@@ -129,6 +129,7 @@ DatosCaja datosEjemplo() {
         'cedula': '3101123456',
         'tipo_cedula': '02',
         'tipo_precio': 0,
+        'plazo': 30,
       },
     ],
     catalogos: {
@@ -144,8 +145,27 @@ DatosCaja datosEjemplo() {
       ],
       'medios_pago': [
         {'codigo': '01', 'descripcion': 'Efectivo', 'mostrar': 1},
-        {'codigo': '02', 'descripcion': 'Tarjeta', 'mostrar': 1},
-        {'codigo': '06', 'descripcion': 'SINPE Móvil', 'mostrar': 1},
+        {
+          'codigo': '02',
+          'descripcion': 'Tarjeta',
+          'mostrar': 1,
+          'cuenta': '110107',
+          'cuenta_nombre': 'Tarjetas BN',
+        },
+        {
+          'codigo': '02',
+          'descripcion': 'Tarjeta',
+          'mostrar': 1,
+          'cuenta': '110108',
+          'cuenta_nombre': 'Tarjetas Bac',
+        },
+        {
+          'codigo': '06',
+          'descripcion': 'SINPE Móvil',
+          'mostrar': 1,
+          'cuenta': '110103',
+          'cuenta_nombre': 'Sinpe Movil Bac',
+        },
       ],
       'usuarios': [
         {
@@ -423,6 +443,52 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     await foto(t, '15-factumovil-final');
+    // PM-001 Procesar → Definir (VP-001 Cobro de Factura)
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar(); // el aviso de abajo tapa el pie
+    await t.pump(const Duration(milliseconds: 500));
+    await t.tap(find.text('Procesar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '16-factumovil-procesar');
+    await t.tap(find.text('Definir'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '17-factumovil-cobro');
+    await t.tap(find.text('CRC5.000'));
+    await t.pump();
+    await t.tap(find.text('Todo Tarjetas Bac'));
+    await t.pump();
+    await t.drag(find.byType(ListView).last, const Offset(0, -700));
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '18-factumovil-cobro-pagos');
+    await t.tap(find.text('Cancelar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    // Venta a crédito: con un cliente que tiene plazo
+    await t.tap(find.text('Seleccionar cliente'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.enterText(campo('Buscar cliente'), 'super');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.text('Supermercado La Esquina S.A.').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar();
+    await t.pump(const Duration(milliseconds: 500));
+    await t.tap(find.text('Procesar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Facturar a crédito'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 8));
+    await foto(t, '19-factumovil-credito');
+    await t.tap(find.text('Cancelar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
     sabor = saborFactuSuper;
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);

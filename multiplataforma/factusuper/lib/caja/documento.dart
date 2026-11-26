@@ -779,6 +779,7 @@ class Documento {
     required List<Map<String, dynamic>> pagos,
     required double vuelto,
     bool imprimir = true,
+    int? copias,
     required String transaccionId,
     required DateTime cuando,
     String tipoPago = 'contado',
@@ -912,7 +913,8 @@ class Documento {
             ? 'FIPVIVI002'
             : _t(imp['formato']),
         'ancho': _n(imp['ancho']).toInt(),
-        'copias': 0,
+        // 0 = automático (params 98/99) · −(n+1) = n copias elegidas a mano (impresion_factura_websocket_enviar).
+        'copias': copias == null ? 0 : -(copias.clamp(0, 5) + 1),
       },
       'documento': {
         'transaccionId': transaccionId,

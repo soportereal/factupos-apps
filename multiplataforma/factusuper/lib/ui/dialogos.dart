@@ -66,11 +66,17 @@ class ResultadoCobro {
   final double vuelto;
   final String tipoPago; // 'contado' | 'credito'
   final int diasCredito;
+
+  /// FactuMóvil (VP-001): «No Imprime» → false; copias elegidas a mano (null = las de los parámetros 98/99).
+  final bool imprimir;
+  final int? copias;
   const ResultadoCobro(
     this.pagos,
     this.vuelto, {
     this.tipoPago = 'contado',
     this.diasCredito = 0,
+    this.imprimir = true,
+    this.copias,
   });
 }
 
