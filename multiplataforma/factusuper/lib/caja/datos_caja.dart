@@ -159,11 +159,30 @@ class DatosCaja {
         ..sort((a, b) => _n(a['numero']).compareTo(_n(b['numero'])));
 
   /// La estación del cajero (la fila `clave = actual` que bajó con su sesión).
-  Map<String, dynamic> get estacion =>
-      _filas(catalogos['estacion'])
-          .where((e) => _t(e['clave']) == 'actual')
-          .firstOrNull ??
-      const {};
+  /// El usuario que entró (#3957, dueño 26-nov: «la llave no define la caja, la sucursal ni las impresoras: lo define
+  /// el USUARIO que entra»). Con él se elige SU estación (Usuario.EstacionId), también sin internet.
+  String cajeroActivo = '';
+
+  /// La estación del cajero que entró (lista 'estaciones' por su Usuario.EstacionId); si no tiene o no está en la
+  /// copia, la que bajó con la llave ('actual', que con internet ya es la del cajero).
+  Map<String, dynamic> get estacion {
+    if (cajeroActivo.isNotEmpty) {
+      final u = _filas(catalogos['usuarios'])
+          .where((x) => _t(x['usuario']) == cajeroActivo)
+          .firstOrNull;
+      final id = _t(u?['estacion']);
+      if (id.isNotEmpty) {
+        final e = _filas(catalogos['estaciones'])
+            .where((x) => _t(x['clave']) == id)
+            .firstOrNull;
+        if (e != null) return e;
+      }
+    }
+    return _filas(catalogos['estacion'])
+            .where((e) => _t(e['clave']) == 'actual')
+            .firstOrNull ??
+        const {};
+  }
 
   /// Tipo de cambio de VENTA más reciente de la moneda.
   double tipoCambio(String moneda) {

@@ -64,7 +64,8 @@ class _EstadoApp extends State<FactuSuperApp> {
     } finally {
       con.cerrar();
     }
-    final datos = await DatosCaja.cargar(widget.almacen, cfg.empresa);
+    final datos = await DatosCaja.cargar(widget.almacen, cfg.empresa)
+      ..cajeroActivo = c.usuario; // su estación (caja, bodega, impresoras), también sin internet
     final cola = Cola(widget.almacen, cfg.empresa, cfg.llave);
     await cola.cargar();
     if (!mounted) return;
@@ -102,7 +103,8 @@ class _EstadoApp extends State<FactuSuperApp> {
     final con = Conexion(llave: cfg.llave, cajero: c.usuario);
     try {
       final n = await Descarga(con, widget.almacen, cfg.empresa).todo();
-      final datos = await DatosCaja.cargar(widget.almacen, cfg.empresa);
+      final datos = await DatosCaja.cargar(widget.almacen, cfg.empresa)
+        ..cajeroActivo = c.usuario;
       if (mounted) {
         setState(() {
           _datos = datos;

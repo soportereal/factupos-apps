@@ -151,4 +151,32 @@ void main() {
       );
     },
   );
+
+  test('la estación es la del USUARIO que entró (Usuario.EstacionId), también sin internet', () {
+    final d = DatosCaja.desde(
+      articulos: const [],
+      precios: const [],
+      catalogos: {
+        'estacion': [
+          {'clave': 'actual', 'id': 0, 'caja': '3', 'bodega': '0'},
+        ],
+        'estaciones': [
+          {'clave': '6', 'id': 6, 'caja': '1', 'bodega': '1'},
+          {'clave': '9', 'id': 9, 'caja': '2', 'bodega': '0'},
+        ],
+        'usuarios': [
+          {'usuario': '00006', 'estacion': '6'},
+          {'usuario': '00007', 'estacion': '9'},
+          {'usuario': '00008', 'estacion': ''},
+        ],
+      },
+    );
+    expect(d.estacion['caja'], '3'); // nadie adentro: la de la llave
+    d.cajeroActivo = '00006';
+    expect(d.estacion['bodega'], '1');
+    d.cajeroActivo = '00007';
+    expect(d.estacion['caja'], '2');
+    d.cajeroActivo = '00008'; // sin estación propia → la de la llave
+    expect(d.estacion['caja'], '3');
+  });
 }
