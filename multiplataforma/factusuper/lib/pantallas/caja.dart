@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/sabor.dart';
 import '../caja/cajeros.dart';
 import '../caja/cajon.dart';
 import '../caja/cierre.dart';
@@ -593,7 +594,12 @@ class _EstadoCaja extends State<PantallaCaja> {
 
   Future<void> _editar(int i) async {
     if (i < 0 || i >= doc.lineas.length) return;
-    if (await dialogoLinea(context, doc, widget.cajeros, i)) _cambio();
+    final antes = doc.lineas[i].nivel;
+    // FactuMóvil cambia la lista de precio AL INSTANTE dentro del diálogo: aunque se cancele, la línea ya cambió.
+    if (await dialogoLinea(context, doc, widget.cajeros, i) ||
+        (i < doc.lineas.length && doc.lineas[i].nivel != antes)) {
+      _cambio();
+    }
     _foco();
   }
 
@@ -2194,6 +2200,20 @@ class _EstadoCaja extends State<PantallaCaja> {
     ],
   );
 
+  /// Chip chiquito de la línea en el celular (FactuMóvil: P# lista de precio · B# bodega).
+  Widget _chipLinea(String t, Color c) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: c.withValues(alpha: 0.35)),
+    ),
+    child: Text(
+      t,
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c),
+    ),
+  );
+
   Widget _tablaLineas() {
     if (doc.lineas.isEmpty) {
       return Center(
@@ -2254,9 +2274,28 @@ class _EstadoCaja extends State<PantallaCaja> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text(
-              '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
-            ),
+            subtitle: sabor.esMovil
+                ? Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
+                      ),
+                      // Chips de la web (fm-chip-precio / fm-chip-bod): lista de precio y bodega de la línea.
+                      _chipLinea('P${l.nivel}', Marca.azul),
+                      _chipLinea(
+                        'B${doc.bodegaDe(l)}',
+                        l.bodega.isEmpty
+                            ? Marca.tintaSuave
+                            : const Color(0xFFB45309),
+                      ),
+                    ],
+                  )
+                : Text(
+                    '₡${fmt(precioConIva(l), doc.dec.total)}${l.descuento > 0 ? ' · −${fmt(l.descuento, 1)} %' : ''}',
+                  ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

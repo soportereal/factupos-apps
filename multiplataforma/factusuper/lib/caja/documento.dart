@@ -6,6 +6,8 @@ library;
 
 import 'dart:math' as math;
 
+import '../app/sabor.dart';
+
 import '../motor/linea.dart';
 import '../motor/redondeo.dart';
 import 'cajeros.dart';
@@ -43,6 +45,12 @@ class CambiosLinea {
   final double cantidad, precio, valor;
   final String modo; // 'pct' | 'monto'
   final bool bonificacion, montoConfirmado;
+
+  /// FactuMóvil: el vendedor con 021 ya escribió «SI» para dejar ESTA línea bajo el costo.
+  final bool costoConfirmado;
+
+  /// FactuMóvil: bodega elegida para la línea (null = no se toca).
+  final String? bodega;
   const CambiosLinea({
     required this.cantidad,
     required this.precio,
@@ -50,12 +58,15 @@ class CambiosLinea {
     this.valor = 0,
     this.bonificacion = false,
     this.montoConfirmado = false,
+    this.costoConfirmado = false,
+    this.bodega,
   });
   CambiosLinea con({
     double? precio,
     String? modo,
     double? valor,
     bool? montoConfirmado,
+    bool? costoConfirmado,
   }) => CambiosLinea(
     cantidad: cantidad,
     precio: precio ?? this.precio,
@@ -63,6 +74,8 @@ class CambiosLinea {
     valor: valor ?? this.valor,
     bonificacion: bonificacion,
     montoConfirmado: montoConfirmado ?? this.montoConfirmado,
+    costoConfirmado: costoConfirmado ?? this.costoConfirmado,
+    bodega: bodega,
   );
 }
 
@@ -72,6 +85,9 @@ class Validacion {
   final String error, permiso, motivo, alternativaTexto;
   final CambiosLinea? alternativa;
   final bool confirmarSi;
+
+  /// Qué confirma el «SI»: 'monto' (línea de más de 5 millones) o 'costo' (FactuMóvil, bajo el costo con 021).
+  final String confirma;
   const Validacion({
     this.ok = false,
     this.error = '',
@@ -80,6 +96,7 @@ class Validacion {
     this.alternativaTexto = '',
     this.alternativa,
     this.confirmarSi = false,
+    this.confirma = 'monto',
   });
   String get tipo => ok
       ? 'ok'
@@ -538,6 +555,31 @@ class Documento {
               'El precio neto (${_fmt(neto)}) queda bajo el costo (${_fmt(l.costo)}): requiere el permiso 021.',
         );
       }
+      // FactuMóvil (editar.js, confirmarUtilidadNegativa): CON el 021 igual se pide «SI», por cada línea.
+      if (sabor.esMovil &&
+          l.costo > 0 &&
+          neto < l.costo - 1e-9 &&
+          !c.costoConfirmado) {
+        return Validacion(
+          confirmarSi: true,
+          confirma: 'costo',
+          motivo:
+              'El precio neto (${_fmt(neto)}) queda bajo el costo (${_fmt(l.costo)}): utilidad negativa. Tiene el permiso 021; escriba SI para confirmar.',
+        );
+      }
+    }
+    // FactuMóvil: bodega de la línea (033; con el param 251 queda atada a la estación).
+    final bodegaNueva = c.bodega;
+    if (bodegaNueva != null && bodegaNueva != bodegaDe(l)) {
+      if (datos.bodegaAtadaEstacion)
+        return const Validacion(
+          error: 'La bodega está atada a la estación (parámetro 251): no se cambia por línea.',
+        );
+      if (!perm('033'))
+        return const Validacion(
+          permiso: '033',
+          motivo: 'Cambiar la bodega de la línea requiere el permiso 033.',
+        );
     }
     if (bruto >= montoBloqueo)
       return Validacion(
@@ -566,9 +608,15 @@ class Documento {
       l.descuento = c.valor;
       l.descMonto = null;
     }
+    final b = c.bodega;
+    if (b != null) l.bodega = b == _t(datos.estacion['bodega']) ? '' : b;
     l.autorizaciones.addAll(autorizaron);
     _calc(l);
   }
+
+  /// La bodega de la línea (la suya, o la de la estación).
+  String bodegaDe(Linea l) =>
+      l.bodega.isNotEmpty ? l.bodega : _t(datos.estacion['bodega']);
 
   /// Cambiar el cliente — como FactuDesk: NO recalcula las líneas que ya están; las nuevas toman su nivel/descuento.
   /// Las exoneraciones se quitan (eran del cliente anterior).
@@ -759,7 +807,7 @@ class Documento {
         'exonerado': l.exonerado,
         'subtotal': l.subtotal1,
         'total': l.total,
-        'bodega': bodega,
+        'bodega': l.bodega.isNotEmpty ? l.bodega : bodega,
         'tipoPrecio': l.nivel,
         'unidadMedida': l.unidad,
         'cabys': l.cabys,
@@ -993,6 +1041,7 @@ Map<String, dynamic> lineaAMapa(Linea l) => {
   'unidad': l.unidad,
   'naturaleza': l.naturaleza,
   'actividad': l.actividad,
+  'bodega': l.bodega,
   'fraccionable': l.fraccionable,
   'costo': l.costo,
   'descFijo': l.descFijo,
@@ -1025,6 +1074,7 @@ Linea lineaDesde(Map<String, dynamic> m) =>
         unidad: _t(m['unidad']),
         naturaleza: _t(m['naturaleza']),
         actividad: _t(m['actividad']),
+        bodega: _t(m['bodega']),
         fraccionable: _n(m['fraccionable']).toInt(),
         costo: _n(m['costo']),
         descFijo: _n(m['descFijo']),

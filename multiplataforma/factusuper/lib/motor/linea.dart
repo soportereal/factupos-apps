@@ -101,14 +101,17 @@ class Exoneracion {
 
 /// Una línea de la venta. Los nombres siguen a los del JS para poder compararlos.
 class Linea {
-  String codigo,
-      nombre,
-      barra,
-      codigoTarifa,
-      cabys,
-      unidad,
-      naturaleza,
-      actividad;
+  String
+  codigo,
+  nombre,
+  barra,
+  codigoTarifa,
+  cabys,
+  unidad,
+  naturaleza,
+  actividad,
+  /// Bodega de la LÍNEA (FactuMóvil, permiso 033). Vacía = la de la estación.
+  bodega;
   double cantidad,
       precio,
       precioLista,
@@ -162,6 +165,7 @@ class Linea {
     this.unidad = 'Unid',
     this.naturaleza = '1',
     this.actividad = '',
+    this.bodega = '',
     this.fraccionable = 0,
     this.costo = 0,
     this.descFijo = 0,

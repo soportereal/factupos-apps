@@ -290,6 +290,27 @@ class DatosCaja {
     return n.isEmpty ? [1] : n;
   }
 
+  /// Bodegas de venta (#3957, FactuMóvil: bodega por línea), por código numérico. Vacía si el servidor no las mandó.
+  List<Map<String, dynamic>> get bodegas => _filas(catalogos['bodegas'])
+    ..sort((a, b) {
+      final x = num.tryParse(_t(a['codigo'])),
+          y = num.tryParse(_t(b['codigo']));
+      if (x != null && y != null) return x.compareTo(y);
+      return _t(a['codigo']).compareTo(_t(b['codigo']));
+    });
+
+  /// Param 251 = 1 → la bodega queda ATADA a la estación (no se cambia por línea).
+  bool get bodegaAtadaEstacion => param(251, '0') == '1';
+
+  /// «0 - Bodega Principal» (o solo el código si no está en la lista).
+  String nombreBodega(String codigo) {
+    final b = _filas(catalogos['bodegas'])
+        .where((x) => _t(x['codigo']) == codigo)
+        .firstOrNull;
+    final n = b == null ? '' : _t(b['nombre']);
+    return n.isEmpty ? codigo : '$codigo - $n';
+  }
+
   /// Tarifas de IVA (código, nombre, %), de menor a mayor.
   List<Map<String, dynamic>> get tarifasIva =>
       _filas(catalogos['tarifas_iva'])..sort((a, b) {

@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app/sabor.dart';
 import '../caja/cajeros.dart';
 import '../caja/datos_caja.dart';
 import '../caja/documento.dart';
@@ -745,6 +746,12 @@ Future<bool> dialogoLinea(
   String error = '';
   final verUtil = doc.tienePermiso('064'),
       editaPrecio = doc.tienePermiso('024');
+  // FactuMóvil: bodega y lista de precio POR LÍNEA (editar.js: 033 / 034 / param 251).
+  final movil = sabor.esMovil;
+  final bodegas = movil ? doc.datos.bodegas : const <Map<String, dynamic>>[];
+  var bodega = doc.bodegaDe(l);
+  final atada = doc.datos.bodegaAtadaEstacion,
+      cambiaNivel = doc.tienePermiso('034');
   final r = await showDialog<CambiosLinea>(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -760,6 +767,7 @@ Future<bool> dialogoLinea(
             modo: modo,
             valor: v,
             bonificacion: bonif,
+            bodega: movil && bodegas.isNotEmpty ? bodega : null,
           );
         }
 
@@ -799,6 +807,39 @@ Future<bool> dialogoLinea(
                   '${l.codigo}${l.barra.isEmpty ? '' : ' · ${l.barra}'} · precio ${l.nivel}',
                   style: const TextStyle(color: Marca.tintaSuave, fontSize: 13),
                 ),
+                if (movil) ...[
+                  const SizedBox(height: 12),
+                  _selectoresMovil(
+                    doc: doc,
+                    l: l,
+                    bodegas: bodegas,
+                    bodega: bodega,
+                    atada: atada,
+                    cambiaNivel: cambiaNivel,
+                    alBodega: (b) => set(() => bodega = b),
+                    alNivel: (n) {
+                      // Acción INMEDIATA, como la web (cotizacion_tipoprecio_cambiar): toma el precio del nivel
+                      // y el descuento vuelve a 0 (+ el automático del nivel).
+                      final (bien, motivo, _) = doc.cambiarNivel(indice, n);
+                      set(() {
+                        if (!bien) {
+                          error = 'El artículo no tiene precio en P$n';
+                          return;
+                        }
+                        error = '';
+                        precio.text = fmt(
+                          l.precio,
+                          doc.dec.precio,
+                        ).replaceAll('.', '');
+                        modo = 'pct';
+                        bonif = false;
+                        valor.text = l.descuento > 0
+                            ? fmt(l.descuento, doc.dec.descPct)
+                            : '';
+                      });
+                    },
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -964,14 +1005,17 @@ Future<bool> dialogoLinea(
       return false;
     }
     if (v.confirmarSi) {
+      final costo = v.confirma == 'costo';
       final si = await pedirTexto(
         context,
-        'Monto alto',
+        costo ? 'Bajo el costo (021)' : 'Monto alto',
         v.motivo,
         'Escriba SI',
       );
       if (si?.trim().toUpperCase() != 'SI') return false;
-      cambios = cambios.con(montoConfirmado: true);
+      cambios = costo
+          ? cambios.con(costoConfirmado: true)
+          : cambios.con(montoConfirmado: true);
       continue;
     }
     final a = await dialogoSupervisor(context, cajeros, v);
@@ -983,6 +1027,81 @@ Future<bool> dialogoLinea(
     }
   }
   return false;
+}
+
+/// FactuMóvil (MV-108): Bodega (033 · param 251) y Lista de precio P1…Pn (034) de la línea, deshabilitados (no ocultos) sin permiso.
+Widget _selectoresMovil({
+  required Documento doc,
+  required Linea l,
+  required List<Map<String, dynamic>> bodegas,
+  required String bodega,
+  required bool atada,
+  required bool cambiaNivel,
+  required void Function(String) alBodega,
+  required void Function(int) alNivel,
+}) {
+  final niveles = {...doc.datos.nivelesPrecio, l.nivel}.toList()..sort();
+  final codigos = [for (final b in bodegas) '${b['codigo'] ?? ''}'];
+  return Row(
+    children: [
+      if (bodegas.isNotEmpty)
+        Expanded(
+          flex: 3,
+          child: DropdownButtonFormField<String>(
+            initialValue: codigos.contains(bodega) ? bodega : null,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Bodega',
+              helperText: atada
+                  ? 'Atada a la estación'
+                  : (doc.tienePermiso('033')
+                        ? null
+                        : 'Requiere permiso 033 o supervisor'),
+            ),
+            items: [
+              for (final c in codigos)
+                DropdownMenuItem(
+                  value: c,
+                  child: Text(
+                    doc.datos.nombreBodega(c),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: atada ? null : (v) => v == null ? null : alBodega(v),
+          ),
+        ),
+      if (bodegas.isNotEmpty) const SizedBox(width: 12),
+      Expanded(
+        flex: 2,
+        child: DropdownButtonFormField<int>(
+          initialValue: l.nivel,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Lista de precio',
+            helperText: cambiaNivel ? null : 'Sin permiso (034)',
+          ),
+          items: [
+            for (final n in niveles)
+              DropdownMenuItem(
+                value: n,
+                child: Text(_etiquetaNivel(doc, l, n)),
+              ),
+          ],
+          onChanged: cambiaNivel
+              ? (n) => n == null || n == l.nivel ? null : alNivel(n)
+              : null,
+        ),
+      ),
+    ],
+  );
+}
+
+/// «P2 - 5,000.00» (precio del nivel con IVA, como la web #219); «P2» si el nivel no tiene precio.
+String _etiquetaNivel(Documento doc, Linea l, int n) {
+  final p = doc.precioPara(l.codigo, n);
+  if (p == null || p.$2 != n) return 'P$n';
+  return 'P$n - ${fmt(p.$1 * (1 + l.tarifa / 100))}';
 }
 
 // ════════════ CLIENTE ════════════

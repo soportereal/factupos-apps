@@ -108,7 +108,9 @@ class _EstadoEntrada extends State<PantallaEntrada> {
     return Scaffold(
       body: FondoMarca(
         titulo: empresa,
-        subtitulo: 'Elija su nombre y escriba su clave para abrir la caja. Funciona también sin internet: las ventas se guardan y salen solas cuando vuelve la conexión.',
+        subtitulo: sabor.esMovil
+            ? 'Elija su nombre y escriba su clave. Funciona también sin internet: las ventas se guardan y salen solas cuando vuelve la conexión.'
+            : 'Elija su nombre y escriba su clave para abrir la caja. Funciona también sin internet: las ventas se guardan y salen solas cuando vuelve la conexión.',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -121,10 +123,12 @@ class _EstadoEntrada extends State<PantallaEntrada> {
                   children: [
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Entrar a la caja',
-                            style: TextStyle(
+                            sabor.esMovil
+                                ? 'Entrar a FactuMóvil'
+                                : 'Entrar a la caja',
+                            style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -0.4,
