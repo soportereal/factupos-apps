@@ -207,6 +207,7 @@ DatosCaja datosEjemplo() {
       'permisos_usuario': [
         {'usuario': '00006', 'permiso': '653'},
         {'usuario': '00006', 'permiso': '104'},
+        {'usuario': '00006', 'permiso': '059'}, // quitar líneas (capturas 33+)
         {'usuario': '00007', 'permiso': '653'},
       ],
     },
@@ -800,6 +801,85 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     await foto(t, '32-factumovil-tras-categorias');
+    // Últimas compras del cliente (foto 5): se vacía la venta, se elige cliente y se repite el trato.
+    cola.ventas.removeWhere((v) => v['paquete'] == null); // la venta de mentira de la captura 23
+    for (var k = 0; k < 5 && find.byType(Dismissible).evaluate().isNotEmpty; k++) {
+      await t.drag(find.byType(Dismissible).first, const Offset(-600, 0));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+    }
+    await t.tap(find.text('Seleccionar cliente'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.enterText(campo('Buscar cliente'), 'super');
+    await t.pump(const Duration(milliseconds: 400));
+    await t.tap(find.text('Supermercado La Esquina S.A.').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    t
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .removeCurrentSnackBar();
+    await t.pump(const Duration(milliseconds: 500));
+    await foto(t, '33-factumovil-vacia-con-cliente');
+    conexionClientePrueba = () => MockClient((r) async {
+      // Solo la ruta de últimas compras: la cola de envíos queda «sin conexión» (no recibe esta respuesta).
+      if (!r.url.path.endsWith('ultimas_compras.php')) {
+        return http.Response('', 503);
+      }
+      return http.Response(
+        jsonEncode({
+          'success': true,
+          'articulos': [
+            {
+              'ArticuloCodigo': 'P101',
+              'ArticuloNombre': 'Frijoles negros Ducal 800 g',
+              'Fecha': '26/10/2026',
+              'PrecioUnitario': 1800,
+              'Descuento': 5,
+              'Cantidad': 3,
+              'TipoPrecio': 1,
+              'Iva': 13,
+              'Stock': 24,
+              'Fraccionamiento': '0',
+              'NaturalezaCodigo': '1',
+              'Cabys': '2449001000000',
+              'PrecioNeto': 1932.3,
+            },
+            {
+              'ArticuloCodigo': 'X999',
+              'ArticuloNombre': 'ARTICULO YA INACTIVO',
+              'Fecha': '02/09/2026',
+              'PrecioUnitario': 1500,
+              'Descuento': 0,
+              'Cantidad': 1,
+              'TipoPrecio': 2,
+              'Iva': 13,
+              'Stock': 0,
+              'Fraccionamiento': '0',
+              'NaturalezaCodigo': '1',
+              'Cabys': '2449001000000',
+              'PrecioNeto': 1695,
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    await t.tap(find.text('Ver últimas compras del cliente'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '34-factumovil-ultimas');
+    await t.tap(find.text('+').first);
+    await t.pump(const Duration(milliseconds: 300));
+    await t.tap(find.text('Agregar').first);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '35-factumovil-ultimas-agregado');
+    conexionClientePrueba = null;
+    await t.tap(find.text('Regresar').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '36-factumovil-tras-ultimas');
     sabor = saborFactuSuper;
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);

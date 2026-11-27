@@ -48,6 +48,7 @@ part 'detalle_movil.dart';
 part 'nota_movil.dart';
 part 'nota_proceso.dart';
 part 'categorias_movil.dart';
+part 'ultimas_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;

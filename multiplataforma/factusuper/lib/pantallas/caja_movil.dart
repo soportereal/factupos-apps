@@ -440,28 +440,48 @@ extension _VistaMovil on _EstadoCaja {
             style: TextStyle(fontSize: 17, color: Color(0xFF9AB0CB)),
           ),
           const SizedBox(height: 18),
+          // Como fm_lineas_ayuda_html(): con cliente genérico queda GRIS (con su aviso); con cliente real abre la lista.
           Tooltip(
-            message: 'Próximamente en la app',
-            child: Container(
-              height: 50,
-              decoration: BoxDecoration(
+            message: _fmClienteGenerico
+                ? 'Seleccione un cliente para ver sus últimas compras'
+                : '',
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _Fm.borde),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.history, color: Color(0xFFB6C6DA)),
-                  SizedBox(width: 8),
-                  Text(
-                    'Ver últimas compras del cliente',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFFB6C6DA),
+                onTap: _fmClienteGenerico ? null : _fmUltimas,
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _fmClienteGenerico ? _Fm.borde : _Fm.navy1,
                     ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.history,
+                        color: _fmClienteGenerico
+                            ? const Color(0xFFB6C6DA)
+                            : _Fm.navy1,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Ver últimas compras del cliente',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: _fmClienteGenerico
+                              ? const Color(0xFFB6C6DA)
+                              : _Fm.navy1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -941,6 +961,62 @@ extension _VistaMovil on _EstadoCaja {
     return doc.lineas.length > antes || l.codigo == '${art['codigo']}'
         ? 'Agregado: ${art['nombre']}'
         : '';
+  }
+
+  /// Cliente genérico (SN, S/N, 0 o vacío): no tiene «últimas compras».
+  bool get _fmClienteGenerico => const {'', 'SN', 'S/N', '0'}.contains(
+    '${doc.cliente['codigo'] ?? ''}'.trim().toUpperCase(),
+  );
+
+  /// Últimas compras del cliente (components/factumovil/ultimas_compras) a pantalla completa. Necesita conexión.
+  Future<void> _fmUltimas() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _UltimasMovil(
+          doc: doc,
+          datos: widget.datos,
+          llave: widget.config.llave,
+          cajero: widget.cajero.usuario,
+          alRepetir: _fmRepetir,
+        ),
+      ),
+    );
+    _cambio();
+  }
+
+  /// «Agregar» de Últimas compras: agrega con las reglas de siempre y, si quedó una línea NUEVA, le repite el trato de la
+  /// última venta (Documento.repetirTrato). Si se SUMÓ a una línea que ya estaba, esa línea conserva su precio.
+  Future<(bool, String)> _fmRepetir(
+    Map<String, dynamic> h,
+    String cant,
+  ) async {
+    final cod = '${h['ArticuloCodigo'] ?? ''}'.trim();
+    final art = widget.datos.articuloExacto(cod);
+    if (art == null) {
+      return (false, 'No está en la copia del equipo: refresque los datos.');
+    }
+    final antes = doc.lineas.length;
+    await _agregar(art, cantidad: cant);
+    if (_sel < 0 || _sel >= doc.lineas.length) return (false, '');
+    final l = doc.lineas[_sel];
+    if (doc.lineas.length <= antes) {
+      return l.codigo == cod
+          ? (true, 'Sumado a la línea que ya estaba: ${art['nombre']}')
+          : (false, '');
+    }
+    double n(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final av = doc.repetirTrato(
+      _sel,
+      nivel: n(h['TipoPrecio']).toInt(),
+      precio: n(h['PrecioUnitario']),
+      descuento: n(h['Descuento']),
+    );
+    _cambio();
+    return (
+      true,
+      'Agregado: ${art['nombre']}${av.isEmpty ? '' : ' — ${av.join(' · ')}'}',
+    );
   }
 
   /// Seleccionar cliente (components/factumovil/clientes) a pantalla completa.

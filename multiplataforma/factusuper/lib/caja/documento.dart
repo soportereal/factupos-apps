@@ -429,6 +429,49 @@ class Documento {
     return (true, '', avisos);
   }
 
+  /// FactuMóvil · ÚLTIMAS COMPRAS (FmUltimasCompras.agregar → cotizacion_linea_agregar con `descuento_cliente`): la línea
+  /// NUEVA repite el trato de la última venta al cliente — nivel, precio base (sin IVA) y descuento %.
+  /// Ese descuento ya se le hizo al cliente, así que NO pide el 004; igual que la web se TOPA al máximo del precio (023)
+  /// y se QUITA si deja la utilidad bajo el mínimo (006). → avisos.
+  List<String> repetirTrato(
+    int i, {
+    required int nivel,
+    required double precio,
+    required double descuento,
+  }) {
+    final avisos = <String>[];
+    if (nivel > 0 && nivel != lineas[i].nivel) {
+      final r = cambiarNivel(i, nivel);
+      if (!r.$1) avisos.add('P$nivel ya no tiene precio: queda el P${lineas[i].nivel}');
+    }
+    final l = lineas[i];
+    if (precio > 0) l.precio = redondear(precio, 5);
+    var d = l.nivelBloqueado ? 0.0 : descuento.clamp(0, 100).toDouble();
+    if (d > l.descMax + 1e-9 && !_permiso('023')) {
+      avisos.add('descuento topado al máximo (${_fmt(l.descMax)} %)');
+      d = l.descMax;
+    }
+    if (d > 0 &&
+        l.costo > 0 &&
+        utilidad(l.precio, d, l.costo) < l.utilMin &&
+        !_permiso('006')) {
+      // Misma regla que descuentoAutomatico(): con mínimo 0 lo que frena es quedar BAJO EL COSTO — el aviso dice cuál.
+      avisos.add(
+        l.utilMin > 0
+            ? 'descuento quitado por utilidad mínima (${_fmt(l.utilMin)} %)'
+            : 'descuento quitado: dejaba el precio bajo el costo',
+      );
+      d = 0;
+    }
+    l
+      ..descuento = redondear(d, 6)
+      ..descMonto = null
+      ..bonificacion = false
+      ..descManual = true;
+    _calc(l);
+    return avisos;
+  }
+
   /// Barra: cambiar la TARIFA DE IVA de una línea (código + % del catálogo).
   void cambiarTarifa(int i, String codigo, double porcentaje) {
     final l = lineas[i];
