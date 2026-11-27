@@ -98,6 +98,18 @@ DatosCaja datosEjemplo() {
     1120.0,
     2480.0,
   ];
+  const cats = [
+    ('ABARROTES', 'GRANOS'),
+    ('ABARROTES', 'GRANOS'),
+    ('ABARROTES', 'BEBIDAS'),
+    ('ABARROTES', 'BEBIDAS'),
+    ('LACTEOS Y HUEVOS', ''),
+    ('ABARROTES', 'ACEITES'),
+    ('ABARROTES', 'GRANOS'),
+    ('PANADERIA', ''),
+    ('ABARROTES', 'ENLATADOS'),
+    ('LIMPIEZA', 'HIGIENE'),
+  ];
   for (var i = 0; i < nombres.length; i++) {
     arts.add({
       'codigo': 'P${100 + i}',
@@ -111,6 +123,8 @@ DatosCaja datosEjemplo() {
       'fraccionable': 0,
       'costo': pre[i] * 0.7,
       'unidades_x_medida': 0,
+      'categoria': cats[i].$1,
+      'subcategoria': cats[i].$2,
     });
     precios.add({
       'articulo': 'P${100 + i}',
@@ -754,6 +768,38 @@ void main() {
     await t.tap(find.byTooltip('Regresar'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
+    // Categorías (foto 7 del dueño): árbol con la copia del equipo + existencias del servidor.
+    conexionClientePrueba = () => MockClient((r) async {
+      final cods = (jsonDecode(r.body)['codigos'] as List).cast<String>();
+      return http.Response(
+        jsonEncode({
+          'success': true,
+          'stock': {for (final c in cods) c: c == 'P100' ? 0 : 24},
+        }),
+        200,
+      );
+    });
+    await t.tap(find.text('Categorías'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '29-factumovil-categorias');
+    await t.tap(find.text('ABARROTES'));
+    await t.pump(const Duration(milliseconds: 300));
+    await t.tap(find.text('GRANOS'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('+').first);
+    await t.pump(const Duration(milliseconds: 300));
+    await foto(t, '30-factumovil-categorias-rama');
+    await t.tap(find.text('Agregar').first);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '31-factumovil-categorias-agregado');
+    conexionClientePrueba = null;
+    await t.tap(find.text('Regresar').last);
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '32-factumovil-tras-categorias');
     sabor = saborFactuSuper;
     t.view.resetPhysicalSize();
     tmp.deleteSync(recursive: true);

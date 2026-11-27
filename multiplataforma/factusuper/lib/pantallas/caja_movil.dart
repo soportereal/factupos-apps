@@ -391,8 +391,7 @@ extension _VistaMovil on _EstadoCaja {
             const Color(0xFFF1EAFE),
             const Color(0xFFC4A8F5),
             const Color(0xFF7C3AED),
-            null,
-            tip: 'Categorías: llega en la próxima versión',
+            _fmCategorias,
           ),
           const SizedBox(width: 5),
           b(
@@ -894,6 +893,23 @@ extension _VistaMovil on _EstadoCaja {
         builder: (_) => _BusquedaMovil(
           doc: doc,
           datos: widget.datos,
+          alAgregar: _fmAgregarDesde,
+        ),
+      ),
+    );
+    _cambio();
+  }
+
+  /// Categorías (components/factumovil/categorias) a pantalla completa: árbol con la copia del equipo.
+  Future<void> _fmCategorias() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _CategoriasMovil(
+          doc: doc,
+          datos: widget.datos,
+          llave: widget.config.llave,
+          cajero: widget.cajero.usuario,
           alAgregar: _fmAgregarDesde,
         ),
       ),

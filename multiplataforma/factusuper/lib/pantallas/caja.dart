@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,6 +47,7 @@ part 'cotizaciones_movil.dart';
 part 'detalle_movil.dart';
 part 'nota_movil.dart';
 part 'nota_proceso.dart';
+part 'categorias_movil.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;
