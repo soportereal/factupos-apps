@@ -61,7 +61,7 @@ class Conexion {
     this.cajero = '',
     this.servidores = servidoresFactuPOS,
     http.Client? cliente,
-  }) : _cliente = cliente ?? http.Client();
+  }) : _cliente = cliente ?? conexionClientePrueba?.call() ?? http.Client();
 
   /// La sesión del servidor (cookie FSSID), una por dominio: así no se arma una nueva en cada pedido.
   final Map<String, String> _cookies = {};
@@ -250,6 +250,9 @@ class InfoLlave {
 
 /// Revisa una llave pegada en Configuración. Con SOLO la llave (dueño: «solo debería pedir la llave de la empresa»):
 /// el usuario se elige después, de la lista, en la entrada de la caja.
+/// SOLO para las pruebas (capturas): si está puesto, cada Conexion nueva usa este cliente en vez de salir a la red.
+http.Client Function()? conexionClientePrueba;
+
 Future<InfoLlave> revisarLlave(String llave, {http.Client? cliente}) async {
   llave = llave.trim();
   if (!formatoLlave.hasMatch(llave)) {

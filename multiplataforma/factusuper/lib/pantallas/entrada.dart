@@ -145,6 +145,16 @@ class _EstadoEntrada extends State<PantallaEntrada> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // #3957 (dueño: «poner el logo de FactuPOS en el login en las aplicaciones») — el mismo del login web.
+                    Center(
+                      child: Image.asset(
+                        'assets/img/factupos.png',
+                        height: 64,
+                        fit: BoxFit.contain,
+                        semanticLabel: 'FactuPOS',
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     Row(
                       children: [
                         Expanded(

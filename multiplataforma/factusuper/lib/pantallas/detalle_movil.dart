@@ -3,8 +3,8 @@
 // CLIENTE · ARTÍCULOS · REVISIÓN (estado, contado/crédito, pagos) · ACCIONES.
 // Los datos salen de la COPIA del equipo (el paquete que se mandó a facturar): se ve también sin internet.
 // Acciones: Clonar a cotización (en el equipo) · Reimprimir (142) · Ver PDF / Compartir PDF / Email cliente / Email
-// respaldo (venta_documento.php, la misma venta_correo_enviar() de la web) · NC, ND, NC/ND financiera y Generar XML:
-// en gris, próximamente (son pantallas enteras de la web).
+// respaldo (venta_documento.php, la misma venta_correo_enviar() de la web) · NC, ND, NC/ND financiera (_NotaMovil, por
+// nota_paso.php = los mismos archivos de VE-020 / MNC-001 de la web) · Generar XML (nota_paso.php?paso=xml, param 386).
 part of 'caja.dart';
 
 extension _DetalleMovil on _EstadoCaja {
@@ -121,6 +121,73 @@ class _EstadoDetalleVenta extends State<_DetalleVenta> {
     } catch (e) {
       _mensaje('No se pudo: $e', error: true);
       return null;
+    } finally {
+      con.cerrar();
+      if (mounted) setState(() => ocupado = '');
+    }
+  }
+
+  String get _clienteCodigo =>
+      '${(pq['cliente'] as Map?)?['codigo'] ?? ''}'.trim();
+  bool get _clienteGenerico =>
+      const ['SN', 'sn', 'Sn', '0', ''].contains(_clienteCodigo);
+
+  /// NC / ND (normal contra ESTA factura, o financiera contra el cliente) — VE-020 de la web.
+  Future<void> _nota(String tipo, {bool financiera = false}) async {
+    final n = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => _NotaMovil(
+          llave: widget.llave,
+          cajero: widget.cajero,
+          tipo: tipo,
+          financiera: financiera,
+          factura: financiera ? '' : numero,
+          cliente: _clienteCodigo,
+        ),
+      ),
+    );
+    if (n != null) {
+      _mensaje(
+        '${tipo == '03' ? 'Nota de crédito' : 'Nota de débito'} $n aplicada',
+      );
+    }
+  }
+
+  /// Generar XML (igual que «Generar XML» del detalle de la web: solo con el param 386).
+  Future<void> _xml() async {
+    final si = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('¿Generar XML?'),
+        content: Text('Se genera el XML de Hacienda de la factura $numero.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Generar'),
+          ),
+        ],
+      ),
+    );
+    if (si != true || !mounted) return;
+    final con = Conexion(llave: widget.llave, cajero: widget.cajero);
+    setState(() => ocupado = 'xml');
+    try {
+      final j = await con.post('nota_paso.php?paso=xml', {
+        'documento': numero,
+      }, espera: const Duration(seconds: 120));
+      final ok = j['success'] == true;
+      _mensaje(
+        ok ? 'XML generado' : '${j['message'] ?? j['error'] ?? 'Error'}',
+        error: !ok,
+      );
+    } on ErrorConexion catch (e) {
+      _mensaje('Sin conexión con el servidor: ${e.mensaje}', error: true);
+    } catch (e) {
+      _mensaje('No se pudo: $e', error: true);
     } finally {
       con.cerrar();
       if (mounted) setState(() => ocupado = '');
@@ -330,6 +397,8 @@ class _EstadoDetalleVenta extends State<_DetalleVenta> {
       'rechazada': 'Rechazada',
     };
     final sinFactura = 'Disponible cuando la venta esté facturada';
+    const sinGenerico =
+        'Las notas financieras no aplican para el cliente genérico (SN)';
     final total = ((v['total'] ?? pq['total']) as num?) ?? 0;
 
     return Scaffold(
@@ -638,13 +707,15 @@ class _EstadoDetalleVenta extends State<_DetalleVenta> {
                             Icons.remove_circle_outline,
                             'Nota Crédito',
                             const [Color(0xFFE05252), Color(0xFFC53030)],
-                            null,
+                            facturada ? () => _nota('03') : null,
+                            tip: sinFactura,
                           ),
                           _boton(
                             Icons.add_circle_outline,
                             'Nota Débito',
                             const [Color(0xFFF0A030), Color(0xFFD97706)],
-                            null,
+                            facturada ? () => _nota('02') : null,
+                            tip: sinFactura,
                           ),
                         ),
                         _par(
@@ -652,13 +723,19 @@ class _EstadoDetalleVenta extends State<_DetalleVenta> {
                             Icons.currency_exchange,
                             'NC Financiera',
                             const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
-                            null,
+                            _clienteGenerico
+                                ? null
+                                : () => _nota('03', financiera: true),
+                            tip: sinGenerico,
                           ),
                           _boton(
                             Icons.currency_exchange,
                             'ND Financiera',
                             const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
-                            null,
+                            _clienteGenerico
+                                ? null
+                                : () => _nota('02', financiera: true),
+                            tip: sinGenerico,
                           ),
                         ),
                         _par(
@@ -687,10 +764,14 @@ class _EstadoDetalleVenta extends State<_DetalleVenta> {
                             facturada ? _compartirPdf : null,
                             tip: sinFactura,
                           ),
-                          _boton(Icons.code, 'Generar XML', const [
-                            Color(0xFF334155),
-                            Color(0xFF1E293B),
-                          ], null),
+                          _boton(
+                            Icons.code,
+                            'Generar XML',
+                            const [Color(0xFF334155), Color(0xFF1E293B)],
+                            facturada ? _xml : null,
+                            clave: 'xml',
+                            tip: sinFactura,
+                          ),
                         ),
                       ],
                     ),

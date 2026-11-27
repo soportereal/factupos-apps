@@ -44,6 +44,8 @@ part 'cobro_movil.dart';
 part 'editar_movil.dart';
 part 'cotizaciones_movil.dart';
 part 'detalle_movil.dart';
+part 'nota_movil.dart';
+part 'nota_proceso.dart';
 
 class PantallaCaja extends StatefulWidget {
   final ConfigCaja config;

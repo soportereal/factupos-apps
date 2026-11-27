@@ -1,5 +1,6 @@
 // #3957 — CAPTURAS de las pantallas con datos de ejemplo (para revisar el diseño sin un Windows a mano).
 // Corre solo con FS_CAPTURAS=<carpeta>: flutter test test/capturas_test.dart (deja los PNG ahí).
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -14,6 +15,9 @@ import 'package:factusuper/ui/dialogos_caja.dart';
 import 'estacion_config_test.dart' show respuestaGet;
 
 import 'package:factusuper/datos/almacen.dart';
+import 'package:factusuper/datos/conexion.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:factusuper/pantallas/caja.dart';
 import 'package:factusuper/pantallas/configuracion.dart';
 import 'package:factusuper/pantallas/entrada.dart';
@@ -236,6 +240,14 @@ void main() {
         ),
       ),
     );
+    // El logo es un asset: se carga por fuera del reloj falso de la prueba.
+    await t.runAsync(
+      () => precacheImage(
+        const AssetImage('assets/img/factupos.png'),
+        t.element(find.byType(Scaffold).first),
+      ),
+    );
+    await t.pump();
     await foto(t, '2-entrada');
 
     final cola = Cola(almacen, 'demoferre', cfg.llave);
@@ -608,6 +620,137 @@ void main() {
     await t.drag(find.byType(ListView).last, const Offset(0, -900));
     await t.pump(const Duration(milliseconds: 400));
     await foto(t, '25-factumovil-detalle-acciones');
+    // NC desde el detalle (VE-020 + MNC-001), con el servidor de mentira: las respuestas son las REALES de demoferre.
+    var nota = <Map<String, dynamic>>[];
+    conexionClientePrueba = () => MockClient((r) async {
+      final paso = r.url.queryParameters['paso'] ?? '';
+      final linea = {
+        'ArticuloCodigo': '00000009',
+        'ArticuloNombre': 'COCA gorda',
+        'ArticuloCantidad': '1.000',
+        'ArticuloPrecio': '1330.00000',
+        'ArticuloDescuentoPorcentage': '.000000',
+        'ArticuloIvaTarifa': '13.00',
+        'ArticuloIvaMonto': '172.90000',
+        'ArticuloTotal': '1502.90',
+        'ArticuloLineaId': '505601',
+        'NumeroLinea': '16960',
+      };
+      final Map<String, dynamic> j = switch (paso) {
+        'preparar' => {
+          'success': true,
+          'tipo': '03',
+          'financiera': false,
+          'factura': {
+            'Numero': '00200001010000003353',
+            'ClienteId': '823',
+            'ClienteNombre': 'FIORELLA SANCHEZ SEQUEIRA',
+            'MonedaCodigo': 'CRC',
+          },
+          'articulos': [
+            {
+              'ArticuloCodigo': '00000009',
+              'ArticuloNombre': 'COCA gorda',
+              'ArticuloCantidad': '2.000',
+              'ArticuloPrecio': '1330.00000',
+              'ArticuloTotal': '3005.80',
+              'ArticuloDescuentoPorcentage': '.000000',
+              'ArticuloLineaId': '16960',
+              'ArticuloCantidadDisponible': 2,
+              'NotasAplicadas': [],
+            },
+            {
+              'ArticuloCodigo': '00010006',
+              'ArticuloNombre': 'COCA 2',
+              'ArticuloCantidad': '2.000',
+              'ArticuloPrecio': '1858.41000',
+              'ArticuloTotal': '4200.00',
+              'ArticuloDescuentoPorcentage': '.000000',
+              'ArticuloLineaId': '16961',
+              'ArticuloCantidadDisponible': 1,
+              'NotasAplicadas': [
+                {
+                  'tipo': 'NC',
+                  'numero': '00200001030000000412',
+                  'cantidad': 1,
+                  'fecha': '20/11/2026',
+                },
+              ],
+            },
+          ],
+          'motivos_referencia': [
+            {'Codigo': '01', 'Descripcion': 'Anula documento de referencia'},
+            {'Codigo': '03', 'Descripcion': 'Corrige monto'},
+          ],
+          'motivos_internos': [
+            {'Codigo': '01', 'Descripcion': 'Devolución'},
+            {'Codigo': '02', 'Descripcion': 'Devolución de mercadería'},
+          ],
+          'tipo_ref_default': '01',
+          'avisos': [
+            {
+              'clase': 'alerta',
+              'texto': 'Esta factura es de CONTADO: ya está cobrada.',
+            },
+          ],
+          'permiso': '501',
+          'puede_aplicar': true,
+        },
+        'iniciar' => {
+          'success': true,
+          'documento': 'ncd09029ncd',
+          'recuperado': false,
+        },
+        'agregar' => () {
+          nota = [linea];
+          return <String, dynamic>{
+            'success': true,
+            'articulos': nota,
+            'totales': {'merc_gravada': 1330, 'iva': 172.9, 'total': 1502.9},
+          };
+        }(),
+        'destino' => {
+          'success': true,
+          'aplica': false,
+          'razon':
+              'Factura con pago múltiple: la nota queda como saldo a favor.',
+          'medios': [
+            {'medio': '01', 'nombre': 'Efectivo', 'monto': 2000},
+            {'medio': '02', 'nombre': 'Tarjeta', 'monto': 5205.8},
+          ],
+          'opciones': [],
+        },
+        _ => {'success': false, 'error': 'no en la prueba'},
+      };
+      return http.Response(
+        jsonEncode(j),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+    await t.tap(find.text('Nota Crédito'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '26-factumovil-nota');
+    await t.tap(find.text('COCA gorda').first);
+    await t.pump();
+    await t.tap(find.text('Agregar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.drag(find.byType(ListView).last, const Offset(0, -600));
+    await t.pump(const Duration(milliseconds: 400));
+    await foto(t, '27-factumovil-nota-lineas');
+    await t.tap(find.text('Aplicar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '28-factumovil-nota-proceso');
+    conexionClientePrueba = null;
+    await t.tap(find.text('Cancelar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.byTooltip('Regresar'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
     await t.tap(find.byTooltip('Regresar'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
