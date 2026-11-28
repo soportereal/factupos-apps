@@ -104,7 +104,6 @@ class Almacen {
     String clave,
   ) async {
     final f = _recordar(empresa);
-    await f.parent.create(recursive: true);
     await _escribir(f, jsonEncode({'usuario': usuario, 'clave': clave}));
     if (!Platform.isWindows) {
       try {
@@ -124,10 +123,12 @@ class Almacen {
     '${raiz.path}${Platform.pathSeparator}${empresa.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}',
   );
 
-  Future<void> guardarTabla(String empresa, String tabla, Object datos) async {
+  /// 🪤 SIN `await` antes de `_escribir`: el lugar en la fila se toma AL LLAMAR. Antes se esperaba crear la carpeta y
+  ///    con eso los guardados entraban a la fila en el orden en que terminaba el disco, no en el que se pidieron: uno
+  ///    viejo podía quedar de último (CI 46141019386: 100 en paralelo → quedó el 92). La carpeta se crea en su turno.
+  Future<void> guardarTabla(String empresa, String tabla, Object datos) {
     final d = _empresa(empresa);
-    await d.create(recursive: true);
-    await _escribir(
+    return _escribir(
       File('${d.path}${Platform.pathSeparator}$tabla.json'),
       jsonEncode(datos),
     );
@@ -149,6 +150,7 @@ class Almacen {
   Future<void> _escribir(File f, String texto) {
     final anterior = _fila[f.path] ?? Future<void>.value();
     final esta = anterior.catchError((_) {}).then((_) async {
+      await f.parent.create(recursive: true);
       final tmp = File('${f.path}.tmp');
       await tmp.writeAsString(texto, flush: true);
       await tmp.rename(f.path);
