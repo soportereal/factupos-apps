@@ -624,10 +624,129 @@ void main() {
         'cliente': {'nombre': 'Supermercado La Esquina S.A.'},
       },
     ];
+    // Ventas del servidor (foto del dueño 28-nov): período + Mías/Todas + total; «Este equipo» = la lista de siempre.
+    conexionClientePrueba = () => MockClient((r) async {
+      if (!r.url.path.endsWith('ventas_resumen.php')) {
+        return http.Response('', 503);
+      }
+      final todas = jsonDecode(r.body)['ver'] == 'todas';
+      Map<String, dynamic> doc(
+        String num,
+        String hora,
+        String tipo,
+        String cli,
+        String usu,
+        double total, {
+        int estado = 2,
+      }) => {
+        'numero': num,
+        'fecha': '2026-11-28T$hora',
+        'tipo': tipo,
+        'tipo_nombre': switch (tipo) {
+          '03' => 'Nota crédito',
+          '04' => 'Tiquete',
+          _ => 'Factura',
+        },
+        'estado': estado,
+        'estado_nombre': estado == 3 ? 'Nula' : 'Procesada',
+        'cliente_codigo': 'X',
+        'cliente': cli,
+        'usuario': usu == 'Ana Solís' ? '00006' : '00027',
+        'usuario_nombre': usu,
+        'moneda': 'CRC',
+        'total': total,
+      };
+      final mias = [
+        doc(
+          '00200001010000003353',
+          '10:53:00',
+          '01',
+          'FIORELLA SANCHEZ SEQUEIRA',
+          'Ana Solís',
+          7205.8,
+        ),
+        doc(
+          '00200001040000003061',
+          '09:12:00',
+          '04',
+          'SIN NOMBRE',
+          'Ana Solís',
+          12410,
+        ),
+        doc(
+          '00200001030000000412',
+          '08:40:00',
+          '03',
+          'FIORELLA SANCHEZ SEQUEIRA',
+          'Ana Solís',
+          1502.9,
+        ),
+        doc(
+          '00200001040000003058',
+          '08:05:00',
+          '04',
+          'SIN NOMBRE',
+          'Ana Solís',
+          3500,
+          estado: 3,
+        ),
+      ];
+      final otras = [
+        doc(
+          '00200001040000003060',
+          '09:30:00',
+          '04',
+          'SIN NOMBRE',
+          'Jorge Marín',
+          25800,
+        ),
+      ];
+      return http.Response.bytes(
+        utf8.encode(
+          jsonEncode({
+            'success': true,
+            'puede_ver_otros': true,
+            'ver': todas ? 'todas' : 'mias',
+            'resumen': todas
+                ? {
+                    'ventas': 45415.8,
+                    'ventas_n': 3,
+                    'nc': 1502.9,
+                    'nc_n': 1,
+                    'neto': 43912.9,
+                    'sin_sumar_n': 1,
+                  }
+                : {
+                    'ventas': 19615.8,
+                    'ventas_n': 2,
+                    'nc': 1502.9,
+                    'nc_n': 1,
+                    'neto': 18112.9,
+                    'sin_sumar_n': 1,
+                  },
+            'documentos': todas
+                ? [...mias.take(1), ...otras, ...mias.skip(1)]
+                : mias,
+          }),
+        ),
+        200,
+      );
+    });
     await t.tap(find.text('Ventas'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
     await foto(t, '23-factumovil-ventas');
+    await t.tap(find.text('Todas'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '23b-factumovil-ventas-todas');
+    await t.tap(find.text('Este equipo (envíos y reimprimir)'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await foto(t, '23c-factumovil-este-equipo');
+    cola.ventas.removeWhere(
+      (v) => v['paquete'] == null,
+    ); // la venta de mentira: ya salió en la foto
     await t.tap(find.textContaining('FIORELLA').first);
     await t.pump();
     await t.pump(const Duration(seconds: 1));
@@ -769,6 +888,9 @@ void main() {
     await t.tap(find.byTooltip('Regresar'));
     await t.pump();
     await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Regresar').last); // la pantalla de Ventas
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
     // Categorías (foto 7 del dueño): árbol con la copia del equipo + existencias del servidor.
     conexionClientePrueba = () => MockClient((r) async {
       final cods = (jsonDecode(r.body)['codigos'] as List).cast<String>();
@@ -802,8 +924,14 @@ void main() {
     await t.pump(const Duration(seconds: 1));
     await foto(t, '32-factumovil-tras-categorias');
     // Últimas compras del cliente (foto 5): se vacía la venta, se elige cliente y se repite el trato.
-    cola.ventas.removeWhere((v) => v['paquete'] == null); // la venta de mentira de la captura 23
-    for (var k = 0; k < 5 && find.byType(Dismissible).evaluate().isNotEmpty; k++) {
+    cola.ventas.removeWhere(
+      (v) => v['paquete'] == null,
+    ); // la venta de mentira de la captura 23
+    for (
+      var k = 0;
+      k < 5 && find.byType(Dismissible).evaluate().isNotEmpty;
+      k++
+    ) {
       await t.drag(find.byType(Dismissible).first, const Offset(-600, 0));
       await t.pump();
       await t.pump(const Duration(seconds: 1));

@@ -382,7 +382,7 @@ extension _VistaMovil on _EstadoCaja {
             const Color(0xFFE7F6EE),
             const Color(0xFF86D4AB),
             const Color(0xFF059669),
-            _verVentas,
+            _fmVentas,
           ),
           const SizedBox(width: 5),
           b(
@@ -961,6 +961,24 @@ extension _VistaMovil on _EstadoCaja {
     return doc.lineas.length > antes || l.codigo == '${art['codigo']}'
         ? 'Agregado: ${art['nombre']}'
         : '';
+  }
+
+  /// Ventas del SERVIDOR con período (Hoy/Ayer/Semana/Mes) y Mías/Todas (069), + «Este equipo» = la lista de siempre.
+  Future<void> _fmVentas() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _VentasMovil(
+          llave: widget.config.llave,
+          cajero: widget.cajero.usuario,
+          locales: widget.cola.ventas,
+          pendientes: widget.cola.pendientes.length,
+          alEsteEquipo: _verVentas,
+          alAbrirLocal: _fmDetalleVenta,
+        ),
+      ),
+    );
+    _cambio();
   }
 
   /// Cliente genérico (SN, S/N, 0 o vacío): no tiene «últimas compras».
